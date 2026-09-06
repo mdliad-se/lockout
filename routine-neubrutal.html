@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Routine — Push / Pull / Legs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#111111;
+    --bg:#FBF9F3;
+    --card:#FFFFFF;
+    --yellow:#FFD400;
+    --pink:#FF5C93;
+    --blue:#5C7CFA;
+    --green:#00C48C;
+    --lilac:#B98BFF;
+    --grey:#EDEAE0;
+    --red:#FF4D4D;
+    --shadow: 6px 6px 0 var(--ink);
+    --shadow-sm: 4px 4px 0 var(--ink);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Space Grotesk', sans-serif;
+    background-image: radial-gradient(circle, rgba(17,17,17,0.06) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .mono{ font-family:'JetBrains Mono', monospace; }
+
+  header{
+    padding:36px 5vw 44px;
+    border-bottom:4px solid var(--ink);
+    background:var(--card);
+  }
+  .badge-row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:22px; }
+  .badge{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+    background:var(--yellow); border:3px solid var(--ink); padding:5px 12px;
+    box-shadow: var(--shadow-sm);
+  }
+  h1{
+    font-size:clamp(2.4rem, 7vw, 4.6rem); font-weight:700; line-height:0.98;
+    margin:0 0 14px; text-transform:uppercase;
+  }
+  h1 span{
+    background:var(--pink); padding:0 10px; border:4px solid var(--ink);
+    box-shadow: var(--shadow); display:inline-block; transform:rotate(-1.5deg);
+  }
+  header p{ max-width:620px; font-size:1.02rem; margin:0; }
+
+  .caution{
+    margin-top:24px; max-width:720px;
+    border:3px solid var(--ink); background:var(--red); color:#fff;
+    box-shadow: var(--shadow-sm); padding:14px 18px;
+    font-weight:600; font-size:0.92rem;
+  }
+  .caution strong{ font-family:'JetBrains Mono', monospace; text-transform:uppercase; display:block; margin-bottom:4px; }
+
+  .legend{ display:flex; gap:14px; flex-wrap:wrap; margin-top:26px; }
+  .legend .chip{
+    display:flex; align-items:center; gap:8px;
+    font-family:'JetBrains Mono', monospace; font-size:0.72rem; font-weight:600; text-transform:uppercase;
+    background:var(--card); border:3px solid var(--ink); padding:6px 10px;
+  }
+  .swatch{ width:14px; height:14px; border:2px solid var(--ink); }
+
+  nav{
+    position:sticky; top:0; z-index:20;
+    background:var(--ink); display:flex; overflow-x:auto; border-bottom:4px solid var(--ink);
+  }
+  nav a{
+    font-family:'JetBrains Mono', monospace; color:var(--bg); text-decoration:none;
+    font-size:0.78rem; font-weight:700; text-transform:uppercase;
+    padding:14px 20px; white-space:nowrap; border-right:2px solid #444;
+  }
+  nav a:hover{ background:var(--pink); color:var(--ink); }
+
+  main{ padding:50px 5vw 20px; max-width:1200px; margin:0 auto; }
+
+  .day{
+    margin-bottom:60px; border:4px solid var(--ink); background:var(--card);
+    box-shadow: 10px 10px 0 var(--ink);
+  }
+  .day-top{
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px;
+    padding:22px 26px; border-bottom:4px solid var(--ink);
+  }
+  .day-id{ display:flex; align-items:center; gap:16px; }
+  .day-tag{
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:0.9rem; text-transform:uppercase;
+    border:3px solid var(--ink); padding:8px 14px; transform:rotate(-2deg); box-shadow: var(--shadow-sm);
+    background:var(--card);
+  }
+  .day-top h2{ font-size:clamp(1.5rem,3.4vw,2.2rem); margin:0; text-transform:uppercase; }
+  .day-focus{ font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; font-weight:600; opacity:0.7; }
+  .off-badge{
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:0.85rem;
+    background:var(--ink); color:var(--bg); padding:6px 14px; text-transform:uppercase;
+  }
+
+  .warmup{ margin:20px 26px 4px; border:3px solid var(--ink); background:var(--card); box-shadow: var(--shadow-sm); }
+  .warmup-head{
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:0.78rem; text-transform:uppercase;
+    padding:10px 16px; border-bottom:3px solid var(--ink); background:var(--grey); display:flex; justify-content:space-between;
+  }
+  .warmup-body{ padding:12px 16px 16px; }
+  .warmup-row{
+    display:flex; justify-content:space-between; gap:12px; font-size:0.88rem; font-weight:600;
+    padding:5px 0; border-bottom:1px dashed rgba(17,17,17,0.25);
+  }
+  .warmup-row:last-child{ border-bottom:none; }
+  .warmup-row .amt{ font-family:'JetBrains Mono', monospace; font-weight:700; white-space:nowrap; }
+
+  .leg-note{
+    margin:16px 26px 0; border:3px solid var(--ink); background:#FFEDED;
+    padding:12px 16px; font-size:0.85rem; font-weight:600; box-shadow: var(--shadow-sm);
+  }
+  .leg-note strong{ font-family:'JetBrains Mono', monospace; text-transform:uppercase; color:var(--red); }
+
+  .ex-list{ padding:6px 0; }
+  .ex-row{
+    display:grid; grid-template-columns: 40px 1fr 100px 110px; align-items:center; gap:14px;
+    padding:14px 26px; border-bottom:2px dashed #cfcabf;
+  }
+  .ex-row:last-child{ border-bottom:none; }
+  .ex-num{
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:0.85rem;
+    width:30px; height:30px; display:flex; align-items:center; justify-content:center; border:2px solid var(--ink);
+  }
+  .ex-name{ font-weight:700; font-size:1rem; }
+  .ex-sets{
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:0.85rem;
+    background:var(--grey); border:2px solid var(--ink); padding:4px 8px; text-align:center;
+  }
+  .ex-watch{
+    font-family:'JetBrains Mono', monospace; font-size:0.72rem; font-weight:700; text-decoration:none; color:var(--ink);
+    background:var(--card); border:2px solid var(--ink); padding:6px 10px; text-align:center;
+    box-shadow: 3px 3px 0 var(--ink); transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .ex-watch:hover{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--ink); background:var(--yellow); }
+
+  .finisher{ margin:0 26px 26px; border:3px solid var(--ink); background:var(--lilac); box-shadow: var(--shadow-sm); }
+  .finisher-head{
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:0.78rem; text-transform:uppercase;
+    padding:10px 16px; border-bottom:3px solid var(--ink); background:var(--ink); color:var(--bg);
+    display:flex; justify-content:space-between;
+  }
+  .finisher-body{ padding:14px 16px 18px; }
+  .finisher-row{
+    display:flex; justify-content:space-between; font-size:0.9rem; font-weight:600;
+    padding:6px 0; border-bottom:1px dashed rgba(17,17,17,0.35);
+  }
+  .finisher-row:last-child{ border-bottom:none; }
+  .finisher-row .amt{ font-family:'JetBrains Mono', monospace; font-weight:700; }
+
+  .rest-day{ padding:34px 26px; display:flex; gap:18px; align-items:center; flex-wrap:wrap; background:var(--grey); }
+  .rest-icon{
+    width:56px; height:56px; border:3px solid var(--ink); background:var(--card);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .rest-day p{ font-size:0.95rem; max-width:600px; margin:0; font-weight:600; }
+
+  .notes{ margin:60px 0 0; border:4px solid var(--ink); background:var(--yellow); box-shadow:10px 10px 0 var(--ink); padding:28px; }
+  .notes h3{ font-family:'JetBrains Mono', monospace; text-transform:uppercase; font-size:1rem; margin:0 0 16px; }
+  .notes ul{ margin:0; padding-left:1.2rem; display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px 30px; }
+  .notes li{ font-weight:600; font-size:0.92rem; }
+
+  footer{
+    margin-top:60px; padding:26px 5vw 50px; font-family:'JetBrains Mono', monospace; font-size:0.72rem;
+    text-transform:uppercase; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;
+  }
+
+  @media(max-width:640px){
+    .ex-row{ grid-template-columns: 30px 1fr; }
+    .ex-sets, .ex-watch{ grid-column: 2; justify-self:start; margin-top:6px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge-row">
+    <span class="badge">5-Day Split</span>
+    <span class="badge" style="background:var(--pink);">Tue + Fri Off</span>
+    <span class="badge" style="background:var(--blue); color:#fff;">Leg-Safe Modified</span>
+  </div>
+  <h1>Weekly <span>Routine</span></h1>
+  <p>Push / Pull / Modified Legs / Upper+Core / Full Body — built around your Sat–Mon, Wed–Thu training week, with leg work kept light and controlled around your old leg injury.</p>
+
+  <div class="caution">
+    <strong>Before you load that leg</strong>
+    Get clearance from your orthopedist or a physiotherapist before adding weight to it at all. This plan avoids jumping, deep loading, and high-impact leg work, but I can't assess your hardware or healed bone — a professional can. Stop immediately and don't push through if anything triggers pain.
+  </div>
+
+  <div class="legend">
+    <span class="chip"><span class="swatch" style="background:var(--yellow);"></span>Push</span>
+    <span class="chip"><span class="swatch" style="background:var(--blue);"></span>Pull</span>
+    <span class="chip"><span class="swatch" style="background:var(--green);"></span>Legs (Modified)</span>
+    <span class="chip"><span class="swatch" style="background:var(--lilac);"></span>Upper + Core</span>
+    <span class="chip"><span class="swatch" style="background:var(--pink);"></span>Full Body</span>
+    <span class="chip"><span class="swatch" style="background:var(--grey);"></span>Off</span>
+  </div>
+</header>
+
+<nav>
+  <a href="#sat">Sat · Push</a>
+  <a href="#sun">Sun · Pull</a>
+  <a href="#mon">Mon · Legs</a>
+  <a href="#tue">Tue · Off</a>
+  <a href="#wed">Wed · Upper+Core</a>
+  <a href="#thu">Thu · Full Body</a>
+  <a href="#fri">Fri · Off</a>
+  <a href="#notes">Notes</a>
+</nav>
+
+<main>
+
+  <!-- SATURDAY -->
+  <div class="day" id="sat">
+    <div class="day-top" style="background:var(--yellow);">
+      <div class="day-id">
+        <span class="day-tag">SAT</span>
+        <div>
+          <h2>Push</h2>
+          <div class="day-focus">Chest · Shoulders · Triceps</div>
+        </div>
+      </div>
+    </div>
+    <div class="warmup">
+      <div class="warmup-head"><span>Warm-Up</span><span>~6-7 min</span></div>
+      <div class="warmup-body">
+        <div class="warmup-row"><span>Light cardio (jog in place / treadmill)</span><span class="amt">3-4 min</span></div>
+        <div class="warmup-row"><span>Arm circles, each direction</span><span class="amt">15 reps</span></div>
+        <div class="warmup-row"><span>Bodyweight squats, easy range</span><span class="amt">10 reps</span></div>
+        <div class="warmup-row"><span>Empty-bar / light bench press ramp-up set</span><span class="amt">1-2 sets</span></div>
+      </div>
+    </div>
+    <div class="ex-list">
+      <div class="ex-row"><span class="ex-num">1</span><span class="ex-name">Bench press <span style="font-weight:500;opacity:0.65;">(or push-ups)</span></span><span class="ex-sets">4x10</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+bench+press+proper+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">2</span><span class="ex-name">Shoulder press</span><span class="ex-sets">3x10</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+dumbbell+shoulder+press+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">3</span><span class="ex-name">Incline dumbbell press</span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+incline+dumbbell+press+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">4</span><span class="ex-name">Lateral raises</span><span class="ex-sets">3x15</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+dumbbell+lateral+raises+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">5</span><span class="ex-name">Tricep pushdowns</span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+tricep+pushdown+cable+form" target="_blank" rel="noopener">Watch</a></div>
+    </div>
+    <div class="finisher">
+      <div class="finisher-head"><span>Conditioning Finisher</span><span>~7-8 min x3 rounds</span></div>
+      <div class="finisher-body">
+        <div class="finisher-row"><span>Punch-out arm circles / shadow boxing</span><span class="amt">30s</span></div>
+        <div class="finisher-row"><span>Push-ups</span><span class="amt">12-15 reps</span></div>
+        <div class="finisher-row"><span>Plank</span><span class="amt">30s</span></div>
+        <div class="finisher-row"><span>Rest between rounds</span><span class="amt">30s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUNDAY -->
+  <div class="day" id="sun">
+    <div class="day-top" style="background:var(--blue); color:#fff;">
+      <div class="day-id">
+        <span class="day-tag" style="background:#fff;">SUN</span>
+        <div>
+          <h2>Pull</h2>
+          <div class="day-focus" style="opacity:0.85;">Back · Biceps</div>
+        </div>
+      </div>
+    </div>
+    <div class="warmup">
+      <div class="warmup-head"><span>Warm-Up</span><span>~6-7 min</span></div>
+      <div class="warmup-body">
+        <div class="warmup-row"><span>Light cardio (jog in place / treadmill)</span><span class="amt">3-4 min</span></div>
+        <div class="warmup-row"><span>Arm circles, each direction</span><span class="amt">15 reps</span></div>
+        <div class="warmup-row"><span>Band pull-aparts or light rows</span><span class="amt">15 reps</span></div>
+        <div class="warmup-row"><span>Light lat pulldown ramp-up set</span><span class="amt">1-2 sets</span></div>
+      </div>
+    </div>
+    <div class="ex-list">
+      <div class="ex-row"><span class="ex-num">1</span><span class="ex-name">Lat pulldown <span style="font-weight:500;opacity:0.65;">(or pull-ups)</span></span><span class="ex-sets">4x10</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+lat+pulldown+proper+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">2</span><span class="ex-name">Barbell / dumbbell rows</span><span class="ex-sets">3x10</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+dumbbell+row+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">3</span><span class="ex-name">Face pulls</span><span class="ex-sets">3x15</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+face+pulls+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">4</span><span class="ex-name">Bicep curls</span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+dumbbell+bicep+curl+form" target="_blank" rel="noopener">Watch</a></div>
+    </div>
+    <div class="finisher">
+      <div class="finisher-head"><span>Conditioning Finisher</span><span>~7-8 min x3 rounds</span></div>
+      <div class="finisher-body">
+        <div class="finisher-row"><span>Seated / standing torso twists</span><span class="amt">20 reps</span></div>
+        <div class="finisher-row"><span>Russian twists (seated, feet down)</span><span class="amt">20 reps</span></div>
+        <div class="finisher-row"><span>Plank</span><span class="amt">30s</span></div>
+        <div class="finisher-row"><span>Rest between rounds</span><span class="amt">30s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MONDAY -->
+  <div class="day" id="mon">
+    <div class="day-top" style="background:var(--green);">
+      <div class="day-id">
+        <span class="day-tag">MON</span>
+        <div>
+          <h2>Legs — Modified</h2>
+          <div class="day-focus">Light &amp; controlled — no jumping, no deep loading</div>
+        </div>
+      </div>
+    </div>
+    <div class="leg-note">
+      <strong>Read first:</strong> No jumping, no plyometrics, no heavy squats or deadlifts. Use light-to-moderate weight, controlled tempo, and a comfortable range of motion only. If anything causes pain or you feel unsteady walking afterward, stop that exercise for good and mention it to your physiotherapist.
+    </div>
+    <div class="warmup">
+      <div class="warmup-head"><span>Warm-Up</span><span>~7-8 min</span></div>
+      <div class="warmup-body">
+        <div class="warmup-row"><span>Easy stationary bike or slow walk</span><span class="amt">4-5 min</span></div>
+        <div class="warmup-row"><span>Ankle circles, both directions</span><span class="amt">10 each</span></div>
+        <div class="warmup-row"><span>Gentle knee bends, pain-free range only</span><span class="amt">10 reps</span></div>
+      </div>
+    </div>
+    <div class="ex-list">
+      <div class="ex-row"><span class="ex-num">1</span><span class="ex-name">Leg press <span style="font-weight:500;opacity:0.65;">(light load, partial range)</span></span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+leg+press+machine+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">2</span><span class="ex-name">Seated leg extension <span style="font-weight:500;opacity:0.65;">(light)</span></span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+seated+leg+extension+machine+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">3</span><span class="ex-name">Seated leg curl <span style="font-weight:500;opacity:0.65;">(light)</span></span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+seated+leg+curl+machine+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">4</span><span class="ex-name">Seated calf raises</span><span class="ex-sets">3x15</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+seated+calf+raise+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">5</span><span class="ex-name">Glute bridge <span style="font-weight:500;opacity:0.65;">(floor, bodyweight)</span></span><span class="ex-sets">3x15</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+glute+bridge+correct+form" target="_blank" rel="noopener">Watch</a></div>
+    </div>
+    <div class="finisher">
+      <div class="finisher-head"><span>Low-Impact Finisher</span><span>~6-8 min, easy pace</span></div>
+      <div class="finisher-body">
+        <div class="finisher-row"><span>Stationary bike or flat treadmill walk</span><span class="amt">6-8 min</span></div>
+        <div class="finisher-row"><span>Seated calf raises (light)</span><span class="amt">1x20</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TUESDAY -->
+  <div class="day" id="tue">
+    <div class="day-top" style="background:var(--grey);">
+      <div class="day-id">
+        <span class="day-tag">TUE</span>
+        <div>
+          <h2>Off</h2>
+          <div class="day-focus">Full rest — no mandatory activity</div>
+        </div>
+      </div>
+      <span class="off-badge">Fully Off</span>
+    </div>
+    <div class="rest-day">
+      <div class="rest-icon">
+        <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="#111" stroke-width="2"><circle cx="16" cy="16" r="12"/><path d="M16 9v7l5 3"/></svg>
+      </div>
+      <p>True rest day. This sits right after your leg session, so let the leg fully settle. A light walk is fine if it feels good, but nothing is required.</p>
+    </div>
+  </div>
+
+  <!-- WEDNESDAY -->
+  <div class="day" id="wed">
+    <div class="day-top" style="background:var(--lilac);">
+      <div class="day-id">
+        <span class="day-tag">WED</span>
+        <div>
+          <h2>Upper Body + Core</h2>
+          <div class="day-focus">Extra upper volume — keeps leg frequency low</div>
+        </div>
+      </div>
+    </div>
+    <div class="warmup">
+      <div class="warmup-head"><span>Warm-Up</span><span>~6-7 min</span></div>
+      <div class="warmup-body">
+        <div class="warmup-row"><span>Light cardio (jog in place / treadmill)</span><span class="amt">3-4 min</span></div>
+        <div class="warmup-row"><span>Arm circles &amp; shoulder rolls</span><span class="amt">15 reps</span></div>
+        <div class="warmup-row"><span>Cat-cow stretch</span><span class="amt">10 reps</span></div>
+      </div>
+    </div>
+    <div class="ex-list">
+      <div class="ex-row"><span class="ex-num">1</span><span class="ex-name">Seated cable rows</span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+seated+cable+row+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">2</span><span class="ex-name">Arnold press</span><span class="ex-sets">3x10</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+arnold+press+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">3</span><span class="ex-name">Cable flyes</span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+cable+chest+fly+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">4</span><span class="ex-name">Hammer curls</span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+hammer+curl+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">5</span><span class="ex-name">Plank</span><span class="ex-sets">3x40s</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+plank+correct+form" target="_blank" rel="noopener">Watch</a></div>
+    </div>
+    <div class="finisher">
+      <div class="finisher-head"><span>Core Finisher</span><span>~7-8 min x3 rounds</span></div>
+      <div class="finisher-body">
+        <div class="finisher-row"><span>Seated Russian twists</span><span class="amt">20 reps</span></div>
+        <div class="finisher-row"><span>Bicycle crunches (slow, controlled)</span><span class="amt">15 reps</span></div>
+        <div class="finisher-row"><span>Plank</span><span class="amt">30s</span></div>
+        <div class="finisher-row"><span>Rest between rounds</span><span class="amt">30s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- THURSDAY -->
+  <div class="day" id="thu">
+    <div class="day-top" style="background:var(--pink);">
+      <div class="day-id">
+        <span class="day-tag">THU</span>
+        <div>
+          <h2>Full Body — Modified</h2>
+          <div class="day-focus">Upper-focused, light hip-hinge, no heavy leg loading</div>
+        </div>
+      </div>
+    </div>
+    <div class="leg-note">
+      <strong>Read first:</strong> Romanian deadlifts here use light weight and a soft knee bend — this is a hip-hinge for the back and hamstrings, not a heavy leg-driving lift. Skip it and swap in extra rows if it aggravates your leg at all.
+    </div>
+    <div class="warmup">
+      <div class="warmup-head"><span>Warm-Up</span><span>~6-7 min</span></div>
+      <div class="warmup-body">
+        <div class="warmup-row"><span>Light cardio (jog in place / treadmill)</span><span class="amt">3-4 min</span></div>
+        <div class="warmup-row"><span>Hip circles</span><span class="amt">10 reps</span></div>
+        <div class="warmup-row"><span>Light Romanian deadlift ramp-up set</span><span class="amt">1-2 sets</span></div>
+      </div>
+    </div>
+    <div class="ex-list">
+      <div class="ex-row"><span class="ex-num">1</span><span class="ex-name">Light Romanian deadlift <span style="font-weight:500;opacity:0.65;">(soft knee, light load)</span></span><span class="ex-sets">3x10</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+romanian+deadlift+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">2</span><span class="ex-name">Push press <span style="font-weight:500;opacity:0.65;">(light load)</span></span><span class="ex-sets">3x10</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+push+press+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">3</span><span class="ex-name">Barbell rows</span><span class="ex-sets">3x10</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+barbell+row+form" target="_blank" rel="noopener">Watch</a></div>
+      <div class="ex-row"><span class="ex-num">4</span><span class="ex-name">Hanging leg raises <span style="font-weight:500;opacity:0.65;">(controlled, no swinging)</span></span><span class="ex-sets">3x12</span><a class="ex-watch" href="https://www.youtube.com/results?search_query=how+to+do+hanging+leg+raises+form" target="_blank" rel="noopener">Watch</a></div>
+    </div>
+    <div class="finisher">
+      <div class="finisher-head"><span>Conditioning Finisher</span><span>~8-10 min x3 rounds</span></div>
+      <div class="finisher-body">
+        <div class="finisher-row"><span>Shadow boxing / arm punches</span><span class="amt">30s</span></div>
+        <div class="finisher-row"><span>Push-ups</span><span class="amt">12-15 reps</span></div>
+        <div class="finisher-row"><span>Seated Russian twists</span><span class="amt">20 reps</span></div>
+        <div class="finisher-row"><span>Plank</span><span class="amt">40s</span></div>
+        <div class="finisher-row"><span>Rest between rounds</span><span class="amt">40s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRIDAY -->
+  <div class="day" id="fri">
+    <div class="day-top" style="background:var(--ink); color:var(--bg);">
+      <div class="day-id">
+        <span class="day-tag" style="background:var(--bg); color:var(--ink);">FRI</span>
+        <div>
+          <h2 style="color:var(--bg);">Off</h2>
+          <div class="day-focus" style="opacity:0.8;">Full rest — no mandatory activity</div>
+        </div>
+      </div>
+      <span class="off-badge">Fully Off</span>
+    </div>
+    <div class="rest-day" style="background:var(--card);">
+      <p style="font-weight:600;">True rest day. Light activity (a walk, swimming) is fine if you feel like it, but nothing here is required.</p>
+    </div>
+  </div>
+
+  <div class="notes" id="notes">
+    <h3>Before you start</h3>
+    <ul>
+      <li>Lift from day 1 — no cardio-only phase needed. Use lighter weight for the first 1-2 weeks while form locks in.</li>
+      <li>Leg day is deliberately light and machine-based — no squats, deadlifts, jumping, or plyometrics, given your old leg injury.</li>
+      <li>Get clearance from your orthopedist/physio before adding any real load to that leg — this plan can't replace that assessment.</li>
+      <li>If any leg exercise causes pain or affects your walking afterward, stop it permanently and flag it to your physiotherapist.</li>
+      <li>You will not get bulkier lifting in a deficit — bulking needs a calorie surplus, and you're eating below maintenance.</li>
+      <li>Finishers come <strong>after</strong> weights, never before.</li>
+      <li>Add weight or 1-2 reps every 2 weeks per lift where pain-free — this is what turns "smaller" into "lean."</li>
+    </ul>
+  </div>
+
+</main>
+
+<footer>
+  <span>Push / Pull / Modified Legs / Upper+Core / Full Body</span>
+  <span>Sat-Sun-Mon-Wed-Thu Train - Tue &amp; Fri Off</span>
+</footer>
+
+</body>
+</html>
