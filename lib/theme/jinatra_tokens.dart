@@ -50,7 +50,7 @@ class JinatraTokens {
   }
 
   static TextStyle monoData({Color color = ink, double fontSize = 13.0, FontWeight fontWeight = FontWeight.w700}) {
-    return GoogleFonts.jetbrainsMono(
+    return GoogleFonts.jetBrainsMono(
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
