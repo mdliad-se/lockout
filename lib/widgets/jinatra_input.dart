@@ -42,10 +42,10 @@ class JinatraInput extends StatelessWidget {
             style: JinatraTokens.bodyText(fontWeight: FontWeight.w600),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: JinatraTokens.bodyText(color: JinatraTokens.ink.withOpacity(0.5)),
+              hintStyle: JinatraTokens.bodyText(color: JinatraTokens.ink.withValues(alpha: 0.5)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               border: InputBorder.none,
-              focusedBorder: const OutlineInputBorder(
+              focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.zero,
                 borderSide: BorderSide(color: JinatraTokens.signal, width: 3.0),
               ),

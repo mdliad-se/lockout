@@ -43,3 +43,16 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Release artifacts — distributed via GitHub Releases, not committed
+*.apk
+*.aab
+/android/build/
+/android/.gradle/
+
+# Spine workflow state (machine-local process bookkeeping)
+.spine/config-asserted
+.spine/progress.md
+.spine/context.md
+.spine/capability-log.md
+.spine/danger-paths

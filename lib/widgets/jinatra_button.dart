@@ -4,8 +4,10 @@ import '../theme/jinatra_tokens.dart';
 class JinatraButton extends StatefulWidget {
   final String label;
   final VoidCallback onPressed;
-  final Color background;
-  final Color textColor;
+  /// Null resolves to the palette primary / onPrimary at build time, so a
+  /// theme switch repaints buttons that never named an explicit colour.
+  final Color? background;
+  final Color? textColor;
   final bool isSignal;
   final IconData? icon;
 
@@ -13,8 +15,8 @@ class JinatraButton extends StatefulWidget {
     super.key,
     required this.label,
     required this.onPressed,
-    this.background = JinatraTokens.deepTeal,
-    this.textColor = Colors.white,
+    this.background,
+    this.textColor,
     this.isSignal = false,
     this.icon,
   });
@@ -28,8 +30,12 @@ class _JinatraButtonState extends State<JinatraButton> {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveBg = widget.isSignal ? JinatraTokens.signal : widget.background;
-    final effectiveText = widget.isSignal ? JinatraTokens.ink : widget.textColor;
+    final effectiveBg = widget.isSignal
+        ? JinatraTokens.signal
+        : (widget.background ?? JinatraTokens.deepTeal);
+    final effectiveText = widget.isSignal
+        ? JinatraTokens.onAccent
+        : (widget.textColor ?? JinatraTokens.onPrimary);
     final offset = _isPressed ? 0.0 : JinatraTokens.shadowSm;
 
     return GestureDetector(

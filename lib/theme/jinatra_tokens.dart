@@ -1,67 +1,90 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'app_palette.dart';
 
+/// Design tokens for the Jinatra neubrutalist system.
+///
+/// Colours resolve through [AppPalette.current] rather than being compile-time
+/// constants, so switching theme repaints the whole app without touching call
+/// sites. That is why none of the colour members are `const`.
 class JinatraTokens {
-  // Brand Colors (Jinatra Product System v1.1)
-  static const Color sweetCream = Color(0xFFFFEACF); // 60% App Canvas
-  static const Color paper = Color(0xFFFFFFFF);      // Card & Input interiors
-  static const Color mistTeal = Color(0xFFE0F0EE);   // Secondary surfaces, stripes
-  static const Color deepTeal = Color(0xFF0A756C);   // Primary actions, active nav
-  static const Color tealDeep = Color(0xFF06554F);   // Pressed Teal state
-  static const Color ink = Color(0xFF1A1A1A);        // Borders, shadows, body text
-  static const Color signal = Color(0xFFFF6B35);     // Warm orange single highlight
+  // Palette-backed colours. Names are historical (sweetCream, deepTeal...) and
+  // map onto the semantic roles defined in AppPalette.
+  static Color get sweetCream => AppPalette.current.canvas;
+  static Color get paper => AppPalette.current.surface;
+  static Color get mistTeal => AppPalette.current.surfaceAlt;
+  static Color get deepTeal => AppPalette.current.primary;
+  static Color get tealDeep => AppPalette.current.primaryPressed;
+  static Color get ink => AppPalette.current.ink;
+  static Color get signal => AppPalette.current.accent;
+
+  /// Text/icon colour for content sitting on [deepTeal].
+  static Color get onPrimary => AppPalette.current.onPrimary;
+
+  /// Text/icon colour for content sitting on [signal].
+  static Color get onAccent => AppPalette.current.onAccent;
+
+  static bool get isDark => AppPalette.current.isDark;
 
   // Border & Shadow Dimensions
   static const double borderControl = 3.0;
   static const double borderHero = 4.0;
   static const double borderDivider = 2.0;
-  
+
   static const double shadowSm = 3.0; // Controls
   static const double shadowMd = 6.0; // Cards
   static const double shadowLg = 10.0; // Hero elements
 
   // Typography Styles
-  static TextStyle displayHeader({Color color = ink, double fontSize = 28.0}) {
+  static TextStyle displayHeader({Color? color, double fontSize = 28.0}) {
     return GoogleFonts.archivo(
       fontSize: fontSize,
       fontWeight: FontWeight.w900,
-      color: color,
+      color: color ?? ink,
       height: 1.02,
       letterSpacing: -0.5,
     );
   }
 
-  static TextStyle sectionHeader({Color color = ink, double fontSize = 20.0}) {
+  static TextStyle sectionHeader({Color? color, double fontSize = 20.0}) {
     return GoogleFonts.archivo(
       fontSize: fontSize,
       fontWeight: FontWeight.w800,
-      color: color,
+      color: color ?? ink,
       height: 1.05,
     );
   }
 
-  static TextStyle bodyText({Color color = ink, double fontSize = 15.0, FontWeight fontWeight = FontWeight.w400}) {
+  static TextStyle bodyText({
+    Color? color,
+    double fontSize = 15.0,
+    FontWeight fontWeight = FontWeight.w400,
+  }) {
     return GoogleFonts.inter(
       fontSize: fontSize,
       fontWeight: fontWeight,
-      color: color,
+      color: color ?? ink,
       height: 1.3,
     );
   }
 
-  static TextStyle monoData({Color color = ink, double fontSize = 13.0, FontWeight fontWeight = FontWeight.w700}) {
+  static TextStyle monoData({
+    Color? color,
+    double fontSize = 13.0,
+    FontWeight fontWeight = FontWeight.w700,
+  }) {
     return GoogleFonts.jetBrainsMono(
       fontSize: fontSize,
       fontWeight: fontWeight,
-      color: color,
+      color: color ?? ink,
       letterSpacing: 0.2,
     );
   }
 
   // Hard Zero-Blur Shadow Helper
-  static BoxShadow hardShadow({double offset = shadowSm, Color shadowColor = ink}) {
+  static BoxShadow hardShadow({double offset = shadowSm, Color? shadowColor}) {
     return BoxShadow(
-      color: shadowColor,
+      color: shadowColor ?? ink,
       offset: Offset(offset, offset),
       blurRadius: 0,
       spreadRadius: 0,
@@ -70,17 +93,38 @@ class JinatraTokens {
 
   // Standard Neubrutalist Box Decoration
   static BoxDecoration cardDecoration({
-    Color background = paper,
-    Color borderColor = ink,
+    Color? background,
+    Color? borderColor,
     double borderWidth = borderControl,
     double shadowOffset = shadowMd,
     bool hasShadow = true,
   }) {
     return BoxDecoration(
-      color: background,
+      color: background ?? paper,
       borderRadius: BorderRadius.zero,
-      border: Border.all(color: borderColor, width: borderWidth),
+      border: Border.all(color: borderColor ?? ink, width: borderWidth),
       boxShadow: hasShadow ? [hardShadow(offset: shadowOffset)] : null,
+    );
+  }
+
+  /// Material theme derived from the active palette, so framework-owned
+  /// surfaces (dialogs, snackbars, text selection) match the neubrutalist set.
+  static ThemeData materialTheme() {
+    final p = AppPalette.current;
+    return ThemeData(
+      scaffoldBackgroundColor: p.canvas,
+      brightness: p.isDark ? Brightness.dark : Brightness.light,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: p.primary,
+        brightness: p.isDark ? Brightness.dark : Brightness.light,
+        primary: p.primary,
+        onPrimary: p.onPrimary,
+        secondary: p.accent,
+        onSecondary: p.onAccent,
+        surface: p.surface,
+        onSurface: p.ink,
+      ),
+      useMaterial3: true,
     );
   }
 }

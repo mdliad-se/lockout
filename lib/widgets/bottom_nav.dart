@@ -24,7 +24,7 @@ class BottomNav extends StatelessWidget {
     ];
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: JinatraTokens.sweetCream,
         border: Border(
           top: BorderSide(color: JinatraTokens.ink, width: JinatraTokens.borderControl),
@@ -47,7 +47,7 @@ class BottomNav extends StatelessWidget {
                     color: isActive ? JinatraTokens.deepTeal : JinatraTokens.sweetCream,
                     border: isActive
                         ? Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderControl)
-                        : const Border(right: BorderSide(color: JinatraTokens.ink, width: 1.0)),
+                        : Border(right: BorderSide(color: JinatraTokens.ink, width: 1.0)),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

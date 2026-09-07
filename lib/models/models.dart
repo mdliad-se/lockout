@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 // Routine Scheduling Mode
 enum SchedulingMode { weekday, rotating }
@@ -47,6 +46,17 @@ class TrainingDay {
   final String name;
   final String tag;
   final int orderIndex;
+
+  /// Muscle groups worked, e.g. "Chest - Shoulders - Triceps". Shown as the
+  /// day's subtitle.
+  final String focus;
+
+  /// Free-text caution or cue for the whole day (injury notes, tempo rules).
+  final String note;
+
+  /// A day explicitly marked as rest rather than simply having no exercises.
+  final bool isRestDay;
+
   final List<WarmupItem> warmups;
   final List<ExerciseDef> exercises;
   final List<FinisherItem> finishers;
@@ -57,6 +67,9 @@ class TrainingDay {
     required this.name,
     required this.tag,
     required this.orderIndex,
+    this.focus = '',
+    this.note = '',
+    this.isRestDay = false,
     this.warmups = const [],
     this.exercises = const [],
     this.finishers = const [],
@@ -69,6 +82,9 @@ class TrainingDay {
       'name': name,
       'tag': tag,
       'order_index': orderIndex,
+      'focus': focus,
+      'note': note,
+      'is_rest_day': isRestDay ? 1 : 0,
     };
   }
 
@@ -79,6 +95,9 @@ class TrainingDay {
       name: map['name'],
       tag: map['tag'],
       orderIndex: map['order_index'],
+      focus: map['focus'] ?? '',
+      note: map['note'] ?? '',
+      isRestDay: map['is_rest_day'] == 1,
     );
   }
 }
@@ -88,6 +107,7 @@ class WarmupItem {
   final String id;
   final String dayId;
   final String name;
+  final int orderIndex;
   final String amt; // e.g. "3-4 min" or "15 reps"
 
   WarmupItem({
@@ -95,6 +115,7 @@ class WarmupItem {
     required this.dayId,
     required this.name,
     required this.amt,
+    this.orderIndex = 0,
   });
 
   Map<String, dynamic> toMap() {
@@ -103,6 +124,7 @@ class WarmupItem {
       'day_id': dayId,
       'name': name,
       'amt': amt,
+      'order_index': orderIndex,
     };
   }
 
@@ -112,6 +134,7 @@ class WarmupItem {
       dayId: map['day_id'],
       name: map['name'],
       amt: map['amt'],
+      orderIndex: map['order_index'] ?? 0,
     );
   }
 }
@@ -128,6 +151,8 @@ class ExerciseDef {
   final int restDefaultS;
   final String note;
   final String videoUrl;
+  final String muscleGroup;
+  final int orderIndex;
 
   ExerciseDef({
     required this.id,
@@ -140,7 +165,42 @@ class ExerciseDef {
     this.restDefaultS = 60,
     this.note = '',
     this.videoUrl = '',
+    this.muscleGroup = '',
+    this.orderIndex = 0,
   });
+
+  ExerciseDef copyWith({
+    String? name,
+    int? targetSets,
+    int? targetRepsMin,
+    int? targetRepsMax,
+    double? targetWeightKg,
+    int? restDefaultS,
+    String? note,
+    String? videoUrl,
+    String? muscleGroup,
+    int? orderIndex,
+  }) {
+    return ExerciseDef(
+      id: id,
+      dayId: dayId,
+      name: name ?? this.name,
+      targetSets: targetSets ?? this.targetSets,
+      targetRepsMin: targetRepsMin ?? this.targetRepsMin,
+      targetRepsMax: targetRepsMax ?? this.targetRepsMax,
+      targetWeightKg: targetWeightKg ?? this.targetWeightKg,
+      restDefaultS: restDefaultS ?? this.restDefaultS,
+      note: note ?? this.note,
+      videoUrl: videoUrl ?? this.videoUrl,
+      muscleGroup: muscleGroup ?? this.muscleGroup,
+      orderIndex: orderIndex ?? this.orderIndex,
+    );
+  }
+
+  /// Compact target label, e.g. "4x8-12" or "3x15".
+  String get targetLabel => targetRepsMin == targetRepsMax
+      ? '${targetSets}x$targetRepsMin'
+      : '${targetSets}x$targetRepsMin-$targetRepsMax';
 
   Map<String, dynamic> toMap() {
     return {
@@ -154,6 +214,8 @@ class ExerciseDef {
       'rest_default_s': restDefaultS,
       'note': note,
       'video_url': videoUrl,
+      'muscle_group': muscleGroup,
+      'order_index': orderIndex,
     };
   }
 
@@ -169,6 +231,8 @@ class ExerciseDef {
       restDefaultS: map['rest_default_s'] ?? 60,
       note: map['note'] ?? '',
       videoUrl: map['video_url'] ?? '',
+      muscleGroup: map['muscle_group'] ?? '',
+      orderIndex: map['order_index'] ?? 0,
     );
   }
 }
@@ -178,6 +242,7 @@ class FinisherItem {
   final String id;
   final String dayId;
   final String name;
+  final int orderIndex;
   final String amt;
 
   FinisherItem({
@@ -185,6 +250,7 @@ class FinisherItem {
     required this.dayId,
     required this.name,
     required this.amt,
+    this.orderIndex = 0,
   });
 
   Map<String, dynamic> toMap() {
@@ -193,6 +259,7 @@ class FinisherItem {
       'day_id': dayId,
       'name': name,
       'amt': amt,
+      'order_index': orderIndex,
     };
   }
 
@@ -202,6 +269,7 @@ class FinisherItem {
       dayId: map['day_id'],
       name: map['name'],
       amt: map['amt'],
+      orderIndex: map['order_index'] ?? 0,
     );
   }
 }
@@ -209,7 +277,17 @@ class FinisherItem {
 // Completed Set Log
 class SetLog {
   final String id;
+
+  /// Id of the routine [ExerciseDef] this set belongs to. Empty for ad-hoc
+  /// exercises added mid-session that were never part of a saved routine.
   final String sessionExerciseId;
+
+  /// Owning [SessionLog.id] — how the Log tab groups sets back into a workout.
+  final String sessionId;
+
+  /// Denormalised so history stays readable after a routine is edited/deleted.
+  final String exerciseName;
+
   final int setIndex;
   final double weightKg;
   final int reps;
@@ -218,16 +296,22 @@ class SetLog {
   SetLog({
     required this.id,
     required this.sessionExerciseId,
+    required this.sessionId,
+    required this.exerciseName,
     required this.setIndex,
     required this.weightKg,
     required this.reps,
     this.isCompleted = false,
   });
 
+  double get volumeKg => weightKg * reps;
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'session_exercise_id': sessionExerciseId,
+      'session_id': sessionId,
+      'exercise_name': exerciseName,
       'set_index': setIndex,
       'weight_kg': weightKg,
       'reps': reps,
@@ -238,7 +322,9 @@ class SetLog {
   factory SetLog.fromMap(Map<String, dynamic> map) {
     return SetLog(
       id: map['id'],
-      sessionExerciseId: map['session_exercise_id'],
+      sessionExerciseId: map['session_exercise_id'] ?? '',
+      sessionId: map['session_id'] ?? '',
+      exerciseName: map['exercise_name'] ?? '',
       setIndex: map['set_index'],
       weightKg: (map['weight_kg'] as num).toDouble(),
       reps: map['reps'],
@@ -256,6 +342,11 @@ class SessionLog {
   final double totalVolumeKg;
   final String status; // 'completed', 'skipped', 'rescheduled'
 
+  /// Provenance of the session; empty for a custom (unscheduled) workout.
+  final String routineId;
+  final String dayId;
+  final int totalSets;
+
   SessionLog({
     required this.id,
     required this.dayName,
@@ -263,7 +354,16 @@ class SessionLog {
     required this.durationSeconds,
     required this.totalVolumeKg,
     required this.status,
+    this.routineId = '',
+    this.dayId = '',
+    this.totalSets = 0,
   });
+
+  String get durationLabel {
+    final mins = durationSeconds ~/ 60;
+    if (mins < 60) return '$mins min';
+    return '${mins ~/ 60}h ${mins % 60}m';
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -273,6 +373,9 @@ class SessionLog {
       'duration_seconds': durationSeconds,
       'total_volume_kg': totalVolumeKg,
       'status': status,
+      'routine_id': routineId,
+      'day_id': dayId,
+      'total_sets': totalSets,
     };
   }
 
@@ -284,6 +387,9 @@ class SessionLog {
       durationSeconds: map['duration_seconds'],
       totalVolumeKg: (map['total_volume_kg'] as num).toDouble(),
       status: map['status'],
+      routineId: map['routine_id'] ?? '',
+      dayId: map['day_id'] ?? '',
+      totalSets: map['total_sets'] ?? 0,
     );
   }
 }

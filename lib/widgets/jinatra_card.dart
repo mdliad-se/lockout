@@ -3,7 +3,8 @@ import '../theme/jinatra_tokens.dart';
 
 class JinatraCard extends StatelessWidget {
   final Widget child;
-  final Color background;
+  /// Null resolves to the palette surface colour at build time.
+  final Color? background;
   final double shadowOffset;
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry margin;
@@ -11,7 +12,7 @@ class JinatraCard extends StatelessWidget {
   const JinatraCard({
     super.key,
     required this.child,
-    this.background = JinatraTokens.paper,
+    this.background,
     this.shadowOffset = JinatraTokens.shadowMd,
     this.padding = const EdgeInsets.all(16),
     this.margin = const EdgeInsets.only(bottom: 16),
