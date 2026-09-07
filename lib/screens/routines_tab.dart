@@ -29,6 +29,11 @@ class RoutinesTabState extends State<RoutinesTab> {
   String _activeRoutineId = '';
   bool _isLoading = true;
 
+  /// Days currently expanded. Every day rendered open at once turned a 4-day
+  /// plan into an unreadable scroll, so days collapse to a summary row and
+  /// today's day is opened automatically.
+  final Set<String> _expandedDays = {};
+
   @override
   void initState() {
     super.initState();
@@ -83,6 +88,16 @@ class RoutinesTabState extends State<RoutinesTab> {
         ..addAll(finishers);
       _activeRoutineId = active == null ? '' : active['id'] as String;
       _isLoading = false;
+
+      // Open today's day so the screen lands on what matters now.
+      final todayCode = ScheduleService.weekdayCode(DateTime.now());
+      for (final dayList in days.values) {
+        for (final d in dayList) {
+          if (d.tag.toUpperCase() == todayCode && !d.isRestDay) {
+            _expandedDays.add(d.id);
+          }
+        }
+      }
     });
   }
 
@@ -911,215 +926,313 @@ class RoutinesTabState extends State<RoutinesTab> {
     final finishers = _dayFinishers[day.id] ?? [];
     final accent = DayPalette.forDay(day);
     final onAccent = DayPalette.onColorFor(day);
+    final isOpen = _expandedDays.contains(day.id);
+
+    final setCount = exercises.fold<int>(0, (sum, e) => sum + e.targetSets);
+    // Kept terse: the count must survive on one line next to a long focus.
+    final summary = day.isRestDay
+        ? 'REST'
+        : exercises.isEmpty
+            ? 'EMPTY'
+            : '${exercises.length} EX - $setCount SETS';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: JinatraTokens.sweetCream,
+        color: JinatraTokens.paper,
         border: Border.all(
           color: isToday ? JinatraTokens.deepTeal : JinatraTokens.ink,
-          width: isToday ? 4 : 3,
+          width: isToday ? 3 : 2,
         ),
-        boxShadow: [JinatraTokens.hardShadow(offset: 4)],
+        boxShadow: [JinatraTokens.hardShadow(offset: isOpen ? 4 : 2)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Day header — tag chip, name, focus subtitle
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: JinatraTokens.paper,
-              border: Border(
-                bottom: BorderSide(color: JinatraTokens.ink, width: 3),
-              ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: accent,
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
-                    boxShadow: [JinatraTokens.hardShadow(offset: 2)],
+          // --- Summary row: the whole thing is the expand target ---
+          GestureDetector(
+            onTap: () => setState(() {
+              if (isOpen) {
+                _expandedDays.remove(day.id);
+              } else {
+                _expandedDays.add(day.id);
+              }
+            }),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              // The whole bar carries the day's colour, as in the printed
+              // plan — a small tinted chip did not separate days enough.
+              color: accent,
+              padding: const EdgeInsets.all(11),
+              child: Row(
+                children: [
+                  Container(
+                    width: 46,
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: onAccent,
+                      border: Border.all(color: JinatraTokens.ink, width: 2),
+                    ),
+                    child: Text(day.tag,
+                        style: JinatraTokens.monoData(
+                            fontSize: 11, color: accent)),
                   ),
-                  child: Text(day.tag,
-                      style: JinatraTokens.monoData(
-                          fontSize: 12, color: onAccent)),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        day.isRestDay ? '${day.name} (Rest)' : day.name,
-                        style: JinatraTokens.displayHeader(fontSize: 19),
-                      ),
-                      if (day.focus.isNotEmpty) ...[
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                day.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: JinatraTokens.sectionHeader(
+                                    fontSize: 16, color: onAccent),
+                              ),
+                            ),
+                            if (isToday) ...[
+                              const SizedBox(width: 7),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: onAccent,
+                                  border: Border.all(
+                                      color: JinatraTokens.ink, width: 1),
+                                ),
+                                child: Text('TODAY',
+                                    style: JinatraTokens.monoData(
+                                        fontSize: 7, color: accent)),
+                              ),
+                            ],
+                          ],
+                        ),
                         const SizedBox(height: 2),
-                        Text(day.focus,
-                            style: JinatraTokens.bodyText(
-                              fontSize: 12,
-                              color: JinatraTokens.ink.withValues(alpha: 0.7),
-                            )),
-                      ],
-                      if (isToday) ...[
-                        const SizedBox(height: 5),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: JinatraTokens.deepTeal,
-                            border:
-                                Border.all(color: JinatraTokens.ink, width: 1),
-                          ),
-                          child: Text('TODAY',
+                        Row(
+                          children: [
+                            // Only the focus may truncate; the exercise and
+                            // set count always stays readable.
+                            if (day.focus.isNotEmpty)
+                              Flexible(
+                                child: Text(
+                                  day.focus,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: JinatraTokens.monoData(
+                                    fontSize: 9,
+                                    color: onAccent.withValues(alpha: 0.8),
+                                  ),
+                                ),
+                              ),
+                            if (day.focus.isNotEmpty)
+                              Text('  -  ',
+                                  style: JinatraTokens.monoData(
+                                    fontSize: 9,
+                                    color: onAccent.withValues(alpha: 0.8),
+                                  )),
+                            Text(
+                              summary,
                               style: JinatraTokens.monoData(
-                                  fontSize: 8,
-                                  color: JinatraTokens.onPrimary)),
+                                fontSize: 9,
+                                color: onAccent.withValues(alpha: 0.95),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
+                    ),
+                  ),
+                  Icon(
+                    isOpen ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: onAccent,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          if (isOpen) _buildDayDetail(routine, day, exercises, warmups,
+              finishers, accent, onAccent),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayDetail(
+    Routine routine,
+    TrainingDay day,
+    List<ExerciseDef> exercises,
+    List<WarmupItem> warmups,
+    List<FinisherItem> finishers,
+    Color accent,
+    Color onAccent,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(11, 4, 11, 11),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: JinatraTokens.ink, width: 2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (day.note.isNotEmpty)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 8, bottom: 4),
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: JinatraTokens.signal,
+                border: Border.all(color: JinatraTokens.ink, width: 2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('READ FIRST',
+                      style: JinatraTokens.monoData(
+                          fontSize: 9, color: JinatraTokens.onAccent)),
+                  const SizedBox(height: 3),
+                  Text(day.note,
+                      style: JinatraTokens.bodyText(
+                          fontSize: 12, color: JinatraTokens.onAccent)),
+                ],
+              ),
+            ),
+
+          if (day.isRestDay)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Row(
+                children: [
+                  Icon(Icons.bedtime_outlined,
+                      size: 18, color: JinatraTokens.ink),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text('Recovery is part of the plan.',
+                        style: JinatraTokens.bodyText(
+                          fontSize: 12,
+                          color: JinatraTokens.ink.withValues(alpha: 0.7),
+                        )),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            // --- Warm-up ---
+            if (warmups.isEmpty)
+              AddLink(
+                label: '+ ADD WARM-UP',
+                onTap: () => _addSubItem(
+                    dayId: day.id, isWarmup: true, index: 0),
+              )
+            else ...[
+              SectionHeading(
+                title: 'Warm-Up',
+                amount: '~6-8 min',
+                onAdd: () => _addSubItem(
+                    dayId: day.id, isWarmup: true, index: warmups.length),
+              ),
+              ...warmups.asMap().entries.map((e) => SubItemRow(
+                    name: e.value.name,
+                    amt: e.value.amt,
+                    onRemove: () async {
+                      await DatabaseService.instance
+                          .deleteWarmup(e.value.id);
+                      await _loadAllRoutinesData();
+                    },
+                  )),
+              const SizedBox(height: 6),
+            ],
+
+            // --- Exercises ---
+            SectionHeading(
+              title: 'Exercises',
+              amount: exercises.isEmpty ? '' : '${exercises.length}',
+            ),
+            if (exercises.isEmpty)
+              AddLink(
+                label: '+ ADD EXERCISE',
+                onTap: () => _addExerciseToDay(day.id),
+              )
+            else ...[
+              ...exercises.asMap().entries.map(
+                    (e) => _buildExerciseRow(
+                        e.key + 1, e.value, accent, onAccent),
+                  ),
+              AddLink(
+                label: '+ ADD EXERCISE',
+                onTap: () => _addExerciseToDay(day.id),
+              ),
+            ],
+
+            // --- Finisher ---
+            if (finishers.isEmpty)
+              AddLink(
+                label: '+ ADD FINISHER',
+                onTap: () => _addSubItem(
+                    dayId: day.id, isWarmup: false, index: 0),
+              )
+            else ...[
+              SectionHeading(
+                title: 'Conditioning Finisher',
+                amount: 'x3 rounds',
+                onAdd: () => _addSubItem(
+                    dayId: day.id, isWarmup: false, index: finishers.length),
+              ),
+              ...finishers.asMap().entries.map((e) => SubItemRow(
+                    name: e.value.name,
+                    amt: e.value.amt,
+                    onRemove: () async {
+                      await DatabaseService.instance
+                          .deleteFinisher(e.value.id);
+                      await _loadAllRoutinesData();
+                    },
+                  )),
+            ],
+          ],
+
+          // --- Day actions, only while open ---
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () => _showDayModal(routine.id, existing: day),
+                  behavior: HitTestBehavior.opaque,
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined,
+                          size: 14, color: JinatraTokens.ink),
+                      const SizedBox(width: 5),
+                      Text('EDIT DAY',
+                          style: JinatraTokens.monoData(fontSize: 9)),
                     ],
                   ),
                 ),
-                GestureDetector(
-                  onTap: () => _showDayModal(routine.id, existing: day),
-                  child: Icon(Icons.edit_outlined,
-                      size: 18, color: JinatraTokens.ink),
-                ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 18),
                 GestureDetector(
                   onTap: () async {
                     await DatabaseService.instance.deleteDay(day.id);
                     await _loadAllRoutinesData();
                   },
-                  child: Icon(Icons.close, size: 18, color: JinatraTokens.ink),
+                  behavior: HitTestBehavior.opaque,
+                  child: Row(
+                    children: [
+                      Icon(Icons.close, size: 14, color: JinatraTokens.signal),
+                      const SizedBox(width: 5),
+                      Text('DELETE DAY',
+                          style: JinatraTokens.monoData(
+                              fontSize: 9, color: JinatraTokens.signal)),
+                    ],
+                  ),
                 ),
-              ],
-            ),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (day.note.isNotEmpty)
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: JinatraTokens.signal,
-                      border: Border.all(color: JinatraTokens.ink, width: 2),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('READ FIRST',
-                            style: JinatraTokens.monoData(
-                                fontSize: 10, color: JinatraTokens.onAccent)),
-                        const SizedBox(height: 4),
-                        Text(day.note,
-                            style: JinatraTokens.bodyText(
-                                fontSize: 12, color: JinatraTokens.onAccent)),
-                      ],
-                    ),
-                  ),
-                if (day.isRestDay)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 22),
-                    decoration: BoxDecoration(
-                      color: JinatraTokens.mistTeal,
-                      border: Border.all(color: JinatraTokens.ink, width: 2),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(Icons.bedtime_outlined,
-                            size: 26, color: JinatraTokens.ink),
-                        const SizedBox(height: 6),
-                        Text('REST DAY',
-                            style: JinatraTokens.monoData(fontSize: 12)),
-                        const SizedBox(height: 2),
-                        Text('Recovery is part of the plan.',
-                            style: JinatraTokens.bodyText(
-                              fontSize: 11,
-                              color: JinatraTokens.ink.withValues(alpha: 0.65),
-                            )),
-                      ],
-                    ),
-                  )
-                else ...[
-                  DaySubBlock(
-                    title: 'Warm-Up',
-                    amount: warmups.isEmpty ? '' : '~6-8 min',
-                    headerColor: JinatraTokens.mistTeal,
-                    headerTextColor: JinatraTokens.ink,
-                    rows:
-                        warmups.map((w) => (name: w.name, amt: w.amt)).toList(),
-                    onAdd: () => _addSubItem(
-                        dayId: day.id, isWarmup: true, index: warmups.length),
-                    onRemove: (i) async {
-                      await DatabaseService.instance
-                          .deleteWarmup(warmups[i].id);
-                      await _loadAllRoutinesData();
-                    },
-                  ),
-
-                  // Numbered exercise rows with a WATCH pill, as in the plan.
-                  ...exercises.asMap().entries.map(
-                        (e) => _buildExerciseRow(
-                            e.key + 1, e.value, accent, onAccent),
-                      ),
-                  if (exercises.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Text('No exercises on this day yet.',
-                          style: JinatraTokens.bodyText(
-                            fontSize: 12,
-                            color: JinatraTokens.ink.withValues(alpha: 0.6),
-                          )),
-                    ),
-                  GestureDetector(
-                    onTap: () => _addExerciseToDay(day.id),
-                    child: Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: JinatraTokens.mistTeal,
-                        border: Border.all(color: JinatraTokens.ink, width: 2),
-                      ),
-                      child: Center(
-                        child: Text('+ EXERCISE',
-                            style: JinatraTokens.monoData(fontSize: 10)),
-                      ),
-                    ),
-                  ),
-
-                  DaySubBlock(
-                    title: 'Conditioning Finisher',
-                    amount: finishers.isEmpty ? '' : 'x3 rounds',
-                    headerColor: accent,
-                    headerTextColor: onAccent,
-                    rows: finishers
-                        .map((f) => (name: f.name, amt: f.amt))
-                        .toList(),
-                    onAdd: () => _addSubItem(
-                        dayId: day.id,
-                        isWarmup: false,
-                        index: finishers.length),
-                    onRemove: (i) async {
-                      await DatabaseService.instance
-                          .deleteFinisher(finishers[i].id);
-                      await _loadAllRoutinesData();
-                    },
-                  ),
-                ],
               ],
             ),
           ),
@@ -1128,79 +1241,77 @@ class RoutinesTabState extends State<RoutinesTab> {
     );
   }
 
+  /// Number, name, then target and WATCH on a second line — a long name and a
+  /// target chip competing for one row forced three-line wraps.
   Widget _buildExerciseRow(
       int number, ExerciseDef ex, Color accent, Color onAccent) {
     return GestureDetector(
       onTap: () => _showExerciseSheet(ex),
+      behavior: HitTestBehavior.opaque,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(10),
+        margin: const EdgeInsets.only(bottom: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
         decoration: BoxDecoration(
-          color: JinatraTokens.paper,
+          color: JinatraTokens.sweetCream,
           border: Border.all(color: JinatraTokens.ink, width: 2),
-          boxShadow: [JinatraTokens.hardShadow(offset: 2)],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 24,
-              height: 24,
+              width: 20,
+              height: 20,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: accent,
-                border: Border.all(color: JinatraTokens.ink, width: 2),
+                border: Border.all(color: JinatraTokens.ink, width: 1),
               ),
               child: Text('$number',
                   style:
-                      JinatraTokens.monoData(fontSize: 10, color: onAccent)),
+                      JinatraTokens.monoData(fontSize: 9, color: onAccent)),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 9),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(ex.name,
-                      style: JinatraTokens.bodyText(
-                          fontWeight: FontWeight.w700, fontSize: 14)),
-                  if (ex.note.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      ex.note,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: JinatraTokens.monoData(
-                        fontSize: 9,
-                        color: JinatraTokens.ink.withValues(alpha: 0.6),
-                      ),
+                  Text(
+                    ex.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: JinatraTokens.bodyText(
+                        fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    ex.targetWeightKg > 0
+                        ? '${ex.targetLabel} @ ${ex.targetWeightKg}kg'
+                        : ex.targetLabel,
+                    style: JinatraTokens.monoData(
+                      fontSize: 10,
+                      color: JinatraTokens.ink.withValues(alpha: 0.7),
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              ex.targetWeightKg > 0
-                  ? '${ex.targetLabel} @ ${ex.targetWeightKg}kg'
-                  : ex.targetLabel,
-              textAlign: TextAlign.right,
-              style: JinatraTokens.monoData(fontSize: 11),
-            ),
-            const SizedBox(width: 8),
             GestureDetector(
               onTap: () => _openVideo(ex.name, ex.videoUrl),
+              behavior: HitTestBehavior.opaque,
               child: Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
                 decoration: BoxDecoration(
-                  color: JinatraTokens.sweetCream,
+                  color: JinatraTokens.paper,
                   border: Border.all(color: JinatraTokens.ink, width: 2),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.play_arrow, size: 12, color: JinatraTokens.ink),
+                    Icon(Icons.play_arrow, size: 11, color: JinatraTokens.ink),
                     const SizedBox(width: 3),
-                    Text('WATCH', style: JinatraTokens.monoData(fontSize: 9)),
+                    Text('WATCH', style: JinatraTokens.monoData(fontSize: 8)),
                   ],
                 ),
               ),
