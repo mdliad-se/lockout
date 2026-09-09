@@ -7,11 +7,13 @@ import '../theme/jinatra_tokens.dart';
 /// Two rules, in this order:
 ///  1. A day proposes the accent for its category, so Push/Pull/Legs keep a
 ///     recognisable colour across routines and across themes.
-///  2. Within one routine, no two training days may share a colour. v1 broke
-///     here: "Upper Body + Core" and "Upper Body" are both category 5, so
-///     both rendered the same magenta and the week stopped being scannable.
-///     A day whose category accent is already taken walks forward to the
-///     first free one.
+///  2. Within one routine, no two training days may share a colour while a
+///     free slot remains. v1 broke here: "Upper Body + Core" and "Upper
+///     Body" are both category 5, so both rendered the same magenta and the
+///     week stopped being scannable. A day whose category accent is already
+///     taken walks forward to the first free slot; once every slot is in
+///     use, colours repeat deterministically. Either way, a training day
+///     never receives the colour reserved for rest days.
 ///
 /// Colours come from the palette's authored ramp rather than HSL rotation of
 /// the primary — rotation produced muddy mid-tones in several themes and
@@ -55,10 +57,13 @@ class DayColours {
     // Some themes' authored ramp happens to reuse the same colour as the
     // muted rest surface (e.g. Paper Press's yellow accent equals its
     // surfaceAlt). Reserve those slots up front so a training day can never
-    // be handed the rest colour by coincidence.
+    // be handed the rest colour by coincidence — this holds no matter how
+    // many training days are in the list.
+    final reserved = <int>{};
     for (var i = 0; i < ramp.length; i++) {
-      if (ramp[i] == restColour) taken.add(i);
+      if (ramp[i] == restColour) reserved.add(i);
     }
+    taken.addAll(reserved);
 
     for (final day in days) {
       if (day.isRestDay) {
@@ -67,20 +72,37 @@ class DayColours {
       }
 
       final seed = categoryOf(day) % ramp.length;
+
+      // Walk forward from the category seed to the first slot not yet in
+      // use (reserved slots count as in-use from the start). Bounded by
+      // ramp.length so a fully saturated ramp can't spin forever.
       var slot = seed;
-      // Walk forward to the first free slot. Once every slot is taken — more
-      // than eight training days in one routine, possible with a rotating
-      // schedule — fall back to the category colour and allow the reuse.
-      if (taken.length < ramp.length) {
-        var steps = 0;
-        while (taken.contains(slot) && steps < ramp.length) {
-          slot = (slot + 1) % ramp.length;
-          steps++;
-        }
+      var steps = 0;
+      while (taken.contains(slot) && steps < ramp.length) {
+        slot = (slot + 1) % ramp.length;
+        steps++;
       }
 
-      taken.add(slot);
-      result[day.id] = ramp[slot];
+      if (!taken.contains(slot)) {
+        taken.add(slot);
+        result[day.id] = ramp[slot];
+        continue;
+      }
+
+      // Saturated: every slot — reserved or not — is already in use.
+      // Colours may now repeat, but never the reserved one. Walk again from
+      // the same seed, this time stepping only around reserved slots; the
+      // outcome depends solely on the seed and the palette, so repeated
+      // calls with the same days stay identical. If a palette had every
+      // accent equal to restColour, this bottoms out back at the seed
+      // instead of looping forever.
+      var reuse = seed;
+      var reuseSteps = 0;
+      while (reserved.contains(reuse) && reuseSteps < ramp.length) {
+        reuse = (reuse + 1) % ramp.length;
+        reuseSteps++;
+      }
+      result[day.id] = ramp[reuse];
     }
 
     return result;

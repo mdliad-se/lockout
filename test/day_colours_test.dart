@@ -100,6 +100,53 @@ void main() {
         DayColours.assign(routineB)['b1'],
       );
     });
+
+    // Paper Press's accents[1] (#FFE24A) is bit-identical to restColour. Once
+    // the ramp saturates, an overflow day must still never land on it.
+    List<TrainingDay> _nineDayOverflowWeek() => [
+          _day('d0', 'Push', focus: 'Chest', order: 0),
+          _day('d1', 'Pull', focus: 'Back', order: 1),
+          _day('d2', 'Legs', focus: 'Legs', order: 2),
+          _day('d3', 'Shoulders', focus: 'Delts', order: 3),
+          _day('d4', 'Arms', focus: 'Triceps', order: 4),
+          _day('d5', 'Upper Body', focus: 'Upper', order: 5),
+          _day('d6', 'Push', focus: 'Chest', order: 6),
+          _day('d7', 'Pull', focus: 'Back', order: 7),
+          _day('d8', 'Legs', focus: 'Legs', order: 8),
+        ];
+
+    test('a 9-day week never hands a training day the rest colour, even '
+        'once the ramp saturates', () {
+      AppPalette.apply(AppPalette.paperPress);
+      final colours = DayColours.assign(_nineDayOverflowWeek());
+      for (final day in _nineDayOverflowWeek()) {
+        expect(colours[day.id], isNot(DayColours.restColour), reason: day.id);
+      }
+    });
+
+    test('the same 9-day week assigns identically on repeat calls', () {
+      AppPalette.apply(AppPalette.paperPress);
+      final a = DayColours.assign(_nineDayOverflowWeek());
+      final b = DayColours.assign(_nineDayOverflowWeek());
+      expect(a, b);
+    });
+
+    test('a 7-training-day week fills every non-reserved slot distinctly', () {
+      AppPalette.apply(AppPalette.paperPress);
+      final week = [
+        _day('e0', 'Push', focus: 'Chest', order: 0),
+        _day('e1', 'Pull', focus: 'Back', order: 1),
+        _day('e2', 'Legs', focus: 'Legs', order: 2),
+        _day('e3', 'Shoulders', focus: 'Delts', order: 3),
+        _day('e4', 'Arms', focus: 'Triceps', order: 4),
+        _day('e5', 'Upper Body', focus: 'Upper', order: 5),
+        _day('e6', 'Push', focus: 'Chest', order: 6),
+      ];
+      final colours = DayColours.assign(week);
+      final used = week.map((d) => colours[d.id]).toList();
+      expect(used.toSet().length, 7);
+      expect(used.contains(DayColours.restColour), isFalse);
+    });
   });
 
   group('DayColours.categoryOf', () {
