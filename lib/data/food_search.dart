@@ -140,10 +140,12 @@ class TextSearch {
       tokens.map((t) => aliases[t] ?? t).toList();
 
   /// Semantic groups: a canonical query token that names a group is
-  /// satisfied when the candidate's canonicalised name (or the fields the
-  /// caller searches alongside it) contains ANY concrete member of that
-  /// group's set — e.g. Bengali "mangsho" ("meat") is satisfied by
-  /// "Chicken Curry" because "chicken" is a member of the "meat" group.
+  /// satisfied when the candidate's canonicalised NAME contains ANY concrete
+  /// member of that group's set — e.g. Bengali "mangsho" ("meat") is
+  /// satisfied by "Chicken Curry" because "chicken" is a member of the
+  /// "meat" group. Group expansion reaches the name only: the category and
+  /// ingredient bands match raw query tokens, so "mangsho wonton" finds
+  /// nothing even though Wonton Soup lists chicken broth as an ingredient.
   /// It is never satisfied merely because a *different* query token matched
   /// something else; every token, including group tokens, is still required
   /// by the `.every(...)` checks in `_score`. Adding a new group later is a
