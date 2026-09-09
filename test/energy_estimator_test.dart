@@ -88,6 +88,31 @@ void main() {
         '',
       );
     });
+
+    test('a specific compound family beats the generic upper/full match', () {
+      expect(
+        EnergyEstimator.dominantGroup(
+          sets: const [],
+          dayName: 'Upper Body Push',
+        ),
+        'Chest',
+      );
+      expect(
+        EnergyEstimator.dominantGroup(sets: const [], dayName: 'Upper Body'),
+        'Chest',
+      );
+      expect(
+        EnergyEstimator.dominantGroup(sets: const [], dayName: 'Full Body'),
+        'Full Body',
+      );
+      expect(
+        EnergyEstimator.dominantGroup(
+          sets: const [],
+          dayName: 'Lower Body Pull',
+        ),
+        'Legs',
+      );
+    });
   });
 
   group('kcal', () {

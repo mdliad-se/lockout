@@ -227,13 +227,14 @@ class TodayTabState extends State<TodayTab> {
     final sched = _scheduled;
 
     // Only completed sets are archived — an untouched set is not a data point.
+    final sessionSets = <SetLog>[];
     final setRows = <Map<String, dynamic>>[];
     var seq = 0;
     for (final ex in _liveExercises) {
       for (var i = 0; i < ex.sets.length; i++) {
         final s = ex.sets[i];
         if (!s.completed) continue;
-        setRows.add(SetLog(
+        final setLog = SetLog(
           id: '$sessionId-${seq++}',
           sessionExerciseId: ex.exerciseId,
           sessionId: sessionId,
@@ -242,7 +243,9 @@ class TodayTabState extends State<TodayTab> {
           weightKg: s.weightKg,
           reps: s.reps,
           isCompleted: true,
-        ).toMap());
+        );
+        sessionSets.add(setLog);
+        setRows.add(setLog.toMap());
       }
     }
 
@@ -255,7 +258,7 @@ class TodayTabState extends State<TodayTab> {
             : null);
 
     final burn = EnergyEstimator.estimate(
-      sets: setRows.map(SetLog.fromMap).toList(),
+      sets: sessionSets,
       dayName: _sessionTitle,
       bodyweightKg: bodyweightKg,
       durationSeconds: duration,
