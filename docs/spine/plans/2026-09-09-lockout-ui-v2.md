@@ -931,7 +931,9 @@ class SheetScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final inset = MediaQuery.of(context).viewInsets.bottom;
+    // maybeOf, not of: the keyboard inset is a nicety, and a sheet built
+    // outside showJinatraSheet must not crash for want of a MediaQuery.
+    final inset = MediaQuery.maybeOf(context)?.viewInsets.bottom ?? 0.0;
 
     return Container(
       padding: EdgeInsets.only(bottom: inset),
