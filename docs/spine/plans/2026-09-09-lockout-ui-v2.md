@@ -1741,14 +1741,17 @@ class EnergyEstimator {
       return 'Legs';
     }
     if (key.contains('glute') || key.contains('hip')) return 'Glutes';
-    if (key.contains('full') || key.contains('upper')) return 'Full Body';
+    // Specific families before the generic ones: "Upper Body Push" is push
+    // work at MET 5.0, not full-body work at 6.0.
     if (key.contains('push') || key.contains('chest')) return 'Chest';
     if (key.contains('pull') || key.contains('back')) return 'Back';
     if (key.contains('shoulder') || key.contains('delt')) return 'Shoulders';
-    if (key.contains('core') || key.contains('abs')) return 'Core';
     if (key.contains('arm') || key.contains('bicep') || key.contains('tricep')) {
       return 'Biceps';
     }
+    if (key.contains('core') || key.contains('abs')) return 'Core';
+    if (key.contains('full')) return 'Full Body';
+    if (key.contains('upper')) return 'Chest';
     return '';
   }
 
