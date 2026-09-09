@@ -148,9 +148,15 @@ void main() {
     });
 
     test('an alias or fuzzy hit says how it matched', () {
-      final hit = searchFoods('ruti').first;
-      expect(hit.matchedVia, isNotNull);
-      expect(hit.matchedVia, contains('ruti'));
+      // 'ruti' now literally names 'Ruti (Atta, large)' (added in the audit),
+      // so that entry legitimately ranks first with matchedVia == null. The
+      // entry this test actually cares about — found only via the alias
+      // table, not a literal name — is 'Roti / Chapati'.
+      final hits = searchFoods('ruti');
+      final aliasHit =
+          hits.firstWhere((h) => h.item.name == 'Roti / Chapati');
+      expect(aliasHit.matchedVia, isNotNull);
+      expect(aliasHit.matchedVia, contains('ruti'));
     });
 
     test('an exact hit needs no explanation', () {
