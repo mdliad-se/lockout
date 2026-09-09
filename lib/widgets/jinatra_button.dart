@@ -51,7 +51,7 @@ class _JinatraButtonState extends State<JinatraButton> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
           color: effectiveBg,
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(JinatraTokens.radiusPill),
           border: Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderControl),
           boxShadow: [JinatraTokens.hardShadow(offset: offset)],
         ),

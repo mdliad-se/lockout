@@ -43,7 +43,9 @@ Future<PickedFood?> showFoodPicker(BuildContext context) {
     context: context,
     isScrollControlled: true,
     backgroundColor: JinatraTokens.sweetCream,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
+    ),
     builder: (_) => const _FoodPickerSheet(),
   );
 }
@@ -87,7 +89,9 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
       context: context,
       isScrollControlled: true,
       backgroundColor: JinatraTokens.sweetCream,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
+      ),
       builder: (ctx) => StatefulBuilder(
         builder: (context, setSheet) {
           final scaled = PickedFood.fromLibrary(food, servings);

@@ -41,7 +41,9 @@ Future<PickedExercise?> showExercisePicker(BuildContext context) {
     context: context,
     isScrollControlled: true,
     backgroundColor: JinatraTokens.sweetCream,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
+    ),
     builder: (_) => const _ExercisePickerSheet(),
   );
 }

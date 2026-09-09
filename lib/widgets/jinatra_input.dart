@@ -32,7 +32,7 @@ class JinatraInput extends StatelessWidget {
         Container(
           decoration: BoxDecoration(
             color: JinatraTokens.paper,
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.circular(JinatraTokens.radiusTile),
             border: Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderControl),
           ),
           child: TextField(
@@ -46,7 +46,7 @@ class JinatraInput extends StatelessWidget {
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               border: InputBorder.none,
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.zero,
+                borderRadius: BorderRadius.circular(JinatraTokens.radiusTile),
                 borderSide: BorderSide(color: JinatraTokens.signal, width: 3.0),
               ),
             ),
