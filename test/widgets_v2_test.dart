@@ -20,6 +20,21 @@ void main() {
     AppPalette.apply(AppPalette.paperPress);
   });
 
+  testWidgets(
+      'SheetScaffold degrades gracefully without MediaQuery ancestor',
+      (tester) async {
+    await tester.pumpWidget(Directionality(
+      textDirection: TextDirection.ltr,
+      child: const SheetScaffold(
+        title: 'TEST SHEET',
+        child: Text('Content'),
+      ),
+    ));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('TEST SHEET'), findsOneWidget);
+  });
+
   testWidgets('HeroCard renders eyebrow, title, subtitle and actions',
       (tester) async {
     await tester.pumpWidget(_host(HeroCard(
