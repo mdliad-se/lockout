@@ -896,13 +896,22 @@ class RoutinesTabState extends State<RoutinesTab> {
               ),
             )
           else
-            ...days.map((d) => _buildDayCard(
-                  routine,
-                  d,
-                  isToday: isActive &&
-                      routine.schedulingMode == SchedulingMode.weekday &&
-                      d.tag.toUpperCase() == todayCode,
-                )),
+            // One assignment per routine: the uniqueness rule is only
+            // meaningful across the whole week.
+            ...(() {
+              final colours = DayColours.assign(days);
+              return days
+                  .map((d) => _buildDayCard(
+                        routine,
+                        d,
+                        colours[d.id] ?? DayColours.restColour,
+                        isToday: isActive &&
+                            routine.schedulingMode ==
+                                SchedulingMode.weekday &&
+                            d.tag.toUpperCase() == todayCode,
+                      ))
+                  .toList();
+            })(),
         ],
       ),
     );
@@ -919,13 +928,12 @@ class RoutinesTabState extends State<RoutinesTab> {
     );
   }
 
-  Widget _buildDayCard(Routine routine, TrainingDay day,
+  Widget _buildDayCard(Routine routine, TrainingDay day, Color accent,
       {required bool isToday}) {
     final exercises = _dayExercises[day.id] ?? [];
     final warmups = _dayWarmups[day.id] ?? [];
     final finishers = _dayFinishers[day.id] ?? [];
-    final accent = DayPalette.forDay(day);
-    final onAccent = DayPalette.onColorFor(day);
+    final onAccent = DayColours.onColorFor(accent);
     final isOpen = _expandedDays.contains(day.id);
 
     final setCount = exercises.fold<int>(0, (sum, e) => sum + e.targetSets);
