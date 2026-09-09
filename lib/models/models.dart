@@ -347,6 +347,12 @@ class SessionLog {
   final String dayId;
   final int totalSets;
 
+  /// Estimated energy cost, kcal. Zero means "not estimated" — either the
+  /// session predates the field or no bodyweight was on record when it was
+  /// saved. Stored rather than derived so history does not silently change
+  /// when the user's bodyweight does.
+  final double kcalBurned;
+
   SessionLog({
     required this.id,
     required this.dayName,
@@ -357,6 +363,7 @@ class SessionLog {
     this.routineId = '',
     this.dayId = '',
     this.totalSets = 0,
+    this.kcalBurned = 0.0,
   });
 
   String get durationLabel {
@@ -364,6 +371,11 @@ class SessionLog {
     if (mins < 60) return '$mins min';
     return '${mins ~/ 60}h ${mins % 60}m';
   }
+
+  /// Always prefixed `~`: this is an estimate, not a measurement. Empty when
+  /// there is no estimate, so callers render nothing rather than "0 kcal".
+  String get kcalLabel =>
+      kcalBurned <= 0 ? '' : '~${kcalBurned.round()} kcal';
 
   Map<String, dynamic> toMap() {
     return {
@@ -376,6 +388,7 @@ class SessionLog {
       'routine_id': routineId,
       'day_id': dayId,
       'total_sets': totalSets,
+      'kcal_burned': kcalBurned,
     };
   }
 
@@ -390,6 +403,7 @@ class SessionLog {
       routineId: map['routine_id'] ?? '',
       dayId: map['day_id'] ?? '',
       totalSets: map['total_sets'] ?? 0,
+      kcalBurned: (map['kcal_burned'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }

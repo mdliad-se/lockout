@@ -19,7 +19,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -75,6 +75,17 @@ class DatabaseService {
       await _addColumnIfMissing(db, 'training_days', 'is_rest_day', 'INTEGER NOT NULL DEFAULT 0');
       await _addColumnIfMissing(db, 'warmups', 'order_index', 'INTEGER NOT NULL DEFAULT 0');
       await _addColumnIfMissing(db, 'finishers', 'order_index', 'INTEGER NOT NULL DEFAULT 0');
+    }
+
+    if (oldVersion < 4) {
+      // v4: estimated energy cost per session. Additive and idempotent, so a
+      // database created at any earlier version lands in the same shape.
+      await _addColumnIfMissing(
+        db,
+        'session_logs',
+        'kcal_burned',
+        'REAL NOT NULL DEFAULT 0.0',
+      );
     }
   }
 
@@ -159,7 +170,8 @@ class DatabaseService {
         status TEXT NOT NULL,
         routine_id TEXT NOT NULL DEFAULT '',
         day_id TEXT NOT NULL DEFAULT '',
-        total_sets INTEGER NOT NULL DEFAULT 0
+        total_sets INTEGER NOT NULL DEFAULT 0,
+        kcal_burned REAL NOT NULL DEFAULT 0.0
       )
     ''');
 

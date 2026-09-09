@@ -303,6 +303,33 @@ void main() {
       final result = await BackupService.instance.importFromJson(exported);
       expect(result.rowsRestored, expected);
     });
+
+    test('estimated burn survives an export and import', () async {
+      final db = await DatabaseService.instance.database;
+      await db.insert('session_logs', {
+        'id': 'burn-1',
+        'day_name': 'MON - Legs',
+        'date_str': '2026-09-07',
+        'duration_seconds': 3060,
+        'total_volume_kg': 2295.0,
+        'status': 'completed',
+        'routine_id': '',
+        'day_id': '',
+        'total_sets': 22,
+        'kcal_burned': 388.7,
+      });
+
+      final doc = await BackupService.instance.buildBackupJson();
+      for (final table in DatabaseService.backupTables) {
+        await db.delete(table);
+      }
+      final result = await BackupService.instance.importFromJson(doc);
+      expect(result.ok, isTrue, reason: result.message);
+
+      final rows = await db.query('session_logs', where: 'id = ?',
+          whereArgs: ['burn-1']);
+      expect(rows.single['kcal_burned'], closeTo(388.7, 0.001));
+    });
   });
 
   group('Import rejects bad input without touching data', () {

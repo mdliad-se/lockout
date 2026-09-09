@@ -221,7 +221,12 @@ class LogTabState extends State<LogTab> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${log.dateStr}  -  ${log.durationLabel}  -  ${log.totalSets} sets',
+                        [
+                          log.dateStr,
+                          log.durationLabel,
+                          '${log.totalSets} sets',
+                          if (log.kcalLabel.isNotEmpty) log.kcalLabel,
+                        ].join('  -  '),
                         style: JinatraTokens.monoData(fontSize: 11),
                       ),
                     ],

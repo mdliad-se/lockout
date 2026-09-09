@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../services/energy_estimator.dart';
+import '../services/goal_service.dart';
 import '../services/schedule_service.dart';
 import '../theme/jinatra_tokens.dart';
 import '../widgets/exercise_picker.dart';
@@ -224,18 +226,6 @@ class TodayTabState extends State<TodayTab> {
     final duration = DateTime.now().difference(started).inSeconds;
     final sched = _scheduled;
 
-    final session = SessionLog(
-      id: sessionId,
-      dayName: _sessionTitle,
-      dateStr: ScheduleService.dateKey(DateTime.now()),
-      durationSeconds: duration,
-      totalVolumeKg: _sessionVolumeKg,
-      status: 'completed',
-      routineId: sched?.routine.id ?? '',
-      dayId: sched?.day.id ?? '',
-      totalSets: _sessionCompletedSets,
-    );
-
     // Only completed sets are archived — an untouched set is not a data point.
     final setRows = <Map<String, dynamic>>[];
     var seq = 0;
@@ -255,6 +245,34 @@ class TodayTabState extends State<TodayTab> {
         ).toMap());
       }
     }
+
+    // Bodyweight for the estimate: what the user last logged, else their
+    // stated target, else no estimate at all.
+    final snapshot = await GoalService.instance.snapshot();
+    final bodyweightKg = snapshot.currentWeightKg ??
+        (snapshot.profile.isConfigured
+            ? snapshot.profile.targetWeightKg
+            : null);
+
+    final burn = EnergyEstimator.estimate(
+      sets: setRows.map(SetLog.fromMap).toList(),
+      dayName: _sessionTitle,
+      bodyweightKg: bodyweightKg,
+      durationSeconds: duration,
+    );
+
+    final session = SessionLog(
+      id: sessionId,
+      dayName: _sessionTitle,
+      dateStr: ScheduleService.dateKey(DateTime.now()),
+      durationSeconds: duration,
+      totalVolumeKg: _sessionVolumeKg,
+      status: 'completed',
+      routineId: sched?.routine.id ?? '',
+      dayId: sched?.day.id ?? '',
+      totalSets: _sessionCompletedSets,
+      kcalBurned: burn ?? 0.0,
+    );
 
     await DatabaseService.instance.insertSessionLog(session.toMap());
     await DatabaseService.instance.insertSetLogs(setRows);
