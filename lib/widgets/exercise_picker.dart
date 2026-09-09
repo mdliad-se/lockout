@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/exercise_library.dart';
+import '../data/food_search.dart';
 import '../theme/jinatra_tokens.dart';
 
 /// Result of the picker: either a catalog entry or a user-typed custom name.
@@ -70,8 +71,8 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
     var list = _group == 'All'
         ? ExerciseLibrary.all
         : ExerciseLibrary.byGroup(_group);
-    if (_query.isNotEmpty) {
-      list = list.where((e) => e.matches(_query)).toList();
+    if (_query.trim().isNotEmpty) {
+      list = searchExercises(_query, source: list).map((h) => h.item).toList();
     }
     return list;
   }

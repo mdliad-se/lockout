@@ -1,3 +1,5 @@
+import 'food_search.dart';
+
 /// A food the user can log without typing macros by hand.
 ///
 /// Values are per the stated [serving]. They are reference figures for
@@ -576,8 +578,10 @@ class FoodLibrary {
   static List<LibraryFood> byCategory(String category) =>
       all.where((f) => f.category == category).toList();
 
+  /// Ranked search. Delegates to the shared pipeline in `food_search.dart`
+  /// so the picker and any other caller cannot disagree about what matches.
   static List<LibraryFood> search(String needle) =>
-      all.where((f) => f.matches(needle)).toList();
+      searchFoods(needle).map((h) => h.item).toList();
 
   static LibraryFood? findByName(String name) {
     final lower = name.toLowerCase().trim();

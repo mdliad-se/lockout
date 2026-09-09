@@ -3,6 +3,8 @@
 // demonstrations. Queries are used instead of hardcoded video IDs so the links
 // never rot; a user-pinned video URL on ExerciseDef overrides the search.
 
+import 'food_search.dart';
+
 class LibraryExercise {
   final String name;
   final String muscleGroup;
@@ -239,8 +241,9 @@ class ExerciseLibrary {
   static List<LibraryExercise> byGroup(String group) =>
       all.where((e) => e.muscleGroup == group).toList();
 
+  /// Ranked search, shared with the food picker's pipeline.
   static List<LibraryExercise> search(String needle) =>
-      all.where((e) => e.matches(needle)).toList();
+      searchExercises(needle).map((h) => h.item).toList();
 
   static LibraryExercise? findByName(String name) {
     final lower = name.toLowerCase().trim();
