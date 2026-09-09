@@ -64,7 +64,6 @@ class TextSearch {
     'maach': 'fish',
     'macher': 'fish',
     'machher': 'fish',
-    'machh er': 'fish',
     'chingri': 'prawn',
     'shrimp': 'prawn',
     'ilish': 'hilsa',
@@ -140,10 +139,23 @@ class TextSearch {
   static List<String> canonicalise(List<String> tokens) =>
       tokens.map((t) => aliases[t] ?? t).toList();
 
-  /// Alias targets generic enough to be redundant once a more specific query
-  /// token is present — e.g. Bengali "mangsho" ("meat") tacked onto a named
-  /// protein like "murgir" ("chicken"). See `_score`'s alias/fuzzy bands.
-  static const Set<String> _genericAliasTargets = {'meat'};
+  /// Semantic groups: a canonical query token that names a group is
+  /// satisfied when the candidate's canonicalised name (or the fields the
+  /// caller searches alongside it) contains ANY concrete member of that
+  /// group's set — e.g. Bengali "mangsho" ("meat") is satisfied by
+  /// "Chicken Curry" because "chicken" is a member of the "meat" group.
+  /// It is never satisfied merely because a *different* query token matched
+  /// something else; every token, including group tokens, is still required
+  /// by the `.every(...)` checks in `_score`. Adding a new group later is a
+  /// map entry, nothing more — this makes no assumption that "meat" is the
+  /// only group that will ever exist.
+  static const Map<String, Set<String>> semanticGroups = {
+    'meat': {'meat', 'chicken', 'beef', 'mutton', 'goat', 'lamb', 'duck'},
+  };
+
+  /// The concrete tokens a canonical query token [q] is satisfied by: its
+  /// group's members if it names a semantic group, or just itself.
+  static Set<String> _candidatesFor(String q) => semanticGroups[q] ?? {q};
 
   /// Damerau–Levenshtein distance. A transposition counts as one edit, which
   /// matters because most real misspellings are transpositions.
@@ -241,24 +253,15 @@ SearchHit<T>? _score<T>({
     return SearchHit(item: item, rank: _Rank.allTokensInName);
   }
 
-  // Alias/fuzzy bands require every *significant* canonical query token to
-  // have a home in the name. A generic alias target such as "meat" (from
-  // Bengali "mangsho") is filler once a specific protein is already named —
-  // "murgir mangsho" (chicken meat) should not fail to find "Chicken Curry"
-  // just because no field literally says "meat". Dropping generic tokens
-  // only kicks in when another, more specific token is present, so a query
-  // of "meat" alone still needs to match something on its own.
-  final significantQuery = canonicalQuery.length > 1
-      ? canonicalQuery
-          .where((q) => !TextSearch._genericAliasTargets.contains(q))
-          .toList()
-      : canonicalQuery;
-  final tokensToMatch = significantQuery.isEmpty ? canonicalQuery : significantQuery;
-
   // Alias band: the query means the same thing as the name once both sides
-  // are canonicalised. This is what makes "ruti" find "Roti / Chapati".
-  final aliasMatched = tokensToMatch.every(
-    (q) => canonicalName.any((n) => n == q) || normName.contains(q),
+  // are canonicalised. This is what makes "ruti" find "Roti / Chapati". A
+  // group token (see `TextSearch.semanticGroups`) is satisfied when any one
+  // of its concrete members has a home in the name — every other token still
+  // has to match on its own.
+  final aliasMatched = canonicalQuery.every(
+    (q) => TextSearch._candidatesFor(q).any(
+          (c) => canonicalName.any((n) => n == c) || normName.contains(c),
+        ),
   );
   if (aliasMatched) {
     return SearchHit(
@@ -268,9 +271,12 @@ SearchHit<T>? _score<T>({
     );
   }
 
-  // Fuzzy band: every query token is within edit distance of some name token.
-  final fuzzyMatched = tokensToMatch.every(
-    (q) => canonicalName.any((n) => TextSearch.fuzzyTokenMatch(q, n)),
+  // Fuzzy band: every query token is within edit distance of some name
+  // token; a group token is within edit distance via any of its members.
+  final fuzzyMatched = canonicalQuery.every(
+    (q) => TextSearch._candidatesFor(q).any(
+          (c) => canonicalName.any((n) => TextSearch.fuzzyTokenMatch(c, n)),
+        ),
   );
   if (fuzzyMatched) {
     return SearchHit(

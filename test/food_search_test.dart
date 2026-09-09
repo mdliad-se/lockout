@@ -92,6 +92,37 @@ void main() {
     });
   });
 
+  group('the generic "meat" alias does not excuse other tokens', () {
+    test('mangsho salad returns no vegetarian salad', () {
+      final names = _names('mangsho salad');
+      expect(names, isNot(contains('Green Salad (undressed)')));
+      expect(names, isNot(contains('Som Tam (Papaya Salad)')));
+      expect(names, isNot(contains('Greek Salad')));
+    });
+
+    test('mangsho curry returns no bean, fish, prawn or egg dish', () {
+      final names = _names('mangsho curry');
+      expect(names, isNot(contains('Rajma (Kidney Bean Curry)')));
+      expect(names, isNot(contains('Rui Macher Jhol (Rohu Curry)')));
+      expect(names, isNot(contains('Chingri Malai Curry')));
+      expect(names, isNot(contains('Dim Bhuna (Egg Curry)')));
+    });
+
+    test('murgir mangsho still finds Chicken Curry (Bengali)', () {
+      expect(_names('murgir mangsho'), contains('Chicken Curry (Bengali)'));
+    });
+
+    test('beef mangsho finds beef dishes', () {
+      expect(_names('beef mangsho'), contains('Beef Curry (Bengali)'));
+    });
+
+    test('mangsho alone returns meat and no vegetarian dishes', () {
+      final names = _names('mangsho');
+      expect(names, isNot(contains('Green Salad (undressed)')));
+      expect(names, isNotEmpty);
+    });
+  });
+
   group('ranking', () {
     test('an exact name wins', () {
       expect(_names('Paratha').first, 'Paratha');
