@@ -20,6 +20,8 @@ class SheetScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // `?? 0.0` guards an inline embed outside showJinatraSheet with no
+    // MediaQuery ancestor; pumpWidget always supplies one, so widget tests can't reach this branch.
     final inset = MediaQuery.maybeOf(context)?.viewInsets.bottom ?? 0.0;
 
     return Container(

@@ -21,18 +21,31 @@ void main() {
   });
 
   testWidgets(
-      'SheetScaffold degrades gracefully without MediaQuery ancestor',
+      'SheetScaffold bottom padding tracks MediaQuery viewInsets',
       (tester) async {
-    await tester.pumpWidget(Directionality(
-      textDirection: TextDirection.ltr,
-      child: const SheetScaffold(
-        title: 'TEST SHEET',
-        child: Text('Content'),
-      ),
-    ));
+    Future<void> pumpWithInset(double bottom) async {
+      await tester.pumpWidget(MediaQuery(
+        data: MediaQueryData(
+          size: const Size(400, 800),
+          viewInsets: EdgeInsets.only(bottom: bottom),
+        ),
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: const SheetScaffold(
+            title: 'TEST SHEET',
+            child: Text('Content'),
+          ),
+        ),
+      ));
+    }
 
-    expect(tester.takeException(), isNull);
-    expect(find.text('TEST SHEET'), findsOneWidget);
+    await pumpWithInset(240);
+    var container = tester.widget<Container>(find.byType(Container).first);
+    expect(container.padding, const EdgeInsets.only(bottom: 240));
+
+    await pumpWithInset(0);
+    container = tester.widget<Container>(find.byType(Container).first);
+    expect(container.padding, EdgeInsets.zero);
   });
 
   testWidgets('HeroCard renders eyebrow, title, subtitle and actions',
