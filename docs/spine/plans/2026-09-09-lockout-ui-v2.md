@@ -343,13 +343,25 @@ Insert after `static bool get isDark => AppPalette.current.isDark;`:
   /// rather than testing luminance against a fixed threshold: a mid-tone like
   /// coral (#FF6B35) sits below any sensible threshold yet still needs dark
   /// text, and a single threshold gets that case wrong.
+  static const Color _onAccentDark = Color(0xFF111111);
+  static const Color _onAccentLight = Color(0xFFFFFFFF);
+
+  // Computed once, not hardcoded: an eyeballed constant here silently picked
+  // white for #E23A2E when near-black scores higher.
+  static final double _darkLuminance = _onAccentDark.computeLuminance();
+  static final double _lightLuminance = _onAccentLight.computeLuminance();
+
+  static double _contrastRatio(double a, double b) {
+    final hi = a > b ? a : b;
+    final lo = a > b ? b : a;
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
   static Color onAccentColor(Color background) {
-    const dark = Color(0xFF111111);
-    const light = Color(0xFFFFFFFF);
     final l = background.computeLuminance();
-    final onDark = (l + 0.05) / 0.05961; // contrast against #111111
-    final onLight = 1.05 / (l + 0.05); // contrast against #FFFFFF
-    return onDark >= onLight ? dark : light;
+    final onDark = _contrastRatio(l, _darkLuminance);
+    final onLight = _contrastRatio(l, _lightLuminance);
+    return onDark >= onLight ? _onAccentDark : _onAccentLight;
   }
 ```
 
