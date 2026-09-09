@@ -63,6 +63,30 @@ void main() {
       expect(JinatraTokens.onAccentColor(const Color(0xFF1E44D6)),
           const Color(0xFFFFFFFF));
     });
+
+    test('on-accent is always the real-contrast argmax across every palette',
+        () {
+      for (final p in AppPalette.all) {
+        for (final accent in p.accents) {
+          final onDark = _contrast(accent, const Color(0xFF111111));
+          final onLight = _contrast(accent, const Color(0xFFFFFFFF));
+          final expected =
+              onDark >= onLight ? const Color(0xFF111111) : const Color(0xFFFFFFFF);
+          expect(
+            JinatraTokens.onAccentColor(accent),
+            expected,
+            reason:
+                '${p.key} ${accent.toARGB32().toRadixString(16)} onDark=$onDark onLight=$onLight',
+          );
+        }
+      }
+    });
+
+    test('on-accent regression: #E23A2E resolves to near-black, not white',
+        () {
+      expect(JinatraTokens.onAccentColor(const Color(0xFFE23A2E)),
+          const Color(0xFF111111));
+    });
   });
 
   group('Radius tokens', () {

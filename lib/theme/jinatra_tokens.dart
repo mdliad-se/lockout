@@ -1,3 +1,5 @@
+import 'dart:math' show max, min;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_palette.dart';
@@ -43,19 +45,29 @@ class JinatraTokens {
     return ramp[index % ramp.length];
   }
 
+  static const Color _onAccentDark = Color(0xFF111111);
+  static const Color _onAccentLight = Color(0xFFFFFFFF);
+  static final double _onAccentDarkLuminance =
+      _onAccentDark.computeLuminance();
+  static final double _onAccentLightLuminance =
+      _onAccentLight.computeLuminance();
+
   /// Label colour for content sitting on an arbitrary [background].
   ///
   /// Picks whichever of near-black and white has the higher WCAG contrast,
   /// rather than testing luminance against a fixed threshold: a mid-tone like
   /// coral (#FF6B35) sits below any sensible threshold yet still needs dark
-  /// text, and a single threshold gets that case wrong.
+  /// text, and a single threshold gets that case wrong. Both candidate
+  /// contrasts are derived from `Color.computeLuminance()` rather than a
+  /// hardcoded denominator, so the comparison stays exact for every
+  /// authored accent.
   static Color onAccentColor(Color background) {
-    const dark = Color(0xFF111111);
-    const light = Color(0xFFFFFFFF);
     final l = background.computeLuminance();
-    final onDark = (l + 0.05) / 0.05961; // contrast against #111111
-    final onLight = 1.05 / (l + 0.05); // contrast against #FFFFFF
-    return onDark >= onLight ? dark : light;
+    final onDark = (max(l, _onAccentDarkLuminance) + 0.05) /
+        (min(l, _onAccentDarkLuminance) + 0.05);
+    final onLight = (max(l, _onAccentLightLuminance) + 0.05) /
+        (min(l, _onAccentLightLuminance) + 0.05);
+    return onDark >= onLight ? _onAccentDark : _onAccentLight;
   }
 
   // Border & Shadow Dimensions
