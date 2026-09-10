@@ -13,6 +13,7 @@ import '../widgets/home_hub.dart';
 import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import 'exercise_video_screen.dart';
+import 'food_tab.dart';
 
 /// One set inside a running session.
 class _LiveSet {
@@ -56,7 +57,15 @@ class TodayTab extends StatefulWidget {
   /// MainScreen; null in tests that pump this tab on its own.
   final void Function(String tabId)? onNavigate;
 
-  const TodayTab({super.key, this.onNavigate});
+  /// Whether the Food tab is currently reachable. When false, the hub must
+  /// not offer a tap target that silently does nothing.
+  final bool foodTabEnabled;
+
+  const TodayTab({
+    super.key,
+    this.onNavigate,
+    this.foodTabEnabled = true,
+  });
 
   @override
   State<TodayTab> createState() => TodayTabState();
@@ -99,18 +108,23 @@ class TodayTabState extends State<TodayTab> {
   /// Called by MainScreen when the user returns to this tab, so a routine
   /// edited on the Routines tab, or a log entered on another tab, shows up
   /// here without an app restart.
+  ///
+  /// `_isLoading` only clears once both loads resolve. Clearing it after
+  /// just the schedule load let the hub render its "not on record" prompts
+  /// — `SET A GOAL`, `LOG A WEIGHT`, `NO SESSION YET` — for a frame or more
+  /// even when the summary data exists but simply hasn't arrived yet, which
+  /// reads as a lie rather than a loading state.
   Future<void> reload() async {
     await _loadSchedule();
     await _loadSummary();
+    if (!mounted) return;
+    setState(() => _isLoading = false);
   }
 
   Future<void> _loadSchedule() async {
     final resolved = await ScheduleService.resolveToday();
     if (!mounted) return;
-    setState(() {
-      _scheduled = resolved;
-      _isLoading = false;
-    });
+    setState(() => _scheduled = resolved);
   }
 
   /// Resolves the three calm-row values. Every one of them can legitimately
@@ -125,31 +139,29 @@ class TodayTabState extends State<TodayTab> {
       (sum, row) => sum + ((row['kcal'] as num?)?.toInt() ?? 0),
     );
 
+    // snapshot() already fetches body logs for currentWeightKg; reuse that
+    // fetch for the delta below instead of querying getBodyLogs() again.
     final snapshot = await GoalService.instance.snapshot();
+    final delta = GoalService.weightDeltaKg(snapshot.bodyLogs);
 
-    // getBodyLogs() and getSessionLogs() both order by date_str DESC, so
-    // index 0 is the latest entry without any extra sorting here.
-    final bodyRows = await db.getBodyLogs();
-    double? delta;
-    if (bodyRows.length >= 2) {
-      final latest = (bodyRows[0]['weight_kg'] as num).toDouble();
-      final previous = (bodyRows[1]['weight_kg'] as num).toDouble();
-      delta = latest - previous;
-    }
+    // The calculated nutrition target when one exists; otherwise the same
+    // user-editable `calorie_target` setting FoodTab reads, so the two
+    // screens can never disagree. Only when both are absent does the hub
+    // prompt for a goal.
+    final kcalTarget = snapshot.nutrition?.targetKcal ??
+        await FoodTabState.readCalorieTarget(db);
 
-    final sessionRows = await db.getSessionLogs();
-    final burnedToday = sessionRows
-        .where((r) => r['date_str'] == today)
-        .fold<double>(
-          0.0,
-          (sum, r) => sum + ((r['kcal_burned'] as num?)?.toDouble() ?? 0.0),
-        );
+    final sessionRows = await db.getSessionLogsForDate(today);
+    final burnedToday = sessionRows.fold<double>(
+      0.0,
+      (sum, r) => sum + ((r['kcal_burned'] as num?)?.toDouble() ?? 0.0),
+    );
 
     if (!mounted) return;
     setState(() {
       _summary = HomeHubSummary(
         kcalEaten: eaten,
-        kcalTarget: snapshot.nutrition?.targetKcal,
+        kcalTarget: kcalTarget,
         weightKg: snapshot.currentWeightKg,
         weightDeltaKg: delta,
         burnedTodayKcal: burnedToday > 0 ? burnedToday : null,
@@ -344,6 +356,11 @@ class TodayTabState extends State<TodayTab> {
     await DatabaseService.instance.insertSetLogs(setRows);
 
     if (!mounted) return;
+    // Refresh BURNED TODAY (and the rest of the summary) so the hub the user
+    // lands back on reflects the session just saved, rather than reporting
+    // "not on record" about data that was just recorded.
+    await _loadSummary();
+    if (!mounted) return;
     _endSessionState();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -438,6 +455,11 @@ class TodayTabState extends State<TodayTab> {
     final sched = _scheduled;
     final code = ScheduleService.weekdayCode(DateTime.now());
     final isRest = sched == null;
+    // A day can be scheduled with no exercises on it yet (routine still
+    // being built). That is not a rest day, but it also has nothing to
+    // start live — offer guidance to the Routines tab instead of a session
+    // that would open with zero exercises.
+    final isEmptyDay = sched != null && sched.exercises.isEmpty;
 
     return SingleChildScrollView(
       child: HomeHub(
@@ -445,10 +467,13 @@ class TodayTabState extends State<TodayTab> {
         title: isRest ? 'REST DAY' : sched.day.name,
         subtitle: isRest
             ? 'Nothing scheduled. Train off-plan or take the day.'
-            : _scheduleSubtitle(sched),
+            : isEmptyDay
+                ? 'This training day has no exercises yet. Add them on the '
+                    'Routines tab, then come back to start the session.'
+                : _scheduleSubtitle(sched),
         heroColor: JinatraTokens.accentAt(isRest ? 7 : 0),
         heroActions: [
-          if (!isRest)
+          if (!isRest && !isEmptyDay)
             JinatraButton(
               label: 'START SESSION',
               onPressed: _startScheduledSession,
@@ -460,7 +485,9 @@ class TodayTabState extends State<TodayTab> {
           ),
         ],
         summary: _summary,
-        onOpenFood: () => widget.onNavigate?.call('food'),
+        onOpenFood: widget.foodTabEnabled
+            ? () => widget.onNavigate?.call('food')
+            : null,
         onOpenBody: () => widget.onNavigate?.call('body'),
         onOpenLog: () => widget.onNavigate?.call('log'),
         actions: _quickActions(),
@@ -476,12 +503,16 @@ class TodayTabState extends State<TodayTab> {
   List<ActionItem> _quickActions() {
     final go = widget.onNavigate;
     return [
-      ActionItem(
-        label: 'LOG FOOD',
-        icon: Icons.restaurant,
-        color: JinatraTokens.accentAt(0),
-        onTap: () => go?.call('food'),
-      ),
+      // Hidden entirely when the Food tab is off, rather than left as a
+      // tile that taps to nowhere: `_goToTab` already no-ops for a hidden
+      // tab id, so a visible "LOG FOOD" tile would silently do nothing.
+      if (widget.foodTabEnabled)
+        ActionItem(
+          label: 'LOG FOOD',
+          icon: Icons.restaurant,
+          color: JinatraTokens.accentAt(0),
+          onTap: () => go?.call('food'),
+        ),
       ActionItem(
         label: 'WEIGH IN',
         icon: Icons.monitor_weight,
@@ -792,57 +823,65 @@ class TodayTabState extends State<TodayTab> {
   }
 
   Widget _buildRestBar() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: JinatraTokens.paper,
-        border: Border.all(color: JinatraTokens.signal, width: 3),
-        boxShadow: [JinatraTokens.hardShadow(offset: 4)],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.timer, color: JinatraTokens.signal, size: 18),
-              const SizedBox(width: 8),
-              Text('REST', style: JinatraTokens.monoData(fontSize: 12)),
-              const SizedBox(width: 8),
-              Text(
-                '${_restSeconds}s',
-                style: JinatraTokens.monoData(fontSize: 18, color: JinatraTokens.signal),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: () => setState(() => _restSeconds += 15),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
-                    color: JinatraTokens.mistTeal,
-                  ),
-                  child: Text('+15s', style: JinatraTokens.monoData(fontSize: 11)),
+    // Sitting in the Scaffold's bottomNavigationBar slot, this no longer
+    // inherits the body's 16px padding, so it is reapplied here — otherwise
+    // the bar runs edge to edge and its hard shadow clips on the right.
+    // `radiusTile` brings it in line with the v2 12px control radius instead
+    // of the old square v1 corners.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: JinatraTokens.cardDecoration(
+          background: JinatraTokens.paper,
+          borderColor: JinatraTokens.signal,
+          shadowOffset: 4,
+          radius: JinatraTokens.radiusTile,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.timer, color: JinatraTokens.signal, size: 18),
+                const SizedBox(width: 8),
+                Text('REST', style: JinatraTokens.monoData(fontSize: 12)),
+                const SizedBox(width: 8),
+                Text(
+                  '${_restSeconds}s',
+                  style: JinatraTokens.monoData(fontSize: 18, color: JinatraTokens.signal),
                 ),
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: () => setState(() => _restRunning = false),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
-                    color: JinatraTokens.signal,
+              ],
+            ),
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: () => setState(() => _restSeconds += 15),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: JinatraTokens.ink, width: 2),
+                      color: JinatraTokens.mistTeal,
+                    ),
+                    child: Text('+15s', style: JinatraTokens.monoData(fontSize: 11)),
                   ),
-                  child: Text('SKIP', style: JinatraTokens.monoData(fontSize: 11)),
                 ),
-              ),
-            ],
-          ),
-        ],
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => setState(() => _restRunning = false),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: JinatraTokens.ink, width: 2),
+                      color: JinatraTokens.signal,
+                    ),
+                    child: Text('SKIP', style: JinatraTokens.monoData(fontSize: 11)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -374,7 +374,12 @@ class SessionLog {
 
   /// Always prefixed `~`: this is an estimate, not a measurement. Empty when
   /// there is no estimate, so callers render nothing rather than "0 kcal".
-  String get kcalLabel =>
+  String get kcalLabel => formatKcal(kcalBurned);
+
+  /// The `kcalLabel` formatter, exposed as a static so callers with a raw
+  /// kcal value (not a full [SessionLog]) — such as `HomeHub` — can reuse it
+  /// instead of re-implementing the same rounding and prefix rules.
+  static String formatKcal(double kcalBurned) =>
       kcalBurned <= 0 ? '' : '~${kcalBurned.round()} kcal';
 
   Map<String, dynamic> toMap() {

@@ -131,5 +131,144 @@ void main() {
       expect(find.text('LOG A WEIGHT'), findsOneWidget);
       expect(find.text('NO SESSION YET'), findsOneWidget);
     });
+
+    testWidgets('a known weight with no delta on record shows plain, no sign',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: HomeHub(
+              eyebrow: 'TODAY - WED',
+              title: 'REST DAY',
+              heroColor: Colors.grey,
+              heroActions: const [],
+              summary: const HomeHubSummary(
+                kcalEaten: 0,
+                kcalTarget: null,
+                weightKg: 72.5,
+                weightDeltaKg: null,
+                burnedTodayKcal: null,
+              ),
+              actions: const [],
+            ),
+          ),
+        ),
+      ));
+
+      // Only one weigh-in on record: a value, but no day-over-day delta yet.
+      expect(find.text('72.5 kg'), findsOneWidget);
+    });
+
+    testWidgets('a positive delta (a gain) renders with an explicit + sign',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: HomeHub(
+              eyebrow: 'TODAY - THU',
+              title: 'REST DAY',
+              heroColor: Colors.grey,
+              heroActions: const [],
+              summary: const HomeHubSummary(
+                kcalEaten: 0,
+                kcalTarget: null,
+                weightKg: 72.5,
+                weightDeltaKg: 0.4,
+                burnedTodayKcal: null,
+              ),
+              actions: const [],
+            ),
+          ),
+        ),
+      ));
+
+      expect(find.text('72.5 kg  +0.4'), findsOneWidget);
+    });
+
+    testWidgets('tapping a CalmRow fires its onTap', (tester) async {
+      var opened = '';
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: HomeHub(
+              eyebrow: 'TODAY - FRI',
+              title: 'LEGS',
+              heroColor: Colors.orange,
+              heroActions: const [],
+              summary: const HomeHubSummary(
+                kcalEaten: 1240,
+                kcalTarget: 1850,
+                weightKg: 72.5,
+                weightDeltaKg: -0.4,
+                burnedTodayKcal: 388.0,
+              ),
+              actions: const [],
+              onOpenFood: () => opened = 'food',
+              onOpenBody: () => opened = 'body',
+              onOpenLog: () => opened = 'log',
+            ),
+          ),
+        ),
+      ));
+
+      await tester.tap(find.text('CALORIES'));
+      expect(opened, 'food');
+
+      await tester.tap(find.text('BODYWEIGHT'));
+      expect(opened, 'body');
+
+      await tester.tap(find.text('BURNED TODAY'));
+      expect(opened, 'log');
+    });
+
+    testWidgets('tapping an ActionTile fires its onTap', (tester) async {
+      var tapped = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: HomeHub(
+              eyebrow: 'TODAY - SAT',
+              title: 'LEGS',
+              heroColor: Colors.orange,
+              heroActions: const [],
+              summary: const HomeHubSummary(
+                kcalEaten: 0,
+                kcalTarget: null,
+                weightKg: null,
+                weightDeltaKg: null,
+                burnedTodayKcal: null,
+              ),
+              actions: [
+                ActionItem(
+                  label: 'LOG FOOD',
+                  icon: Icons.restaurant,
+                  color: Colors.blue,
+                  onTap: () => tapped = true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ));
+
+      await tester.tap(find.byType(ActionTile));
+      expect(tapped, true);
+    });
+  });
+
+  group('BottomNav.visibleTabs', () {
+    test('food-enabled: HOME, ROUTINES, FOOD, BODY, LOG in order', () {
+      final ids = BottomNav.visibleTabs(foodTabEnabled: true)
+          .map((t) => t.id)
+          .toList();
+      expect(ids, ['home', 'routines', 'food', 'body', 'log']);
+    });
+
+    test('food-hidden: FOOD is dropped, the rest stay in order', () {
+      final ids = BottomNav.visibleTabs(foodTabEnabled: false)
+          .map((t) => t.id)
+          .toList();
+      expect(ids, ['home', 'routines', 'body', 'log']);
+    });
   });
 }

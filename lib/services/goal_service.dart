@@ -39,12 +39,18 @@ class GoalSnapshot {
   final TrainingRecommendation? training;
   final double? bmi;
 
+  /// The raw rows behind [currentWeightKg], newest first. Exposed so a
+  /// caller that also needs the day-over-day delta (the HOME hub) can derive
+  /// it from this list instead of issuing its own `getBodyLogs()` call.
+  final List<Map<String, dynamic>> bodyLogs;
+
   const GoalSnapshot({
     required this.profile,
     required this.currentWeightKg,
     required this.nutrition,
     required this.training,
     required this.bmi,
+    required this.bodyLogs,
   });
 
   bool get isReady => nutrition != null && currentWeightKg != null;
@@ -116,6 +122,7 @@ class GoalService {
         nutrition: null,
         training: null,
         bmi: bmi,
+        bodyLogs: bodyRows,
       );
     }
 
@@ -140,7 +147,22 @@ class GoalService {
       nutrition: nutrition,
       training: training,
       bmi: bmi,
+      bodyLogs: bodyRows,
     );
+  }
+
+  /// Day-over-day bodyweight delta from [bodyLogs] rows ordered newest first
+  /// (the shape `getBodyLogs()` returns). Null when there is fewer than two
+  /// entries to compare.
+  ///
+  /// A pure function so the sign can be covered by a test with no database:
+  /// feed it two rows and check `latest - previous` comes out the right way
+  /// round, rather than inverted by an accidental same-day tie.
+  static double? weightDeltaKg(List<Map<String, dynamic>> bodyLogs) {
+    if (bodyLogs.length < 2) return null;
+    final latest = (bodyLogs[0]['weight_kg'] as num).toDouble();
+    final previous = (bodyLogs[1]['weight_kg'] as num).toDouble();
+    return latest - previous;
   }
 
   /// Recomputes the plan and writes the calorie target the Food tab reads.

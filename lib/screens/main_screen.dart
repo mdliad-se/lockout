@@ -47,22 +47,33 @@ class _MainScreenState extends State<MainScreen> {
     _refreshVisibleTab();
   }
 
-  List<Widget> get _screens => [
-        TodayTab(key: _todayKey, onNavigate: _goToTab),
-        RoutinesTab(key: _routinesKey),
-        if (_foodTabEnabled) FoodTab(key: _foodKey),
-        BodyTab(key: _bodyKey),
-        LogTab(key: _logKey),
-      ];
+  /// `BottomNav.visibleTabs` is the single source of truth for order and
+  /// visibility; `_screens` and `_tabIds` are both derived from it so they
+  /// cannot silently drift apart from what the nav bar actually shows.
+  List<String> get _tabIds => BottomNav.visibleTabs(foodTabEnabled: _foodTabEnabled)
+      .map((t) => t.id)
+      .toList();
 
-  /// Labels aligned with `_screens`, used to decide which key to refresh.
-  List<String> get _tabIds => [
-        'home',
-        'routines',
-        if (_foodTabEnabled) 'food',
-        'body',
-        'log',
-      ];
+  List<Widget> get _screens => _tabIds.map((id) {
+        switch (id) {
+          case 'home':
+            return TodayTab(
+              key: _todayKey,
+              onNavigate: _goToTab,
+              foodTabEnabled: _foodTabEnabled,
+            );
+          case 'routines':
+            return RoutinesTab(key: _routinesKey);
+          case 'food':
+            return FoodTab(key: _foodKey);
+          case 'body':
+            return BodyTab(key: _bodyKey);
+          case 'log':
+            return LogTab(key: _logKey);
+          default:
+            throw StateError('Unknown tab id: $id');
+        }
+      }).toList();
 
   void _refreshVisibleTab() {
     if (_currentIndex >= _tabIds.length) return;

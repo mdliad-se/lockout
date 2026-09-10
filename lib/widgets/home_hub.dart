@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/models.dart';
 import '../theme/jinatra_tokens.dart';
 import 'action_grid.dart';
 import 'calm_row.dart';
@@ -72,8 +73,12 @@ class HomeHub extends StatelessWidget {
 
   String get _burnValue {
     final b = summary.burnedTodayKcal;
-    if (b == null || b <= 0) return 'NO SESSION YET';
-    return '~${b.round()} kcal';
+    if (b == null) return 'NO SESSION YET';
+    // Reuses SessionLog's formatter rather than re-deriving the "~123 kcal"
+    // format here; it returns '' for a non-positive value, which also reads
+    // as "nothing to show" here.
+    final label = SessionLog.formatKcal(b);
+    return label.isEmpty ? 'NO SESSION YET' : label;
   }
 
   @override

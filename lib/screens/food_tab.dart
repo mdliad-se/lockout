@@ -22,8 +22,24 @@ class FoodTabState extends State<FoodTab> {
     'Snacks',
   ];
 
+  /// The fallback calorie target used when neither a calculated nutrition
+  /// plan nor a stored `calorie_target` setting exists.
+  static const int defaultCalorieTarget = 2200;
+
+  /// Reads and parses the `calorie_target` setting exactly as this tab does,
+  /// so callers elsewhere (the HOME hub) can never disagree with what this
+  /// tab shows. The default lives here, once, rather than being re-typed at
+  /// each call site.
+  static Future<int> readCalorieTarget(DatabaseService db) async {
+    final targetStr = await db.getSetting(
+      'calorie_target',
+      defaultValue: '$defaultCalorieTarget',
+    );
+    return int.tryParse(targetStr) ?? defaultCalorieTarget;
+  }
+
   List<FoodEntry> _foodLogs = [];
-  int _targetKcal = 2200;
+  int _targetKcal = defaultCalorieTarget;
   bool _isLoading = true;
 
   @override
@@ -39,12 +55,12 @@ class FoodTabState extends State<FoodTab> {
     final db = DatabaseService.instance;
     final dateToday = DateTime.now().toIso8601String().split('T').first;
     final rows = await db.getFoodLogsForDate(dateToday);
-    final targetStr = await db.getSetting('calorie_target', defaultValue: '2200');
+    final targetKcal = await readCalorieTarget(db);
 
     if (!mounted) return;
     setState(() {
       _foodLogs = rows.map(FoodEntry.fromMap).toList();
-      _targetKcal = int.tryParse(targetStr) ?? 2200;
+      _targetKcal = targetKcal;
       _isLoading = false;
     });
   }

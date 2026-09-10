@@ -341,6 +341,14 @@ class DatabaseService {
     return await db.query('session_logs', orderBy: 'date_str DESC');
   }
 
+  /// Sessions logged on exactly [dateStr], scoped in the same style as
+  /// `getFoodLogsForDate` rather than fetching every session ever logged and
+  /// filtering in Dart.
+  Future<List<Map<String, dynamic>>> getSessionLogsForDate(String dateStr) async {
+    final db = await instance.database;
+    return await db.query('session_logs', where: 'date_str = ?', whereArgs: [dateStr]);
+  }
+
   Future<void> insertSessionLog(Map<String, dynamic> row) async {
     final db = await instance.database;
     await db.insert('session_logs', row, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -363,9 +371,14 @@ class DatabaseService {
   }
 
   // --- BODY LOGS ---
+  /// Newest first. `rowid DESC` is a required tiebreaker, not decoration:
+  /// `body_tab.dart` mints one row per save, so multiple weigh-ins on the
+  /// same `date_str` are normal, and `date_str DESC` alone leaves same-day
+  /// rows in SQLite-undefined order (see `getLastPerformance` above for the
+  /// same pattern applied to sessions).
   Future<List<Map<String, dynamic>>> getBodyLogs() async {
     final db = await instance.database;
-    return await db.query('body_logs', orderBy: 'date_str DESC');
+    return await db.query('body_logs', orderBy: 'date_str DESC, rowid DESC');
   }
 
   Future<void> insertBodyLog(Map<String, dynamic> row) async {
