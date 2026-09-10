@@ -10,6 +10,7 @@ import '../widgets/meal_section.dart';
 import '../widgets/progress_hero.dart';
 import '../widgets/sheet_scaffold.dart';
 import '../widgets/stat_tile.dart';
+import '../widgets/undo_banner.dart';
 
 class FoodTab extends StatefulWidget {
   const FoodTab({super.key});
@@ -84,8 +85,29 @@ class FoodTabState extends State<FoodTab> {
     if (saved == true && mounted) await reload();
   }
 
+  /// Same gap Task 9 left BODY's body-log delete with (Finding 3 / Ruling
+  /// F): a single tap on a ~36dp target destroys a logged entry with no
+  /// confirmation. Deletes immediately, then offers a few seconds to
+  /// reverse it through the same `showUndoBanner` BODY uses, rather than a
+  /// second, lookalike implementation of the same idea.
   Future<void> _deleteEntry(FoodEntry entry) async {
     await DatabaseService.instance.deleteFoodLog(entry.id);
+    if (!mounted) return;
+    await reload();
+    if (!mounted) return;
+
+    showUndoBanner(
+      context,
+      message: 'DELETED ${entry.name.toUpperCase()}',
+      onUndo: () => _restoreEntry(entry),
+    );
+  }
+
+  /// Re-inserts [entry] with its original id and every field intact —
+  /// `insertFoodLog` uses `ConflictAlgorithm.replace`, so this is a true
+  /// restore, not a near-copy with a freshly minted id.
+  Future<void> _restoreEntry(FoodEntry entry) async {
+    await DatabaseService.instance.insertFoodLog(entry.toMap());
     if (!mounted) return;
     await reload();
   }

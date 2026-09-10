@@ -14,6 +14,7 @@ import '../widgets/jinatra_input.dart';
 import '../widgets/sheet_scaffold.dart';
 import '../widgets/sparkline.dart';
 import '../widgets/stat_tile.dart';
+import '../widgets/undo_banner.dart';
 
 class BodyTab extends StatefulWidget {
   const BodyTab({super.key});
@@ -39,13 +40,17 @@ class BodyTabState extends State<BodyTab> {
 
   Future<void> _loadData() async {
     final db = DatabaseService.instance;
-    final rows = await db.getBodyLogs();
     final unit = await db.getSetting('height_unit', defaultValue: 'cm');
     final goal = await GoalService.instance.snapshot();
 
     if (!mounted) return;
     setState(() {
-      _bodyLogs = rows.map(BodyEntry.fromMap).toList();
+      // Derived from `goal.bodyLogs` rather than a second `getBodyLogs()`
+      // call: the sparkline/latest-weight series and the delta `build()`
+      // computes from `_goal.bodyLogs` used to come from two separate
+      // queries that happened to agree in practice but had no structural
+      // reason to — one list, one query, so they cannot drift apart.
+      _bodyLogs = goal.bodyLogs.map(BodyEntry.fromMap).toList();
       _heightUnit = unit == 'ft' ? 'ft' : 'cm';
       _goal = goal;
       _isLoading = false;
@@ -62,9 +67,37 @@ class BodyTabState extends State<BodyTab> {
     await reload();
   }
 
+  /// Deletes [log] immediately, then offers a few seconds to reverse it —
+  /// this destroys logged history that cannot be reconstructed, and nothing
+  /// short of a real undo window is an acceptable guard on a single 40dp
+  /// tap (Finding 3 / Ruling F). `showUndoBanner` inserts into the root
+  /// `Overlay` rather than a `ScaffoldMessenger` SnackBar specifically
+  /// because this can be called from inside the still-open LOG HISTORY
+  /// sheet, and a SnackBar there would render entirely behind it — see the
+  /// doc on `showUndoBanner` for the mechanics. Because the banner and its
+  /// undo callback are owned by this (always-mounted, IndexedStack-kept-
+  /// alive) State rather than the sheet's, undo keeps working after the
+  /// sheet that triggered the delete has been closed.
   Future<void> _deleteLog(BodyEntry log) async {
     await DatabaseService.instance.deleteBodyLog(log.id);
     // A removed weight changes TDEE, so the calorie target moves too.
+    await GoalService.instance.recalculateAndSaveTarget();
+    if (!mounted) return;
+    await reload();
+    if (!mounted) return;
+
+    showUndoBanner(
+      context,
+      message: 'DELETED ${log.weightKg.toStringAsFixed(1)} KG ENTRY',
+      onUndo: () => _restoreLog(log),
+    );
+  }
+
+  /// Re-inserts [log] with its original id and every field intact —
+  /// `insertBodyLog` uses `ConflictAlgorithm.replace`, so this is a true
+  /// restore, not a near-copy with a freshly minted id.
+  Future<void> _restoreLog(BodyEntry log) async {
+    await DatabaseService.instance.insertBodyLog(log.toMap());
     await GoalService.instance.recalculateAndSaveTarget();
     if (!mounted) return;
     await reload();
@@ -81,6 +114,15 @@ class BodyTabState extends State<BodyTab> {
       makeActive: true,
     );
     if (!mounted) return;
+
+    // This button lives inside the RECOMMENDED PLAN sheet. A SnackBar shown
+    // from here attaches to this tab's Scaffold, which sits *below* the
+    // sheet's own modal-route OverlayEntry — measured at 390x844, the sheet
+    // occupies y=158..844 and the SnackBar would render at y=765..844,
+    // entirely behind the sheet and its barrier, so the routine was created
+    // but nothing visibly happened (Finding 1). Popping the sheet first
+    // puts this tab's Scaffold back on top before the SnackBar is queued.
+    Navigator.of(context).maybePop();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -115,9 +157,15 @@ class BodyTabState extends State<BodyTab> {
     final delta = GoalService.weightDeltaKg(_goal?.bodyLogs ?? const []);
 
     final bmi = _goal?.bmi;
-    final isGoalConfigured = _goal?.profile.isConfigured ?? false;
-    final targetWeightKg =
-        isGoalConfigured ? _goal?.profile.targetWeightKg : null;
+    // Gated on the target weight actually being set, not on
+    // `profile.isConfigured` (age > 0 && targetWeight > 0) — a user who
+    // entered a target weight but no age has genuinely set a target, and a
+    // tile labelled TARGET showing `--` for them is wrong. `isConfigured`
+    // still gates the *derived* plan values below (`targetKcal`, via
+    // `GoalSnapshot.calorieTarget`'s own resolution order), where it
+    // belongs: those numbers cannot be calculated from a target weight
+    // alone.
+    final targetWeightKg = _goal?.profile.targetWeightKg;
     final targetKcal = _goal?.calorieTarget;
 
     return Scaffold(
@@ -170,7 +218,7 @@ class BodyTabState extends State<BodyTab> {
               ),
               StatTile(
                 label: 'TARGET',
-                value: targetWeightKg == null
+                value: (targetWeightKg == null || targetWeightKg <= 0)
                     ? '--'
                     : '${targetWeightKg.toStringAsFixed(1)} kg',
               ),
@@ -582,6 +630,7 @@ class _MeasurementFormState extends State<_MeasurementForm> {
   final _weightCtrl = TextEditingController();
   final _waistCtrl = TextEditingController();
   bool _saving = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -590,17 +639,47 @@ class _MeasurementFormState extends State<_MeasurementForm> {
     super.dispose();
   }
 
+  /// Parses a required, strictly-positive, finite measurement. `null` means
+  /// "reject": `double.tryParse` happily accepts `Infinity`/`-Infinity`
+  /// (which then renders as `INFINITY KG` in the hero and breaks the
+  /// sparkline's normalisation into NaN) and a non-numeric string used to
+  /// silently fall back to a bogus `0`. Blank is only valid for [waist],
+  /// which is optional.
+  double? _parseMeasurement(String raw, {required bool required}) {
+    final text = raw.trim();
+    if (text.isEmpty) return required ? null : 0.0;
+    final value = double.tryParse(text);
+    if (value == null || !value.isFinite || value <= 0) return null;
+    return value;
+  }
+
   Future<void> _save() async {
     // Guards against two fast taps inserting two rows.
     if (_saving) return;
-    if (_weightCtrl.text.trim().isEmpty) return;
-    _saving = true;
+
+    final weight = _parseMeasurement(_weightCtrl.text, required: true);
+    if (weight == null) {
+      setState(() => _error = 'Enter a valid weight in kg, e.g. 72.5.');
+      return;
+    }
+    final waistText = _waistCtrl.text.trim();
+    final waist =
+        waistText.isEmpty ? 0.0 : _parseMeasurement(waistText, required: true);
+    if (waist == null) {
+      setState(() => _error = 'Waist must be a valid measurement in cm.');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       final entry = BodyEntry(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         dateStr: DateTime.now().toIso8601String().split('T').first,
-        weightKg: double.tryParse(_weightCtrl.text) ?? 0,
-        waistCm: double.tryParse(_waistCtrl.text) ?? 0.0,
+        weightKg: weight,
+        waistCm: waist,
       );
       await DatabaseService.instance.insertBodyLog(entry.toMap());
       // A new weight changes TDEE, so the calorie target moves too.
@@ -608,7 +687,7 @@ class _MeasurementFormState extends State<_MeasurementForm> {
       if (!mounted) return;
       Navigator.pop(context);
     } finally {
-      _saving = false;
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -628,6 +707,22 @@ class _MeasurementFormState extends State<_MeasurementForm> {
           controller: _waistCtrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
+        if (_error != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: JinatraTokens.signal,
+              border: Border.all(color: JinatraTokens.ink, width: 2),
+            ),
+            child: Text(
+              _error!,
+              style: JinatraTokens.bodyText(
+                  fontSize: 12, color: JinatraTokens.onAccent),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         Text(
           'Waist is tracked on its own. It is not used in the BMI figure — '
           'BMI is weight and height only.',
@@ -637,9 +732,20 @@ class _MeasurementFormState extends State<_MeasurementForm> {
           ),
         ),
         const SizedBox(height: 14),
-        JinatraButton(
-          label: 'SAVE MEASUREMENT',
-          onPressed: _save,
+        // The `_saving` re-entrancy guard used to be invisible — SAVE
+        // MEASUREMENT looked identically pressable mid-save. `IgnorePointer`
+        // stops a second tap from reaching `_save` at all (belt-and-braces
+        // with the guard inside it), and the dimmed opacity plus relabel
+        // make that state visible instead of just structurally prevented.
+        Opacity(
+          opacity: _saving ? 0.6 : 1.0,
+          child: IgnorePointer(
+            ignoring: _saving,
+            child: JinatraButton(
+              label: _saving ? 'SAVING…' : 'SAVE MEASUREMENT',
+              onPressed: _save,
+            ),
+          ),
         ),
       ],
     );

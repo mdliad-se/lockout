@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 /// Scales [values] onto 0..1 for drawing, preserving order.
@@ -38,14 +39,19 @@ class Sparkline extends StatelessWidget {
     final normalised = sparklineNormalise(values);
     if (normalised.isEmpty) return SizedBox(height: height);
 
-    return SizedBox(
-      height: height,
-      width: double.infinity,
-      child: CustomPaint(
-        painter: _SparklinePainter(
-          points: normalised,
-          color: lineColor,
-          strokeWidth: strokeWidth,
+    // A bare CustomPaint has no text and no default label, so a screen
+    // reader has nothing to announce for it at all.
+    return Semantics(
+      label: 'Weight trend chart',
+      child: SizedBox(
+        height: height,
+        width: double.infinity,
+        child: CustomPaint(
+          painter: _SparklinePainter(
+            points: normalised,
+            color: lineColor,
+            strokeWidth: strokeWidth,
+          ),
         ),
       ),
     );
@@ -92,7 +98,11 @@ class _SparklinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SparklinePainter old) =>
-      old.points != points ||
+      // `sparklineNormalise` allocates a fresh List every build, so `!=`
+      // (reference equality) here was always true regardless of content —
+      // never wrong, but never short-circuiting either. `listEquals`
+      // compares elements, so an unchanged series actually skips a repaint.
+      !listEquals(old.points, points) ||
       old.color != color ||
       old.strokeWidth != strokeWidth;
 }

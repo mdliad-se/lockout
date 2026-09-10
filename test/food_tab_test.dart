@@ -323,6 +323,92 @@ void main() {
       expect(find.text('LOG FOOD'), findsOneWidget);
       expect(find.text('+ LOG FOOD'), findsNothing);
     });
+
+    // Finding 3 / Ruling F: FOOD had the identical no-confirmation,
+    // no-undo delete gap Task 9 left BODY with. The two screens must use
+    // the same shared mechanism, and restoring a row must bring back its
+    // original id and every field, not a near-copy.
+    testWidgets(
+        'deleting a food entry offers UNDO, which restores the exact row',
+        (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: 'f1',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Paratha',
+        kcal: 354,
+        proteinG: 8.0,
+        carbG: 45.0,
+        fatG: 14.0,
+      ).toMap());
+
+      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      expect(find.text('Paratha'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('Paratha'), findsNothing,
+          reason: 'the row disappears immediately');
+      final afterDelete = await db.getFoodLogsForDate(today);
+      expect(afterDelete, isEmpty,
+          reason: 'the row is deleted immediately, not just hidden');
+
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('Paratha'), findsOneWidget);
+      final restored = await db.getFoodLogsForDate(today);
+      expect(restored.length, 1);
+      expect(restored.first['id'], 'f1');
+      expect(restored.first['kcal'], 354);
+      expect(restored.first['protein_g'], 8.0);
+      expect(restored.first['carb_g'], 45.0);
+      expect(restored.first['fat_g'], 14.0);
+      expect(restored.first['meal_slot'], 'Breakfast');
+    });
+
+    // Same failure mode Finding 1 documented for BODY's CREATE THIS
+    // ROUTINE: a `ScaffoldMessenger` SnackBar would be hidden by a modal
+    // route sitting above it. FOOD's delete is not inside a sheet, but the
+    // shared mechanism must behave identically either way — this proves
+    // the banner is not scoped to whatever row triggered it.
+    testWidgets(
+        'the UNDO banner for a food delete auto-dismisses without leaving '
+        'anything pending', (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: 'f2',
+        dateStr: today,
+        mealSlot: 'Lunch',
+        name: 'Dal Bhat',
+        kcal: 374,
+      ).toMap());
+
+      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('UNDO'), findsOneWidget);
+
+      // Let the banner's own Timer expire instead of tapping UNDO.
+      await tester.pump(const Duration(seconds: 6));
+      expect(find.text('UNDO'), findsNothing);
+
+      final rows = await db.getFoodLogsForDate(today);
+      expect(rows, isEmpty, reason: 'expiry must not undo the delete');
+    });
   });
 
   // These model the shape of `routines_tab_test.dart`'s sheet regression
