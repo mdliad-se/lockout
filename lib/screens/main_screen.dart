@@ -48,8 +48,8 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   List<Widget> get _screens => [
+        TodayTab(key: _todayKey, onNavigate: _goToTab),
         RoutinesTab(key: _routinesKey),
-        TodayTab(key: _todayKey),
         if (_foodTabEnabled) FoodTab(key: _foodKey),
         BodyTab(key: _bodyKey),
         LogTab(key: _logKey),
@@ -57,8 +57,8 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Labels aligned with `_screens`, used to decide which key to refresh.
   List<String> get _tabIds => [
+        'home',
         'routines',
-        'today',
         if (_foodTabEnabled) 'food',
         'body',
         'log',
@@ -67,11 +67,11 @@ class _MainScreenState extends State<MainScreen> {
   void _refreshVisibleTab() {
     if (_currentIndex >= _tabIds.length) return;
     switch (_tabIds[_currentIndex]) {
+      case 'home':
+        _todayKey.currentState?.reload();
+        break;
       case 'routines':
         _routinesKey.currentState?.reload();
-        break;
-      case 'today':
-        _todayKey.currentState?.reload();
         break;
       case 'food':
         _foodKey.currentState?.reload();
@@ -89,6 +89,14 @@ class _MainScreenState extends State<MainScreen> {
     setState(() => _currentIndex = index);
     // Pull fresh data after the frame so the new tab is mounted first.
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshVisibleTab());
+  }
+
+  /// Lets HOME's action grid switch tabs by id. Ids rather than indices,
+  /// because hiding the Food tab shifts every index after it.
+  void _goToTab(String tabId) {
+    final index = _tabIds.indexOf(tabId);
+    if (index < 0) return;
+    _onTabTapped(index);
   }
 
   @override

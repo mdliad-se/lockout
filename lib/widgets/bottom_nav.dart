@@ -16,8 +16,8 @@ class BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tabs = [
+      {'label': 'HOME', 'icon': Icons.home},
       {'label': 'ROUTINES', 'icon': Icons.fitness_center},
-      {'label': 'TODAY', 'icon': Icons.play_arrow},
       if (foodTabEnabled) {'label': 'FOOD', 'icon': Icons.restaurant},
       {'label': 'BODY', 'icon': Icons.monitor_weight},
       {'label': 'LOG', 'icon': Icons.calendar_month},
@@ -40,33 +40,45 @@ class BottomNav extends StatelessWidget {
             return Expanded(
               child: GestureDetector(
                 onTap: () => onTap(index),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 100),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isActive ? JinatraTokens.deepTeal : JinatraTokens.sweetCream,
-                    border: isActive
-                        ? Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderControl)
-                        : Border(right: BorderSide(color: JinatraTokens.ink, width: 1.0)),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 8,
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        item['icon'] as IconData,
-                        color: isActive ? JinatraTokens.sweetCream : JinatraTokens.ink,
-                        size: 20,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item['label'] as String,
-                        style: JinatraTokens.monoData(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: isActive ? JinatraTokens.sweetCream : JinatraTokens.ink,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: isActive
+                        ? JinatraTokens.cardDecoration(
+                            background: JinatraTokens.deepTeal,
+                            shadowOffset: JinatraTokens.shadowSm,
+                            radius: JinatraTokens.radiusPill,
+                          )
+                        : const BoxDecoration(),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          item['icon'] as IconData,
+                          color: isActive
+                              ? JinatraTokens.onPrimary
+                              : JinatraTokens.ink.withValues(alpha: 0.6),
+                          size: 20,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          item['label'] as String,
+                          style: JinatraTokens.monoData(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: isActive
+                                ? JinatraTokens.onPrimary
+                                : JinatraTokens.ink.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

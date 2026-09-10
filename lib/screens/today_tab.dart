@@ -6,7 +6,10 @@ import '../services/energy_estimator.dart';
 import '../services/goal_service.dart';
 import '../services/schedule_service.dart';
 import '../theme/jinatra_tokens.dart';
+import '../widgets/action_grid.dart';
 import '../widgets/exercise_picker.dart';
+import '../widgets/hero_card.dart';
+import '../widgets/home_hub.dart';
 import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import 'exercise_video_screen.dart';
@@ -49,7 +52,11 @@ class _LiveExercise {
 }
 
 class TodayTab extends StatefulWidget {
-  const TodayTab({super.key});
+  /// Switches tabs by id — 'routines', 'food', 'body', 'log'. Supplied by
+  /// MainScreen; null in tests that pump this tab on its own.
+  final void Function(String tabId)? onNavigate;
+
+  const TodayTab({super.key, this.onNavigate});
 
   @override
   State<TodayTab> createState() => TodayTabState();
@@ -58,6 +65,14 @@ class TodayTab extends StatefulWidget {
 class TodayTabState extends State<TodayTab> {
   ScheduledDay? _scheduled;
   bool _isLoading = true;
+
+  HomeHubSummary _summary = const HomeHubSummary(
+    kcalEaten: 0,
+    kcalTarget: null,
+    weightKg: null,
+    weightDeltaKg: null,
+    burnedTodayKcal: null,
+  );
 
   bool _sessionActive = false;
   DateTime? _startedAt;
@@ -72,7 +87,7 @@ class TodayTabState extends State<TodayTab> {
   @override
   void initState() {
     super.initState();
-    _loadSchedule();
+    reload();
   }
 
   @override
@@ -82,8 +97,12 @@ class TodayTabState extends State<TodayTab> {
   }
 
   /// Called by MainScreen when the user returns to this tab, so a routine
-  /// edited on the Routines tab shows up here without an app restart.
-  Future<void> reload() => _loadSchedule();
+  /// edited on the Routines tab, or a log entered on another tab, shows up
+  /// here without an app restart.
+  Future<void> reload() async {
+    await _loadSchedule();
+    await _loadSummary();
+  }
 
   Future<void> _loadSchedule() async {
     final resolved = await ScheduleService.resolveToday();
@@ -91,6 +110,50 @@ class TodayTabState extends State<TodayTab> {
     setState(() {
       _scheduled = resolved;
       _isLoading = false;
+    });
+  }
+
+  /// Resolves the three calm-row values. Every one of them can legitimately
+  /// be unknown, and the hub renders a prompt for a null rather than a zero.
+  Future<void> _loadSummary() async {
+    final today = ScheduleService.dateKey(DateTime.now());
+    final db = DatabaseService.instance;
+
+    final foodRows = await db.getFoodLogsForDate(today);
+    final eaten = foodRows.fold<int>(
+      0,
+      (sum, row) => sum + ((row['kcal'] as num?)?.toInt() ?? 0),
+    );
+
+    final snapshot = await GoalService.instance.snapshot();
+
+    // getBodyLogs() and getSessionLogs() both order by date_str DESC, so
+    // index 0 is the latest entry without any extra sorting here.
+    final bodyRows = await db.getBodyLogs();
+    double? delta;
+    if (bodyRows.length >= 2) {
+      final latest = (bodyRows[0]['weight_kg'] as num).toDouble();
+      final previous = (bodyRows[1]['weight_kg'] as num).toDouble();
+      delta = latest - previous;
+    }
+
+    final sessionRows = await db.getSessionLogs();
+    final burnedToday = sessionRows
+        .where((r) => r['date_str'] == today)
+        .fold<double>(
+          0.0,
+          (sum, r) => sum + ((r['kcal_burned'] as num?)?.toDouble() ?? 0.0),
+        );
+
+    if (!mounted) return;
+    setState(() {
+      _summary = HomeHubSummary(
+        kcalEaten: eaten,
+        kcalTarget: snapshot.nutrition?.targetKcal,
+        weightKg: snapshot.currentWeightKg,
+        weightDeltaKg: delta,
+        burnedTodayKcal: burnedToday > 0 ? burnedToday : null,
+      );
     });
   }
 
@@ -361,169 +424,107 @@ class TodayTabState extends State<TodayTab> {
         padding: const EdgeInsets.all(16.0),
         child: _sessionActive ? _buildActiveSession() : _buildPreSession(),
       ),
+      // Kept visible while the exercise list scrolls, rather than inline in
+      // the body. This is TodayTab's own Scaffold (nested inside MainScreen's
+      // IndexedStack), so it does not compete with MainScreen's BottomNav.
+      bottomNavigationBar:
+          (_sessionActive && _restRunning) ? _buildRestBar() : null,
     );
   }
 
-  // --- PRE-SESSION ---
+  // --- PRE-SESSION (the HOME hub) ---
 
   Widget _buildPreSession() {
     final sched = _scheduled;
-    final today = DateTime.now();
-    final code = ScheduleService.weekdayCode(today);
+    final code = ScheduleService.weekdayCode(DateTime.now());
+    final isRest = sched == null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('TODAY WORKOUT', style: JinatraTokens.sectionHeader()),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: JinatraTokens.signal,
-                border: Border.all(color: JinatraTokens.ink, width: 2),
-              ),
-              child: Text(code, style: JinatraTokens.monoData(fontSize: 12)),
+    return SingleChildScrollView(
+      child: HomeHub(
+        eyebrow: 'TODAY - $code',
+        title: isRest ? 'REST DAY' : sched.day.name,
+        subtitle: isRest
+            ? 'Nothing scheduled. Train off-plan or take the day.'
+            : _scheduleSubtitle(sched),
+        heroColor: JinatraTokens.accentAt(isRest ? 7 : 0),
+        heroActions: [
+          if (!isRest)
+            JinatraButton(
+              label: 'START SESSION',
+              onPressed: _startScheduledSession,
             ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Expanded(
-          child: sched == null ? _buildRestDay() : _buildScheduledPreview(sched),
-        ),
-      ],
+          JinatraButton(
+            label: 'CUSTOM SESSION',
+            isSignal: true,
+            onPressed: _startCustomSession,
+          ),
+        ],
+        summary: _summary,
+        onOpenFood: () => widget.onNavigate?.call('food'),
+        onOpenBody: () => widget.onNavigate?.call('body'),
+        onOpenLog: () => widget.onNavigate?.call('log'),
+        actions: _quickActions(),
+      ),
     );
   }
 
-  Widget _buildRestDay() {
-    return ListView(
-      children: [
-        JinatraCard(
-          shadowOffset: JinatraTokens.shadowLg,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('REST DAY', style: JinatraTokens.displayHeader(fontSize: 26)),
-              const SizedBox(height: 8),
-              Text(
-                'No training day is scheduled for today in your active routine. '
-                'Add a day for this weekday on the Routines tab, or train something off-plan.',
-                style: JinatraTokens.bodyText(),
-              ),
-              const SizedBox(height: 18),
-              JinatraButton(
-                label: 'START CUSTOM SESSION',
-                isSignal: true,
-                onPressed: _startCustomSession,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+  String _scheduleSubtitle(ScheduledDay sched) {
+    final sets = sched.exercises.fold<int>(0, (s, e) => s + e.targetSets);
+    return '${sched.exercises.length} EX - $sets SETS';
   }
 
-  Widget _buildScheduledPreview(ScheduledDay sched) {
-    final hasExercises = sched.exercises.isNotEmpty;
-
-    return ListView(
-      children: [
-        // Day header
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: JinatraTokens.deepTeal,
-            border: Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderHero),
-            boxShadow: [JinatraTokens.hardShadow(offset: JinatraTokens.shadowMd)],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                sched.day.name.toUpperCase(),
-                style: JinatraTokens.displayHeader(color: JinatraTokens.onPrimary, fontSize: 22),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${sched.routine.name}  -  ${sched.exercises.length} EXERCISES',
-                style: JinatraTokens.monoData(color: JinatraTokens.sweetCream, fontSize: 11),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-
-        if (!hasExercises)
-          JinatraCard(
-            child: Text(
-              'This training day has no exercises yet. Add them on the Routines tab, '
-              'then come back to start the session.',
-              style: JinatraTokens.bodyText(fontSize: 13),
-            ),
-          )
-        else
-          ...sched.exercises.asMap().entries.map((entry) {
-            final i = entry.key;
-            final ex = entry.value;
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: JinatraTokens.paper,
-                border: Border.all(color: JinatraTokens.ink, width: 2),
-                boxShadow: [JinatraTokens.hardShadow(offset: 3)],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 26,
-                    height: 26,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: JinatraTokens.mistTeal,
-                      border: Border.all(color: JinatraTokens.ink, width: 2),
-                    ),
-                    child: Text('${i + 1}', style: JinatraTokens.monoData(fontSize: 11)),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      ex.name,
-                      style: JinatraTokens.bodyText(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(ex.targetLabel, style: JinatraTokens.monoData(fontSize: 11)),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _openVideo(ex.name, ex.videoUrl),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: JinatraTokens.sweetCream,
-                        border: Border.all(color: JinatraTokens.ink, width: 2),
-                      ),
-                      child: Icon(Icons.play_arrow, size: 14, color: JinatraTokens.ink),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-
-        const SizedBox(height: 8),
-        if (hasExercises)
-          JinatraButton(label: 'START LIVE SESSION', onPressed: _startScheduledSession),
-        const SizedBox(height: 10),
-        JinatraButton(
-          label: 'START CUSTOM SESSION',
-          background: JinatraTokens.paper,
-          textColor: JinatraTokens.ink,
-          onPressed: _startCustomSession,
-        ),
-      ],
-    );
+  List<ActionItem> _quickActions() {
+    final go = widget.onNavigate;
+    return [
+      ActionItem(
+        label: 'LOG FOOD',
+        icon: Icons.restaurant,
+        color: JinatraTokens.accentAt(0),
+        onTap: () => go?.call('food'),
+      ),
+      ActionItem(
+        label: 'WEIGH IN',
+        icon: Icons.monitor_weight,
+        color: JinatraTokens.accentAt(1),
+        onTap: () => go?.call('body'),
+      ),
+      ActionItem(
+        label: 'ROUTINES',
+        icon: Icons.fitness_center,
+        color: JinatraTokens.accentAt(2),
+        onTap: () => go?.call('routines'),
+      ),
+      ActionItem(
+        label: 'HISTORY',
+        icon: Icons.calendar_month,
+        color: JinatraTokens.accentAt(3),
+        onTap: () => go?.call('log'),
+      ),
+      ActionItem(
+        label: 'CUSTOM',
+        icon: Icons.add,
+        color: JinatraTokens.accentAt(4),
+        onTap: _startCustomSession,
+      ),
+      ActionItem(
+        label: 'STREAK',
+        icon: Icons.local_fire_department,
+        color: JinatraTokens.accentAt(5),
+        onTap: () => go?.call('log'),
+      ),
+      ActionItem(
+        label: 'PLAN',
+        icon: Icons.insights,
+        color: JinatraTokens.accentAt(6),
+        onTap: () => go?.call('body'),
+      ),
+      ActionItem(
+        label: 'EXERCISES',
+        icon: Icons.list,
+        color: JinatraTokens.accentAt(7),
+        onTap: () => go?.call('routines'),
+      ),
+    ];
   }
 
   // --- ACTIVE SESSION ---
@@ -532,60 +533,14 @@ class TodayTabState extends State<TodayTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Session header
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: JinatraTokens.deepTeal,
-            border: Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderControl),
-          ),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      _sessionTitle.toUpperCase(),
-                      style: JinatraTokens.monoData(color: JinatraTokens.onPrimary, fontSize: 14),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Text(
-                    _elapsedLabel,
-                    style: JinatraTokens.monoData(
-                      color: JinatraTokens.signal,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'SETS: $_sessionCompletedSets / $_sessionTotalSets',
-                    style: JinatraTokens.monoData(
-                      color: JinatraTokens.sweetCream,
-                      fontSize: 12,
-                    ),
-                  ),
-                  Text(
-                    'VOLUME: ${_fmtWeight(_sessionVolumeKg)} kg',
-                    style: JinatraTokens.monoData(
-                      color: JinatraTokens.onPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+        // Session header — the one saturated block this screen gets too.
+        HeroCard(
+          eyebrow: 'IN SESSION - $_sessionTitle',
+          title: _elapsedLabel,
+          subtitle:
+              '$_sessionCompletedSets / $_sessionTotalSets SETS - ${_fmtWeight(_sessionVolumeKg)} KG',
+          background: JinatraTokens.accentAt(0),
         ),
-        const SizedBox(height: 12),
 
         Expanded(
           child: _liveExercises.isEmpty
@@ -627,8 +582,7 @@ class TodayTabState extends State<TodayTab> {
                 ),
         ),
 
-        if (_restRunning) _buildRestBar(),
-
+        const SizedBox(height: 12),
         JinatraButton(label: 'FINISH SESSION & SAVE', onPressed: _finishSession),
       ],
     );
