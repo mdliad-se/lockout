@@ -6,9 +6,14 @@ import '../services/nutrition_planner.dart';
 import '../services/routine_factory.dart';
 import '../services/units.dart';
 import '../theme/jinatra_tokens.dart';
+import '../widgets/calm_row.dart';
+import '../widgets/hero_card.dart';
 import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import '../widgets/jinatra_input.dart';
+import '../widgets/sheet_scaffold.dart';
+import '../widgets/sparkline.dart';
+import '../widgets/stat_tile.dart';
 
 class BodyTab extends StatefulWidget {
   const BodyTab({super.key});
@@ -47,72 +52,22 @@ class BodyTabState extends State<BodyTab> {
     });
   }
 
-  double? get _latestWeight =>
-      _bodyLogs.isNotEmpty ? _bodyLogs.first.weightKg : null;
-
-  void _showAddEntryModal() {
-    final weightCtrl = TextEditingController();
-    final waistCtrl = TextEditingController();
-
-    showModalBottomSheet(
+  Future<void> _openMeasurementSheet() async {
+    await showJinatraSheet<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: JinatraTokens.sweetCream,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          top: 24,
-          left: 20,
-          right: 20,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('LOG BODY METRICS', style: JinatraTokens.sectionHeader()),
-            const SizedBox(height: 14),
-            JinatraInput(
-              label: 'Weight (kg)',
-              controller: weightCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            ),
-            JinatraInput(
-              label: 'Waist (cm) - optional',
-              controller: waistCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            ),
-            Text(
-              'Waist is tracked on its own. It is not used in the BMI figure — '
-              'BMI is weight and height only.',
-              style: JinatraTokens.bodyText(
-                fontSize: 11,
-                color: JinatraTokens.ink.withValues(alpha: 0.65),
-              ),
-            ),
-            const SizedBox(height: 14),
-            JinatraButton(
-              label: 'SAVE MEASUREMENT',
-              onPressed: () async {
-                if (weightCtrl.text.trim().isEmpty) return;
-                final entry = BodyEntry(
-                  id: DateTime.now().microsecondsSinceEpoch.toString(),
-                  dateStr: DateTime.now().toIso8601String().split('T').first,
-                  weightKg: double.tryParse(weightCtrl.text) ?? 0,
-                  waistCm: double.tryParse(waistCtrl.text) ?? 0.0,
-                );
-                await DatabaseService.instance.insertBodyLog(entry.toMap());
-                // A new weight changes TDEE, so the calorie target moves too.
-                await GoalService.instance.recalculateAndSaveTarget();
-                if (!ctx.mounted) return;
-                Navigator.pop(ctx);
-                _loadData();
-              },
-            ),
-          ],
-        ),
-      ),
+      title: 'LOG BODY METRICS',
+      builder: (ctx) => const _MeasurementForm(),
     );
+    if (!mounted) return;
+    await reload();
+  }
+
+  Future<void> _deleteLog(BodyEntry log) async {
+    await DatabaseService.instance.deleteBodyLog(log.id);
+    // A removed weight changes TDEE, so the calorie target moves too.
+    await GoalService.instance.recalculateAndSaveTarget();
+    if (!mounted) return;
+    await reload();
   }
 
   Future<void> _createRecommendedRoutine() async {
@@ -146,56 +101,137 @@ class BodyTabState extends State<BodyTab> {
           child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
     }
 
+    // `_bodyLogs` is ordered newest-first (`getBodyLogs`'s
+    // `date_str DESC, rowid DESC`), so the first entry is the latest weight
+    // and the chronological (oldest-first) order the sparkline needs is the
+    // reverse of that.
+    final latest = _bodyLogs.isEmpty ? null : _bodyLogs.first.weightKg;
+    final weights =
+        _bodyLogs.map((l) => l.weightKg).toList().reversed.toList();
+    // Delta goes through `GoalService.weightDeltaKg` rather than being
+    // recomputed here so BODY and HOME can never disagree, and so a
+    // same-day pair (a morning-vs-evening swing, not a day-over-day change)
+    // is compared in the same insertion order everywhere.
+    final delta = GoalService.weightDeltaKg(_goal?.bodyLogs ?? const []);
+
+    final bmi = _goal?.bmi;
+    final isGoalConfigured = _goal?.profile.isConfigured ?? false;
+    final targetWeightKg =
+        isGoalConfigured ? _goal?.profile.targetWeightKg : null;
+    final targetKcal = _goal?.calorieTarget;
+
     return Scaffold(
       backgroundColor: JinatraTokens.sweetCream,
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                    child: Text('BODY METRICS',
-                        style: JinatraTokens.sectionHeader())),
-                JinatraButton(label: '+ LOG', onPressed: _showAddEntryModal),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: ListView(
-                children: [
-                  _buildBmiCard(),
-                  const SizedBox(height: 12),
-                  _buildGoalCard(),
-                  const SizedBox(height: 12),
-                  _buildPlanCard(),
-                  const SizedBox(height: 12),
-                  Text('LOG HISTORY',
-                      style: JinatraTokens.monoData(fontSize: 14)),
-                  const SizedBox(height: 8),
-                  if (_bodyLogs.isEmpty)
-                    Text(
-                      'No weight entries yet. Tap "+ LOG" to add one.',
-                      style: JinatraTokens.monoData(
-                        color: JinatraTokens.ink.withValues(alpha: 0.6),
-                      ),
-                    )
-                  else
-                    ..._bodyLogs.map(_buildHistoryRow),
-                ],
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          HeroCard(
+            eyebrow: 'BODYWEIGHT',
+            title: latest == null
+                ? 'NO DATA YET'
+                : '${latest.toStringAsFixed(1)} KG',
+            subtitle: delta == null
+                ? 'LOG A SECOND WEIGHT TO SEE A TREND'
+                : '${delta > 0 ? '+' : ''}${delta.toStringAsFixed(1)} KG '
+                    'SINCE LAST ENTRY',
+            background: JinatraTokens.accentAt(2),
+            actions: [
+              JinatraButton(
+                label: '+ LOG MEASUREMENT',
+                onPressed: _openMeasurementSheet,
+              ),
+            ],
+          ),
+          if (weights.length >= 2)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: JinatraTokens.cardDecoration(
+                  shadowOffset: JinatraTokens.shadowSm,
+                ),
+                child: Sparkline(
+                  values: weights,
+                  lineColor: JinatraTokens.deepTeal,
+                ),
               ),
             ),
-          ],
-        ),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 2.4,
+            children: [
+              StatTile(
+                label: 'BMI',
+                value: bmi == null ? '--' : bmi.toStringAsFixed(1),
+              ),
+              StatTile(
+                label: 'TARGET',
+                value: targetWeightKg == null
+                    ? '--'
+                    : '${targetWeightKg.toStringAsFixed(1)} kg',
+              ),
+              StatTile(
+                label: 'DAILY INTAKE',
+                value: targetKcal == null ? '--' : '$targetKcal kcal',
+              ),
+              StatTile(
+                label: 'ENTRIES',
+                value: '${_bodyLogs.length}',
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          CalmRow(
+            icon: Icons.flag,
+            title: 'GOAL PROGRESS',
+            onTap: () => showJinatraSheet<void>(
+              context: context,
+              title: 'GOAL PROGRESS',
+              builder: (ctx) => _buildGoalCard(),
+            ),
+          ),
+          CalmRow(
+            icon: Icons.insights,
+            title: 'RECOMMENDED PLAN',
+            onTap: () => showJinatraSheet<void>(
+              context: context,
+              title: 'RECOMMENDED TRAINING PLAN',
+              builder: (ctx) => _buildPlanCard(),
+            ),
+          ),
+          CalmRow(
+            icon: Icons.straighten,
+            title: 'HOW THIS BMI IS CALCULATED',
+            onTap: () => showJinatraSheet<void>(
+              context: context,
+              title: 'BMI',
+              builder: (ctx) => _buildBmiCard(),
+            ),
+          ),
+          CalmRow(
+            icon: Icons.history,
+            title: 'LOG HISTORY',
+            value: '${_bodyLogs.length}',
+            onTap: () => showJinatraSheet<void>(
+              context: context,
+              title: 'LOG HISTORY',
+              builder: (ctx) =>
+                  _HistoryList(logs: _bodyLogs, onDelete: _deleteLog),
+            ),
+          ),
+          const SizedBox(height: 28),
+        ],
       ),
     );
   }
 
   Widget _buildBmiCard() {
     final heightCm = _goal?.profile.heightCm ?? 175.0;
-    final weight = _latestWeight;
+    final weight = _bodyLogs.isNotEmpty ? _bodyLogs.first.weightKg : null;
     final bmi = _goal?.bmi;
     final metres = heightCm / 100.0;
 
@@ -437,7 +473,16 @@ class BodyTabState extends State<BodyTab> {
 
   Widget _buildPlanCard() {
     final rec = _goal?.training;
-    if (rec == null) return const SizedBox.shrink();
+    if (rec == null) {
+      return JinatraCard(
+        margin: EdgeInsets.zero,
+        child: Text(
+          'Add your age and target weight in Settings, and log one body '
+          'weight, to get a recommended training split.',
+          style: JinatraTokens.bodyText(fontSize: 13),
+        ),
+      );
+    }
 
     return JinatraCard(
       margin: EdgeInsets.zero,
@@ -509,8 +554,146 @@ class BodyTabState extends State<BodyTab> {
       ],
     );
   }
+}
 
-  Widget _buildHistoryRow(BodyEntry log) {
+// --- FORM WIDGET ---
+//
+// Owns its own controllers as a `StatefulWidget` rather than a builder
+// closure fed hoisted `TextEditingController`s — see the doc block at
+// routines_tab.dart:807-827 for why: `showJinatraSheet`'s `builder` is
+// re-invoked on every drag-driven rebuild of the sheet's own state, so a
+// controller created inside the builder gets silently recreated (losing
+// typed input), and a controller hoisted into the calling method and
+// disposed in a `finally` around the awaited sheet Future gets disposed
+// ~200ms before the sheet's exit animation finishes removing it from the
+// tree, producing a use-after-dispose. Tying the controllers' lifecycle to
+// `State.dispose()` avoids both. The pre-Task-10 version of this form built
+// its controllers inline in `_showAddEntryModal` outside the builder, which
+// avoided the reset bug but never disposed them at all (a leak); this fixes
+// that too.
+class _MeasurementForm extends StatefulWidget {
+  const _MeasurementForm();
+
+  @override
+  State<_MeasurementForm> createState() => _MeasurementFormState();
+}
+
+class _MeasurementFormState extends State<_MeasurementForm> {
+  final _weightCtrl = TextEditingController();
+  final _waistCtrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _weightCtrl.dispose();
+    _waistCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    // Guards against two fast taps inserting two rows.
+    if (_saving) return;
+    if (_weightCtrl.text.trim().isEmpty) return;
+    _saving = true;
+    try {
+      final entry = BodyEntry(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        dateStr: DateTime.now().toIso8601String().split('T').first,
+        weightKg: double.tryParse(_weightCtrl.text) ?? 0,
+        waistCm: double.tryParse(_waistCtrl.text) ?? 0.0,
+      );
+      await DatabaseService.instance.insertBodyLog(entry.toMap());
+      // A new weight changes TDEE, so the calorie target moves too.
+      await GoalService.instance.recalculateAndSaveTarget();
+      if (!mounted) return;
+      Navigator.pop(context);
+    } finally {
+      _saving = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        JinatraInput(
+          label: 'Weight (kg)',
+          controller: _weightCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        ),
+        JinatraInput(
+          label: 'Waist (cm) - optional',
+          controller: _waistCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        ),
+        Text(
+          'Waist is tracked on its own. It is not used in the BMI figure — '
+          'BMI is weight and height only.',
+          style: JinatraTokens.bodyText(
+            fontSize: 11,
+            color: JinatraTokens.ink.withValues(alpha: 0.65),
+          ),
+        ),
+        const SizedBox(height: 14),
+        JinatraButton(
+          label: 'SAVE MEASUREMENT',
+          onPressed: _save,
+        ),
+      ],
+    );
+  }
+}
+
+// --- HISTORY LIST WIDGET ---
+//
+// Also a `StatefulWidget` rather than a plain builder for the same reason as
+// `_MeasurementForm`: `showJinatraSheet`'s builder can be re-invoked while
+// the sheet is open, and a local list rebuilt from `widget.logs` on every
+// invocation would silently undo an in-sheet delete. Owning the working copy
+// in `State` lets a delete remove the row from the still-open sheet
+// immediately, instead of only being visible the next time the sheet opens.
+class _HistoryList extends StatefulWidget {
+  final List<BodyEntry> logs;
+  final Future<void> Function(BodyEntry) onDelete;
+
+  const _HistoryList({required this.logs, required this.onDelete});
+
+  @override
+  State<_HistoryList> createState() => _HistoryListState();
+}
+
+class _HistoryListState extends State<_HistoryList> {
+  late List<BodyEntry> _logs;
+
+  @override
+  void initState() {
+    super.initState();
+    _logs = List.of(widget.logs);
+  }
+
+  Future<void> _handleDelete(BodyEntry log) async {
+    await widget.onDelete(log);
+    if (!mounted) return;
+    setState(() => _logs.removeWhere((l) => l.id == log.id));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_logs.isEmpty) {
+      return Text(
+        'No weight entries yet.',
+        style: JinatraTokens.monoData(
+          color: JinatraTokens.ink.withValues(alpha: 0.6),
+        ),
+      );
+    }
+
+    return Column(children: _logs.map(_row).toList());
+  }
+
+  Widget _row(BodyEntry log) {
     return JinatraCard(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -527,14 +710,28 @@ class BodyTabState extends State<BodyTab> {
                 Text('waist ${log.waistCm} cm',
                     style: JinatraTokens.monoData(fontSize: 10)),
               ],
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: Icon(Icons.close, size: 16, color: JinatraTokens.ink),
-                onPressed: () async {
-                  await DatabaseService.instance.deleteBodyLog(log.id);
-                  await GoalService.instance.recalculateAndSaveTarget();
-                  await _loadData();
-                },
+              // Padding lives *inside* the detector so the tappable area
+              // grows to a ~40dp square without enlarging the visible
+              // glyph — `HitTestBehavior.opaque` alone only makes the
+              // existing 16x16 box register taps everywhere within it, it
+              // does not resize that box. This is a different glyph
+              // (`delete_outline`, not `close`) from the pre-Task-10 row's
+              // `IconButton`, deliberately: `SheetScaffold` already uses
+              // `Icons.close` for "dismiss this sheet", and this row now
+              // lives inside a sheet, so reusing `close` here for "delete
+              // this row" would put the same glyph on two different
+              // actions on screen at once.
+              GestureDetector(
+                onTap: () => _handleDelete(log),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Icon(
+                    Icons.delete_outline,
+                    size: 16,
+                    color: JinatraTokens.ink.withValues(alpha: 0.6),
+                  ),
+                ),
               ),
             ],
           ),
