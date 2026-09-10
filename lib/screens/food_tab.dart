@@ -4,9 +4,12 @@ import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/goal_service.dart';
 import '../widgets/food_picker.dart';
-import '../widgets/jinatra_card.dart';
 import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_input.dart';
+import '../widgets/meal_section.dart';
+import '../widgets/progress_hero.dart';
+import '../widgets/sheet_scaffold.dart';
+import '../widgets/stat_tile.dart';
 
 class FoodTab extends StatefulWidget {
   const FoodTab({super.key});
@@ -55,7 +58,7 @@ class FoodTabState extends State<FoodTab> {
 
   int get _totalKcal => _foodLogs.fold(0, (sum, item) => sum + item.kcal);
   double get _totalProtein => _foodLogs.fold(0.0, (s, i) => s + i.proteinG);
-  double get _totalCarbs => _foodLogs.fold(0.0, (s, i) => s + i.carbG);
+  double get _totalCarb => _foodLogs.fold(0.0, (s, i) => s + i.carbG);
   double get _totalFat => _foodLogs.fold(0.0, (s, i) => s + i.fatG);
 
   /// Meal slot suggested from the clock, so the common case needs no tap.
@@ -73,135 +76,18 @@ class FoodTabState extends State<FoodTab> {
     final picked = await showFoodPicker(context);
     if (picked == null || !mounted) return;
 
-    final nameCtrl = TextEditingController(text: picked.name);
-    final kcalCtrl = TextEditingController(text: picked.kcal.toString());
-    final proteinCtrl = TextEditingController(text: _num(picked.proteinG));
-    final carbCtrl = TextEditingController(text: _num(picked.carbG));
-    final fatCtrl = TextEditingController(text: _num(picked.fatG));
-    var slot = _defaultSlot;
-
-    await showModalBottomSheet(
+    final saved = await showJinatraSheet<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: JinatraTokens.sweetCream,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheet) => Padding(
-          padding: EdgeInsets.only(
-            top: 24,
-            left: 20,
-            right: 20,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('LOG MEAL ITEM', style: JinatraTokens.sectionHeader()),
-                const SizedBox(height: 14),
-
-                Text('MEAL', style: JinatraTokens.monoData(fontSize: 12)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: mealSlots.map((s) {
-                    final active = s == slot;
-                    return GestureDetector(
-                      onTap: () => setSheet(() => slot = s),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: active
-                              ? JinatraTokens.deepTeal
-                              : JinatraTokens.paper,
-                          border:
-                              Border.all(color: JinatraTokens.ink, width: 2),
-                          boxShadow: active
-                              ? null
-                              : [JinatraTokens.hardShadow(offset: 2)],
-                        ),
-                        child: Text(
-                          s.toUpperCase(),
-                          style: JinatraTokens.monoData(
-                            fontSize: 11,
-                            color: active
-                                ? JinatraTokens.onPrimary
-                                : JinatraTokens.ink,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-
-                JinatraInput(label: 'Food Name', controller: nameCtrl),
-                JinatraInput(
-                  label: 'Calories (kcal)',
-                  controller: kcalCtrl,
-                  keyboardType: TextInputType.number,
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: JinatraInput(
-                        label: 'Protein (g)',
-                        controller: proteinCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: JinatraInput(
-                        label: 'Carbs (g)',
-                        controller: carbCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: JinatraInput(
-                        label: 'Fat (g)',
-                        controller: fatCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                      ),
-                    ),
-                  ],
-                ),
-                JinatraButton(
-                  label: 'SAVE ENTRY',
-                  onPressed: () async {
-                    if (nameCtrl.text.trim().isEmpty) return;
-                    final dateToday =
-                        DateTime.now().toIso8601String().split('T').first;
-                    final entry = FoodEntry(
-                      id: DateTime.now().microsecondsSinceEpoch.toString(),
-                      dateStr: dateToday,
-                      mealSlot: slot,
-                      name: nameCtrl.text.trim(),
-                      kcal: int.tryParse(kcalCtrl.text) ?? 0,
-                      proteinG: double.tryParse(proteinCtrl.text) ?? 0.0,
-                      carbG: double.tryParse(carbCtrl.text) ?? 0.0,
-                      fatG: double.tryParse(fatCtrl.text) ?? 0.0,
-                    );
-                    await DatabaseService.instance.insertFoodLog(entry.toMap());
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    _loadData();
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      title: 'LOG MEAL ITEM',
+      builder: (ctx) => _LogMealForm(picked: picked, defaultSlot: _defaultSlot),
     );
+    if (saved == true && mounted) await reload();
+  }
+
+  Future<void> _deleteEntry(FoodEntry entry) async {
+    await DatabaseService.instance.deleteFoodLog(entry.id);
+    if (!mounted) return;
+    await reload();
   }
 
   static String _num(double v) =>
@@ -214,178 +100,235 @@ class FoodTabState extends State<FoodTab> {
           child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
     }
 
-    final ratio = _targetKcal <= 0
-        ? 0.0
-        : (_totalKcal / _targetKcal).clamp(0.0, 1.0).toDouble();
-    final over = _totalKcal > _targetKcal;
+    final eaten = _totalKcal;
+    final target = _targetKcal;
+    final left = target - eaten;
 
     return Scaffold(
       backgroundColor: JinatraTokens.sweetCream,
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                    child: Text('NUTRITION LOG',
-                        style: JinatraTokens.sectionHeader())),
-                JinatraButton(label: '+ LOG FOOD', onPressed: _addFood),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            JinatraCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('CALORIES CONSUMED',
-                          style: JinatraTokens.monoData(fontSize: 12)),
-                      Text(
-                        '$_totalKcal / $_targetKcal kcal',
-                        style: JinatraTokens.monoData(
-                          fontSize: 14,
-                          color:
-                              over ? JinatraTokens.signal : JinatraTokens.ink,
-                        ),
-                      ),
-                    ],
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          ProgressHero(
+            eyebrow: 'TODAY',
+            title: '$eaten / $target KCAL',
+            subtitle: left >= 0 ? '$left LEFT' : '${left.abs()} OVER',
+            progress: target <= 0 ? 0.0 : eaten / target,
+            background: JinatraTokens.accentAt(0),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: StatTile(
+                  label: 'PROTEIN',
+                  value: '${_totalProtein.toStringAsFixed(0)} g',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: StatTile(
+                  label: 'CARBS',
+                  value: '${_totalCarb.toStringAsFixed(0)} g',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: StatTile(
+                  label: 'FAT',
+                  value: '${_totalFat.toStringAsFixed(0)} g',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          JinatraButton(
+            label: '+ LOG FOOD',
+            icon: Icons.add,
+            onPressed: _addFood,
+          ),
+          const SizedBox(height: 20),
+          if (_foodLogs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 24),
+              child: Center(
+                child: Text(
+                  'NO FOOD LOGGED TODAY\nTap "+ LOG FOOD" and pick from the catalog.',
+                  textAlign: TextAlign.center,
+                  style: JinatraTokens.monoData(
+                    color: JinatraTokens.ink.withValues(alpha: 0.6),
                   ),
-                  const SizedBox(height: 10),
-                  Container(
-                    height: 20,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: JinatraTokens.mistTeal,
-                      border: Border.all(color: JinatraTokens.ink, width: 2),
-                    ),
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: ratio,
-                      child: Container(
-                        color: over
-                            ? JinatraTokens.signal
-                            : JinatraTokens.deepTeal,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Text('P: ${_totalProtein.toStringAsFixed(1)}g',
-                          style: JinatraTokens.monoData()),
-                      Text('C: ${_totalCarbs.toStringAsFixed(1)}g',
-                          style: JinatraTokens.monoData()),
-                      Text('F: ${_totalFat.toStringAsFixed(1)}g',
-                          style: JinatraTokens.monoData()),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
-            const SizedBox(height: 12),
-
-            Expanded(
-              child: _foodLogs.isEmpty
-                  ? Center(
-                      child: Text(
-                        'NO FOOD LOGGED TODAY\nTap "+ LOG FOOD" and pick from the catalog.',
-                        textAlign: TextAlign.center,
-                        style: JinatraTokens.monoData(
-                          color: JinatraTokens.ink.withValues(alpha: 0.6),
-                        ),
-                      ),
-                    )
-                  : ListView(children: _buildSlotSections()),
+          ...mealSlots.map(
+            (slot) => MealSection(
+              title: slot,
+              entries: _foodLogs.where((f) => f.mealSlot == slot).toList(),
+              onDelete: _deleteEntry,
             ),
-          ],
-        ),
+          ),
+          MealSection(
+            title: 'Other',
+            entries: _foodLogs
+                .where((f) => !mealSlots.contains(f.mealSlot))
+                .toList(),
+            onDelete: _deleteEntry,
+          ),
+          const SizedBox(height: 28),
+        ],
       ),
     );
   }
+}
 
-  /// Groups the day's entries under meal headers, skipping empty slots.
-  List<Widget> _buildSlotSections() {
-    final widgets = <Widget>[];
+// --- FORM WIDGET ---
+//
+// Owns its own controllers/state as a `StatefulWidget` rather than a builder
+// closure fed hoisted `TextEditingController`s — see the doc block at
+// routines_tab.dart:807-827 for why: `showJinatraSheet`'s `builder` is
+// re-invoked on every drag-driven rebuild of the sheet's own state, so a
+// controller created inside the builder gets silently recreated (losing
+// typed input), and a controller hoisted into the calling method and
+// disposed in a `finally` around the awaited sheet Future gets disposed
+// ~200ms before the sheet's exit animation finishes removing it from the
+// tree, producing a use-after-dispose. Tying the controllers' lifecycle to
+// `State.dispose()` avoids both.
+class _LogMealForm extends StatefulWidget {
+  final PickedFood picked;
+  final String defaultSlot;
 
-    for (final slot in mealSlots) {
-      final items = _foodLogs.where((f) => f.mealSlot == slot).toList();
-      if (items.isEmpty) continue;
+  const _LogMealForm({required this.picked, required this.defaultSlot});
 
-      final slotKcal = items.fold(0, (sum, f) => sum + f.kcal);
+  @override
+  State<_LogMealForm> createState() => _LogMealFormState();
+}
 
-      widgets.add(Padding(
-        padding: const EdgeInsets.only(bottom: 8, top: 4),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(slot.toUpperCase(),
-                style: JinatraTokens.monoData(fontSize: 12)),
-            Text('$slotKcal kcal',
-                style: JinatraTokens.monoData(
-                  fontSize: 11,
-                  color: JinatraTokens.ink.withValues(alpha: 0.6),
-                )),
-          ],
-        ),
-      ));
+class _LogMealFormState extends State<_LogMealForm> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _kcalCtrl;
+  late final TextEditingController _proteinCtrl;
+  late final TextEditingController _carbCtrl;
+  late final TextEditingController _fatCtrl;
+  late String _slot;
 
-      widgets.addAll(items.map(_buildFoodRow));
-    }
-
-    // Entries saved before meal slots existed, or with an unknown slot.
-    final orphans =
-        _foodLogs.where((f) => !mealSlots.contains(f.mealSlot)).toList();
-    if (orphans.isNotEmpty) {
-      widgets.add(Padding(
-        padding: const EdgeInsets.only(bottom: 8, top: 4),
-        child: Text('OTHER', style: JinatraTokens.monoData(fontSize: 12)),
-      ));
-      widgets.addAll(orphans.map(_buildFoodRow));
-    }
-
-    return widgets;
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.picked.name);
+    _kcalCtrl = TextEditingController(text: widget.picked.kcal.toString());
+    _proteinCtrl =
+        TextEditingController(text: FoodTabState._num(widget.picked.proteinG));
+    _carbCtrl =
+        TextEditingController(text: FoodTabState._num(widget.picked.carbG));
+    _fatCtrl = TextEditingController(text: FoodTabState._num(widget.picked.fatG));
+    _slot = widget.defaultSlot;
   }
 
-  Widget _buildFoodRow(FoodEntry food) {
-    return JinatraCard(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(food.name,
-                    style: JinatraTokens.bodyText(
-                        fontWeight: FontWeight.w700, fontSize: 14)),
-                const SizedBox(height: 4),
-                Text(
-                  'P ${food.proteinG}g - C ${food.carbG}g - F ${food.fatG}g',
-                  style: JinatraTokens.monoData(fontSize: 10),
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _kcalCtrl.dispose();
+    _proteinCtrl.dispose();
+    _carbCtrl.dispose();
+    _fatCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_nameCtrl.text.trim().isEmpty) return;
+    final dateToday = DateTime.now().toIso8601String().split('T').first;
+    final entry = FoodEntry(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      dateStr: dateToday,
+      mealSlot: _slot,
+      name: _nameCtrl.text.trim(),
+      kcal: int.tryParse(_kcalCtrl.text) ?? 0,
+      proteinG: double.tryParse(_proteinCtrl.text) ?? 0.0,
+      carbG: double.tryParse(_carbCtrl.text) ?? 0.0,
+      fatG: double.tryParse(_fatCtrl.text) ?? 0.0,
+    );
+    await DatabaseService.instance.insertFoodLog(entry.toMap());
+    if (!mounted) return;
+    Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('MEAL', style: JinatraTokens.monoData(fontSize: 12)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: FoodTabState.mealSlots.map((s) {
+            final active = s == _slot;
+            return GestureDetector(
+              onTap: () => setState(() => _slot = s),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: JinatraTokens.cardDecoration(
+                  background:
+                      active ? JinatraTokens.deepTeal : JinatraTokens.paper,
+                  borderWidth: JinatraTokens.borderDivider,
+                  hasShadow: !active,
+                  shadowOffset: JinatraTokens.shadowSm,
+                  radius: JinatraTokens.radiusPill,
                 ),
-              ],
+                child: Text(
+                  s.toUpperCase(),
+                  style: JinatraTokens.monoData(
+                    fontSize: 11,
+                    color:
+                        active ? JinatraTokens.onPrimary : JinatraTokens.ink,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 16),
+        JinatraInput(label: 'Food Name', controller: _nameCtrl),
+        JinatraInput(
+          label: 'Calories (kcal)',
+          controller: _kcalCtrl,
+          keyboardType: TextInputType.number,
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: JinatraInput(
+                label: 'Protein (g)',
+                controller: _proteinCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+              ),
             ),
-          ),
-          Text('${food.kcal} kcal',
-              style: JinatraTokens.monoData(fontSize: 13)),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.close, size: 18, color: JinatraTokens.ink),
-            onPressed: () async {
-              await DatabaseService.instance.deleteFoodLog(food.id);
-              _loadData();
-            },
-          ),
-        ],
-      ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: JinatraInput(
+                label: 'Carbs (g)',
+                controller: _carbCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: JinatraInput(
+                label: 'Fat (g)',
+                controller: _fatCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+              ),
+            ),
+          ],
+        ),
+        JinatraButton(label: 'SAVE ENTRY', onPressed: _save),
+      ],
     );
   }
 }
