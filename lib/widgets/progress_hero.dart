@@ -31,7 +31,6 @@ class ProgressHero extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(18),
       decoration: JinatraTokens.cardDecoration(
         background: background,
@@ -44,7 +43,7 @@ class ProgressHero extends StatelessWidget {
             eyebrow.toUpperCase(),
             style: JinatraTokens.monoData(
               fontSize: 11,
-              color: on.withValues(alpha: 0.85),
+              color: on,
             ),
           ),
           const SizedBox(height: 8),
@@ -63,7 +62,7 @@ class ProgressHero extends StatelessWidget {
               child: LinearProgressIndicator(
                 value: value,
                 minHeight: 12,
-                backgroundColor: Colors.transparent,
+                backgroundColor: JinatraTokens.transparent,
                 valueColor: AlwaysStoppedAnimation<Color>(on),
               ),
             ),
@@ -73,7 +72,7 @@ class ProgressHero extends StatelessWidget {
             subtitle.toUpperCase(),
             style: JinatraTokens.monoData(
               fontSize: 11,
-              color: on.withValues(alpha: 0.85),
+              color: on,
             ),
           ),
         ],

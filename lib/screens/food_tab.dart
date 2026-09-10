@@ -90,9 +90,6 @@ class FoodTabState extends State<FoodTab> {
     await reload();
   }
 
-  static String _num(double v) =>
-      v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -114,35 +111,43 @@ class FoodTabState extends State<FoodTab> {
             title: '$eaten / $target KCAL',
             subtitle: left >= 0 ? '$left LEFT' : '${left.abs()} OVER',
             progress: target <= 0 ? 0.0 : eaten / target,
-            background: JinatraTokens.accentAt(0),
+            // v1 painted both the number and the bar in the signal colour
+            // once the day went over budget; an over-budget day otherwise
+            // reads identically to an on-track one except for the 11px
+            // subtitle. `ProgressHero` resolves its own foreground from
+            // whatever background it is given (`onAccentColor`), so this
+            // stays legible across every palette without hardcoding.
+            background:
+                left < 0 ? JinatraTokens.signal : JinatraTokens.accentAt(0),
           ),
+          const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
                 child: StatTile(
                   label: 'PROTEIN',
-                  value: '${_totalProtein.toStringAsFixed(0)} g',
+                  value: '${_num(_totalProtein)} g',
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: StatTile(
                   label: 'CARBS',
-                  value: '${_totalCarb.toStringAsFixed(0)} g',
+                  value: '${_num(_totalCarb)} g',
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: StatTile(
                   label: 'FAT',
-                  value: '${_totalFat.toStringAsFixed(0)} g',
+                  value: '${_num(_totalFat)} g',
                 ),
               ),
             ],
           ),
           const SizedBox(height: 20),
           JinatraButton(
-            label: '+ LOG FOOD',
+            label: 'LOG FOOD',
             icon: Icons.add,
             onPressed: _addFood,
           ),
@@ -152,7 +157,7 @@ class FoodTabState extends State<FoodTab> {
               padding: const EdgeInsets.only(top: 24),
               child: Center(
                 child: Text(
-                  'NO FOOD LOGGED TODAY\nTap "+ LOG FOOD" and pick from the catalog.',
+                  'NO FOOD LOGGED TODAY\nTap "LOG FOOD" and pick from the catalog.',
                   textAlign: TextAlign.center,
                   style: JinatraTokens.monoData(
                     color: JinatraTokens.ink.withValues(alpha: 0.6),
@@ -180,6 +185,11 @@ class FoodTabState extends State<FoodTab> {
     );
   }
 }
+
+/// One decimal place, trimmed to a whole number when exact. Library-level
+/// rather than a method on [FoodTabState] — [_LogMealFormState] is an
+/// unrelated widget's `State` and had no business reaching into that one.
+String _num(double v) => v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
 
 // --- FORM WIDGET ---
 //
@@ -210,17 +220,16 @@ class _LogMealFormState extends State<_LogMealForm> {
   late final TextEditingController _carbCtrl;
   late final TextEditingController _fatCtrl;
   late String _slot;
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.picked.name);
     _kcalCtrl = TextEditingController(text: widget.picked.kcal.toString());
-    _proteinCtrl =
-        TextEditingController(text: FoodTabState._num(widget.picked.proteinG));
-    _carbCtrl =
-        TextEditingController(text: FoodTabState._num(widget.picked.carbG));
-    _fatCtrl = TextEditingController(text: FoodTabState._num(widget.picked.fatG));
+    _proteinCtrl = TextEditingController(text: _num(widget.picked.proteinG));
+    _carbCtrl = TextEditingController(text: _num(widget.picked.carbG));
+    _fatCtrl = TextEditingController(text: _num(widget.picked.fatG));
     _slot = widget.defaultSlot;
   }
 
@@ -235,21 +244,30 @@ class _LogMealFormState extends State<_LogMealForm> {
   }
 
   Future<void> _save() async {
+    // Guards against two fast taps inserting two rows: `_save` awaits the
+    // insert before popping, so nothing else stopped a second `onTapUp`
+    // landing before the sheet closes.
+    if (_saving) return;
     if (_nameCtrl.text.trim().isEmpty) return;
-    final dateToday = DateTime.now().toIso8601String().split('T').first;
-    final entry = FoodEntry(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      dateStr: dateToday,
-      mealSlot: _slot,
-      name: _nameCtrl.text.trim(),
-      kcal: int.tryParse(_kcalCtrl.text) ?? 0,
-      proteinG: double.tryParse(_proteinCtrl.text) ?? 0.0,
-      carbG: double.tryParse(_carbCtrl.text) ?? 0.0,
-      fatG: double.tryParse(_fatCtrl.text) ?? 0.0,
-    );
-    await DatabaseService.instance.insertFoodLog(entry.toMap());
-    if (!mounted) return;
-    Navigator.pop(context, true);
+    _saving = true;
+    try {
+      final dateToday = DateTime.now().toIso8601String().split('T').first;
+      final entry = FoodEntry(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        dateStr: dateToday,
+        mealSlot: _slot,
+        name: _nameCtrl.text.trim(),
+        kcal: int.tryParse(_kcalCtrl.text) ?? 0,
+        proteinG: double.tryParse(_proteinCtrl.text) ?? 0.0,
+        carbG: double.tryParse(_carbCtrl.text) ?? 0.0,
+        fatG: double.tryParse(_fatCtrl.text) ?? 0.0,
+      );
+      await DatabaseService.instance.insertFoodLog(entry.toMap());
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } finally {
+      _saving = false;
+    }
   }
 
   @override

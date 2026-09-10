@@ -5,6 +5,12 @@ import '../theme/jinatra_tokens.dart';
 int mealSubtotalKcal(List<FoodEntry> entries) =>
     entries.fold<int>(0, (sum, e) => sum + e.kcal);
 
+/// One decimal place, trimmed to a whole number when exact — enough
+/// precision that a logged 0.4g doesn't silently round down to a measured
+/// zero, without manufacturing false precision on values that are exact.
+String _formatMacro(double v) =>
+    v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
 /// One meal's entries under a labelled rule with a subtotal.
 ///
 /// v1 showed the day as one flat list, so "how much was lunch" could not be
@@ -49,7 +55,7 @@ class MealSection extends StatelessWidget {
                 '${mealSubtotalKcal(entries)} kcal',
                 style: JinatraTokens.monoData(
                   fontSize: 11,
-                  color: JinatraTokens.deepTeal,
+                  color: JinatraTokens.ink,
                 ),
               ),
             ],
@@ -79,9 +85,9 @@ class MealSection extends StatelessWidget {
                 Text(e.name, style: JinatraTokens.bodyText(fontSize: 14)),
                 const SizedBox(height: 2),
                 Text(
-                  'P ${e.proteinG.toStringAsFixed(0)}  '
-                  'C ${e.carbG.toStringAsFixed(0)}  '
-                  'F ${e.fatG.toStringAsFixed(0)}',
+                  'P ${_formatMacro(e.proteinG)}  '
+                  'C ${_formatMacro(e.carbG)}  '
+                  'F ${_formatMacro(e.fatG)}',
                   style: JinatraTokens.monoData(
                     fontSize: 9,
                     color: JinatraTokens.ink.withValues(alpha: 0.6),
@@ -91,17 +97,26 @@ class MealSection extends StatelessWidget {
             ),
           ),
           Text(
-            '${e.kcal}',
+            '${e.kcal} kcal',
             style: JinatraTokens.monoData(fontSize: 13),
           ),
           const SizedBox(width: 8),
           GestureDetector(
             onTap: () => onDelete(e),
             behavior: HitTestBehavior.opaque,
-            child: Icon(
-              Icons.close,
-              size: 16,
-              color: JinatraTokens.ink.withValues(alpha: 0.5),
+            // Padding lives *inside* the detector so the tappable area grows
+            // to a ~36dp square without enlarging the visible glyph —
+            // `HitTestBehavior.opaque` alone only makes the existing 16x16
+            // box register taps everywhere within it, it does not resize
+            // that box. The old row used a ~40x40 `IconButton`; this is the
+            // screen's only delete path, with no confirmation and no undo.
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Icon(
+                Icons.close,
+                size: 16,
+                color: JinatraTokens.ink.withValues(alpha: 0.5),
+              ),
             ),
           ),
         ],

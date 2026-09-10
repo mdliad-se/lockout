@@ -20,6 +20,11 @@ class JinatraTokens {
   static Color get ink => AppPalette.current.ink;
   static Color get signal => AppPalette.current.accent;
 
+  /// No palette carries meaning here — this exists so call sites never need
+  /// a bare `Color` constant to say "no fill", e.g. a progress track drawn
+  /// over its own bordered container.
+  static const Color transparent = Colors.transparent;
+
   /// Text/icon colour for content sitting on [deepTeal].
   static Color get onPrimary => AppPalette.current.onPrimary;
 
