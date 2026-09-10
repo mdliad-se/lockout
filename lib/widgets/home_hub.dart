@@ -11,9 +11,22 @@ import 'hero_card.dart';
 /// prompt instead of a number. A zero would be a lie.
 class HomeHubSummary {
   final int kcalEaten;
+
+  /// The daily calorie target. Nullable so a widget test can exercise the
+  /// "SET A GOAL" prompt with no database, but that branch is not reachable
+  /// on a real device: `GoalService.snapshot().calorieTarget` always
+  /// resolves to something — the calculated plan, the user's manual
+  /// override, or the seeded `calorie_target` default (Ruling A) — so
+  /// `TodayTab` can never actually pass null here.
   final int? kcalTarget;
   final double? weightKg;
   final double? weightDeltaKg;
+
+  /// Total estimated kcal burned today. Null means no session was logged
+  /// today at all — the honest "NO SESSION YET" case. A non-null value of
+  /// zero or less means a session *was* logged but no estimate could be
+  /// made for it (no bodyweight on record); the hub renders that as
+  /// "ESTIMATE UNAVAILABLE" rather than denying the session happened.
   final double? burnedTodayKcal;
 
   const HomeHubSummary({
@@ -42,6 +55,11 @@ class HomeHub extends StatelessWidget {
   final VoidCallback? onOpenBody;
   final VoidCallback? onOpenLog;
 
+  /// Whether the Food tab is reachable at all. When false the CALORIES row
+  /// is dropped entirely rather than shown with a value the user has no way
+  /// to act on or change.
+  final bool foodTabEnabled;
+
   const HomeHub({
     super.key,
     required this.eyebrow,
@@ -54,6 +72,7 @@ class HomeHub extends StatelessWidget {
     this.onOpenFood,
     this.onOpenBody,
     this.onOpenLog,
+    this.foodTabEnabled = true,
   });
 
   String get _intakeValue {
@@ -75,10 +94,12 @@ class HomeHub extends StatelessWidget {
     final b = summary.burnedTodayKcal;
     if (b == null) return 'NO SESSION YET';
     // Reuses SessionLog's formatter rather than re-deriving the "~123 kcal"
-    // format here; it returns '' for a non-positive value, which also reads
-    // as "nothing to show" here.
+    // format here; it returns '' for a non-positive value. That is a
+    // *different* state from null: a session was logged (b is non-null) but
+    // no estimate could be made for it, so this must not say "NO SESSION
+    // YET" — that would deny a session the user just saved.
     final label = SessionLog.formatKcal(b);
-    return label.isEmpty ? 'NO SESSION YET' : label;
+    return label.isEmpty ? 'ESTIMATE UNAVAILABLE' : label;
   }
 
   @override
@@ -93,12 +114,13 @@ class HomeHub extends StatelessWidget {
           background: heroColor,
           actions: heroActions,
         ),
-        CalmRow(
-          icon: Icons.restaurant,
-          title: 'CALORIES',
-          value: _intakeValue,
-          onTap: onOpenFood,
-        ),
+        if (foodTabEnabled)
+          CalmRow(
+            icon: Icons.restaurant,
+            title: 'CALORIES',
+            value: _intakeValue,
+            onTap: onOpenFood,
+          ),
         CalmRow(
           icon: Icons.monitor_weight,
           title: 'BODYWEIGHT',

@@ -13,7 +13,6 @@ import '../widgets/home_hub.dart';
 import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import 'exercise_video_screen.dart';
-import 'food_tab.dart';
 
 /// One set inside a running session.
 class _LiveSet {
@@ -139,32 +138,32 @@ class TodayTabState extends State<TodayTab> {
       (sum, row) => sum + ((row['kcal'] as num?)?.toInt() ?? 0),
     );
 
-    // snapshot() already fetches body logs for currentWeightKg; reuse that
-    // fetch for the delta below instead of querying getBodyLogs() again.
+    // snapshot() already fetches body logs for currentWeightKg and resolves
+    // the shared calorie target (Ruling A); reuse both instead of a second
+    // getBodyLogs() call or re-deriving the target here.
     final snapshot = await GoalService.instance.snapshot();
     final delta = GoalService.weightDeltaKg(snapshot.bodyLogs);
 
-    // The calculated nutrition target when one exists; otherwise the same
-    // user-editable `calorie_target` setting FoodTab reads, so the two
-    // screens can never disagree. Only when both are absent does the hub
-    // prompt for a goal.
-    final kcalTarget = snapshot.nutrition?.targetKcal ??
-        await FoodTabState.readCalorieTarget(db);
-
     final sessionRows = await db.getSessionLogsForDate(today);
-    final burnedToday = sessionRows.fold<double>(
-      0.0,
-      (sum, r) => sum + ((r['kcal_burned'] as num?)?.toDouble() ?? 0.0),
-    );
+    // Null means "no session logged today" — the honest NO SESSION YET case.
+    // A session that *was* logged but couldn't be estimated (no bodyweight
+    // on record) sums to 0.0, which is a real, different state: the row
+    // must not claim there was no session at all. See `HomeHub._burnValue`.
+    final burnedToday = sessionRows.isEmpty
+        ? null
+        : sessionRows.fold<double>(
+            0.0,
+            (sum, r) => sum + ((r['kcal_burned'] as num?)?.toDouble() ?? 0.0),
+          );
 
     if (!mounted) return;
     setState(() {
       _summary = HomeHubSummary(
         kcalEaten: eaten,
-        kcalTarget: kcalTarget,
+        kcalTarget: snapshot.calorieTarget,
         weightKg: snapshot.currentWeightKg,
         weightDeltaKg: delta,
-        burnedTodayKcal: burnedToday > 0 ? burnedToday : null,
+        burnedTodayKcal: burnedToday,
       );
     });
   }
@@ -485,6 +484,7 @@ class TodayTabState extends State<TodayTab> {
           ),
         ],
         summary: _summary,
+        foodTabEnabled: widget.foodTabEnabled,
         onOpenFood: widget.foodTabEnabled
             ? () => widget.onNavigate?.call('food')
             : null,

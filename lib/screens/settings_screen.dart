@@ -66,7 +66,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     final db = DatabaseService.instance;
     final h = await db.getSetting('height_cm', defaultValue: '175.0');
-    final c = await db.getSetting('calorie_target', defaultValue: '2200');
+    final c = await db.getSetting(
+      'calorie_target',
+      defaultValue: '${DatabaseService.defaultCalorieTarget}',
+    );
     final f = await db.getSetting('food_tab_enabled', defaultValue: 'true');
     final u = await db.getSetting('height_unit', defaultValue: 'cm');
     final t =

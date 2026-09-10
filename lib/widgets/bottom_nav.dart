@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 import '../theme/jinatra_tokens.dart';
 
+/// One nav destination, enum-keyed. `MainScreen._screenFor` switches on this
+/// with a Dart switch *expression*, which the compiler rejects if a case is
+/// missing — so a tab added here without a matching branch there is a
+/// compile error, not the runtime `StateError` a `String`-keyed switch could
+/// only catch by remembering to write a `default`.
+enum NavTab { home, routines, food, body, log }
+
 /// One nav destination: a stable id plus how it renders.
 ///
 /// `BottomNav.visibleTabs` is the single source of truth for tab order and
@@ -8,11 +15,22 @@ import '../theme/jinatra_tokens.dart';
 /// it directly, rather than hard-coding the same order a second and third
 /// time, so a future reorder can't make the three lists disagree.
 class NavTabDef {
+  final NavTab tab;
+
+  /// The id `TodayTab.onNavigate(String tabId)` and `MainScreen._goToTab`
+  /// use — a public string contract (see the Task 7 brief), kept alongside
+  /// [tab] rather than derived from its `.name`, so renaming an enum member
+  /// can never silently change that contract.
   final String id;
   final String label;
   final IconData icon;
 
-  const NavTabDef({required this.id, required this.label, required this.icon});
+  const NavTabDef({
+    required this.tab,
+    required this.id,
+    required this.label,
+    required this.icon,
+  });
 }
 
 class BottomNav extends StatelessWidget {
@@ -28,11 +46,31 @@ class BottomNav extends StatelessWidget {
   });
 
   static const List<NavTabDef> _allTabs = [
-    NavTabDef(id: 'home', label: 'HOME', icon: Icons.home),
-    NavTabDef(id: 'routines', label: 'ROUTINES', icon: Icons.fitness_center),
-    NavTabDef(id: 'food', label: 'FOOD', icon: Icons.restaurant),
-    NavTabDef(id: 'body', label: 'BODY', icon: Icons.monitor_weight),
-    NavTabDef(id: 'log', label: 'LOG', icon: Icons.calendar_month),
+    NavTabDef(tab: NavTab.home, id: 'home', label: 'HOME', icon: Icons.home),
+    NavTabDef(
+      tab: NavTab.routines,
+      id: 'routines',
+      label: 'ROUTINES',
+      icon: Icons.fitness_center,
+    ),
+    NavTabDef(
+      tab: NavTab.food,
+      id: 'food',
+      label: 'FOOD',
+      icon: Icons.restaurant,
+    ),
+    NavTabDef(
+      tab: NavTab.body,
+      id: 'body',
+      label: 'BODY',
+      icon: Icons.monitor_weight,
+    ),
+    NavTabDef(
+      tab: NavTab.log,
+      id: 'log',
+      label: 'LOG',
+      icon: Icons.calendar_month,
+    ),
   ];
 
   /// The ordered, currently-visible tabs. `MainScreen` derives both its

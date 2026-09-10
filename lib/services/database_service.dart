@@ -1,9 +1,30 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
 class DatabaseService {
   static final DatabaseService instance = DatabaseService._init();
   static Database? _database;
+
+  /// Overrides the path `database` opens, for tests only. A `testWidgets`
+  /// test that pumps a widget backed by a real file database hangs
+  /// indefinitely in this environment — opening a `dart:io` file inside
+  /// `TestWidgetsFlutterBinding`'s zone never completes, even though the
+  /// identical `openDatabase` call resolves instantly under a plain `test()`
+  /// (every non-widget DB test in this repo relies on that). An in-memory
+  /// database (`sqflite_common_ffi`'s `inMemoryDatabasePath`) opens
+  /// instantly regardless of which binding is active, so widget tests that
+  /// need a real database set this before pumping. Production code never
+  /// sets it, so this has no effect outside tests.
+  @visibleForTesting
+  static String? testDatabasePath;
+
+  /// The single `calorie_target` fallback used everywhere one is needed: the
+  /// seed row a fresh install writes, the value Settings shows before a plan
+  /// has ever been calculated, and `GoalService`'s final fallback when
+  /// neither a calculated plan nor a saved override exists. One constant so
+  /// the three call sites cannot drift to different numbers.
+  static const int defaultCalorieTarget = 2200;
 
   DatabaseService._init();
 
@@ -14,8 +35,9 @@ class DatabaseService {
   }
 
   Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
+    final override = testDatabasePath;
+    final path =
+        override ?? join(await getDatabasesPath(), filePath);
 
     return await openDatabase(
       path,
@@ -225,7 +247,8 @@ class DatabaseService {
     await db.insert('user_settings', {'key': 'unit_weight', 'value': 'kg'});
     await db.insert('user_settings', {'key': 'unit_length', 'value': 'cm'});
     await db.insert('user_settings', {'key': 'height_cm', 'value': '175.0'});
-    await db.insert('user_settings', {'key': 'calorie_target', 'value': '2200'});
+    await db.insert('user_settings',
+        {'key': 'calorie_target', 'value': '$defaultCalorieTarget'});
     await db.insert('user_settings', {'key': 'food_tab_enabled', 'value': 'true'});
     await db.insert('user_settings', {'key': 'rest_timer_default', 'value': '60'});
     await db.insert('user_settings', {'key': 'height_unit', 'value': 'cm'});

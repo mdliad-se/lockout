@@ -2,12 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:lockout/models/models.dart';
-import 'package:lockout/screens/food_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/goal_service.dart';
 
-/// Body-log ordering, the bodyweight delta it feeds, the date-scoped session
-/// query, and the calorie-target parsing HOME shares with FoodTab.
+import 'test_helpers.dart';
+
+/// `GoalService`'s pure bodyweight-delta maths, and the shared calorie
+/// target resolution (Ruling A) both FOOD and HOME resolve through.
 void main() {
   setUpAll(() {
     sqfliteFfiInit();
@@ -15,88 +16,11 @@ void main() {
   });
 
   setUp(() async {
-    final db = await DatabaseService.instance.database;
-    for (final table in DatabaseService.backupTables) {
-      await db.delete(table);
-    }
-  });
-
-  group('DatabaseService.getBodyLogs', () {
-    test('same-day entries come back newest-inserted-first, not undefined',
-        () async {
-      final db = DatabaseService.instance;
-      // Two weigh-ins on the same calendar day: a loss, logged twice.
-      await db.insertBodyLog(BodyEntry(
-        id: 'b1',
-        dateStr: '2026-09-10',
-        weightKg: 80.0,
-      ).toMap());
-      await db.insertBodyLog(BodyEntry(
-        id: 'b2',
-        dateStr: '2026-09-10',
-        weightKg: 79.0,
-      ).toMap());
-
-      final rows = await db.getBodyLogs();
-      expect(rows.length, 2);
-      // The later insert (the second weigh-in that day) must sort first —
-      // date_str DESC alone cannot distinguish these, so the rowid DESC
-      // tiebreaker is what makes this deterministic.
-      expect(rows[0]['id'], 'b2');
-      expect(rows[1]['id'], 'b1');
-    });
-
-    test('a later date still outranks an earlier one', () async {
-      final db = DatabaseService.instance;
-      await db.insertBodyLog(BodyEntry(
-        id: 'early',
-        dateStr: '2026-09-01',
-        weightKg: 81.0,
-      ).toMap());
-      await db.insertBodyLog(BodyEntry(
-        id: 'late',
-        dateStr: '2026-09-10',
-        weightKg: 80.0,
-      ).toMap());
-
-      final rows = await db.getBodyLogs();
-      expect(rows.first['id'], 'late');
-    });
-  });
-
-  group('DatabaseService.getSessionLogsForDate', () {
-    test('scopes to the given date instead of scanning all history',
-        () async {
-      final db = DatabaseService.instance;
-      await db.insertSessionLog(SessionLog(
-        id: 's-today',
-        dayName: 'Legs',
-        dateStr: '2026-09-10',
-        durationSeconds: 1800,
-        totalVolumeKg: 1000,
-        status: 'completed',
-        kcalBurned: 300,
-      ).toMap());
-      await db.insertSessionLog(SessionLog(
-        id: 's-yesterday',
-        dayName: 'Push',
-        dateStr: '2026-09-09',
-        durationSeconds: 1800,
-        totalVolumeKg: 900,
-        status: 'completed',
-        kcalBurned: 250,
-      ).toMap());
-
-      final rows = await db.getSessionLogsForDate('2026-09-10');
-      expect(rows.length, 1);
-      expect(rows.first['id'], 's-today');
-    });
-
-    test('returns nothing for a date with no sessions', () async {
-      final rows =
-          await DatabaseService.instance.getSessionLogsForDate('2026-01-01');
-      expect(rows, isEmpty);
-    });
+    // Reseeded, not just wiped: a bare `delete` from every backup table
+    // (including `user_settings`) would leave whatever the previous test in
+    // this file saved to `calorie_target` behind for the next suite on the
+    // shared serial database.
+    await wipeDatabaseAndReseed(DatabaseService.instance);
   });
 
   group('GoalService.weightDeltaKg', () {
@@ -134,18 +58,52 @@ void main() {
     });
   });
 
-  group('FoodTabState.readCalorieTarget', () {
-    test('defaults to 2200 when nothing is stored, matching FoodTab', () async {
-      final target =
-          await FoodTabState.readCalorieTarget(DatabaseService.instance);
-      expect(target, 2200);
+  group('GoalService.instance.snapshot().calorieTarget', () {
+    test('defaults to DatabaseService.defaultCalorieTarget when nothing is '
+        'stored and no plan exists', () async {
+      final snap = await GoalService.instance.snapshot();
+      expect(snap.nutrition, isNull);
+      expect(snap.calorieTarget, DatabaseService.defaultCalorieTarget);
     });
 
-    test('reads back whatever Settings/FoodTab last saved', () async {
+    test(
+        'reads back whatever the Settings override last saved, when no plan '
+        'exists (FOOD and HOME must resolve to the same number)', () async {
       final db = DatabaseService.instance;
       await db.saveSetting('calorie_target', '1950');
-      final target = await FoodTabState.readCalorieTarget(db);
-      expect(target, 1950);
+
+      final snap = await GoalService.instance.snapshot();
+      expect(snap.nutrition, isNull);
+      expect(snap.calorieTarget, 1950);
+    });
+
+    test(
+        'a calculated plan wins over the manual override once both exist '
+        '(Ruling A)', () async {
+      final db = DatabaseService.instance;
+      // A manual override left over from before the profile was configured.
+      await db.saveSetting('calorie_target', '1800');
+
+      // Configure a full profile and log a bodyweight, so snapshot() can
+      // calculate a plan.
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '70');
+      await db.saveSetting('height_cm', '175.0');
+      await db.saveSetting('sex', 'male');
+      await db.saveSetting('activity_level', 'moderate');
+      await db.saveSetting('goal_weeks', '12');
+      await db.insertBodyLog(BodyEntry(
+        id: 'b1',
+        dateStr: '2026-09-10',
+        weightKg: 80.0,
+      ).toMap());
+
+      final snap = await GoalService.instance.snapshot();
+      expect(snap.nutrition, isNotNull);
+      expect(snap.calorieTarget, snap.nutrition!.targetKcal);
+      // The whole point of the finding: this must NOT be the stale manual
+      // override once a plan can be calculated.
+      expect(snap.calorieTarget, isNot(1800));
     });
   });
 }

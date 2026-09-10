@@ -54,26 +54,27 @@ class _MainScreenState extends State<MainScreen> {
       .map((t) => t.id)
       .toList();
 
-  List<Widget> get _screens => _tabIds.map((id) {
-        switch (id) {
-          case 'home':
-            return TodayTab(
-              key: _todayKey,
-              onNavigate: _goToTab,
-              foodTabEnabled: _foodTabEnabled,
-            );
-          case 'routines':
-            return RoutinesTab(key: _routinesKey);
-          case 'food':
-            return FoodTab(key: _foodKey);
-          case 'body':
-            return BodyTab(key: _bodyKey);
-          case 'log':
-            return LogTab(key: _logKey);
-          default:
-            throw StateError('Unknown tab id: $id');
-        }
-      }).toList();
+  List<Widget> get _screens =>
+      BottomNav.visibleTabs(foodTabEnabled: _foodTabEnabled)
+          .map((t) => _screenFor(t.tab))
+          .toList();
+
+  /// A switch *expression* over the `NavTab` enum: the compiler rejects this
+  /// if a case is missing, so a tab added to `BottomNav._allTabs` without a
+  /// matching branch here is a compile error rather than the runtime
+  /// `StateError` a `String`-keyed switch could only catch with a
+  /// remembered `default`.
+  Widget _screenFor(NavTab tab) => switch (tab) {
+        NavTab.home => TodayTab(
+            key: _todayKey,
+            onNavigate: _goToTab,
+            foodTabEnabled: _foodTabEnabled,
+          ),
+        NavTab.routines => RoutinesTab(key: _routinesKey),
+        NavTab.food => FoodTab(key: _foodKey),
+        NavTab.body => BodyTab(key: _bodyKey),
+        NavTab.log => LogTab(key: _logKey),
+      };
 
   void _refreshVisibleTab() {
     if (_currentIndex >= _tabIds.length) return;

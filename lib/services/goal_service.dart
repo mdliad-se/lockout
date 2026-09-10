@@ -40,9 +40,19 @@ class GoalSnapshot {
   final double? bmi;
 
   /// The raw rows behind [currentWeightKg], newest first. Exposed so a
-  /// caller that also needs the day-over-day delta (the HOME hub) can derive
-  /// it from this list instead of issuing its own `getBodyLogs()` call.
+  /// caller that also needs the delta since the previous weigh-in (the HOME
+  /// hub) can derive it from this list instead of issuing its own
+  /// `getBodyLogs()` call.
   final List<Map<String, dynamic>> bodyLogs;
+
+  /// The one calorie number every screen must display — resolved here so
+  /// FOOD and HOME can never disagree (Ruling A). The calculated [nutrition]
+  /// plan wins when one exists; otherwise the user's editable
+  /// `calorie_target` override from Settings; `DatabaseService
+  /// .defaultCalorieTarget` only when neither has ever been set. That seed
+  /// row means this is effectively never null on a real device — see the
+  /// doc on `HomeHubSummary.kcalTarget` for the consequence.
+  final int calorieTarget;
 
   const GoalSnapshot({
     required this.profile,
@@ -51,6 +61,7 @@ class GoalSnapshot {
     required this.training,
     required this.bmi,
     required this.bodyLogs,
+    required this.calorieTarget,
   });
 
   bool get isReady => nutrition != null && currentWeightKg != null;
@@ -115,31 +126,26 @@ class GoalService {
             heightCm: profile.heightCm,
           );
 
-    if (!profile.isConfigured || currentWeight == null) {
-      return GoalSnapshot(
-        profile: profile,
+    NutritionPlan? nutrition;
+    TrainingRecommendation? training;
+    if (profile.isConfigured && currentWeight != null) {
+      nutrition = NutritionPlanner.build(
         currentWeightKg: currentWeight,
-        nutrition: null,
-        training: null,
-        bmi: bmi,
-        bodyLogs: bodyRows,
+        targetWeightKg: profile.targetWeightKg,
+        heightCm: profile.heightCm,
+        age: profile.age,
+        sex: profile.sex,
+        activity: profile.activity,
+        weeks: profile.weeks,
+      );
+
+      training = TrainingPlanner.recommend(
+        direction: nutrition.direction,
+        daysPerWeek: profile.daysPerWeek,
       );
     }
 
-    final nutrition = NutritionPlanner.build(
-      currentWeightKg: currentWeight,
-      targetWeightKg: profile.targetWeightKg,
-      heightCm: profile.heightCm,
-      age: profile.age,
-      sex: profile.sex,
-      activity: profile.activity,
-      weeks: profile.weeks,
-    );
-
-    final training = TrainingPlanner.recommend(
-      direction: nutrition.direction,
-      daysPerWeek: profile.daysPerWeek,
-    );
+    final calorieTarget = await _resolveCalorieTarget(nutrition);
 
     return GoalSnapshot(
       profile: profile,
@@ -148,12 +154,28 @@ class GoalService {
       training: training,
       bmi: bmi,
       bodyLogs: bodyRows,
+      calorieTarget: calorieTarget,
     );
   }
 
-  /// Day-over-day bodyweight delta from [bodyLogs] rows ordered newest first
-  /// (the shape `getBodyLogs()` returns). Null when there is fewer than two
-  /// entries to compare.
+  /// Ruling A's resolution order, on its own so it can be reused wherever a
+  /// snapshot is not already in hand.
+  Future<int> _resolveCalorieTarget(NutritionPlan? plan) async {
+    if (plan != null) return plan.targetKcal;
+    final db = DatabaseService.instance;
+    final stored = await db.getSetting(
+      'calorie_target',
+      defaultValue: '${DatabaseService.defaultCalorieTarget}',
+    );
+    return int.tryParse(stored) ?? DatabaseService.defaultCalorieTarget;
+  }
+
+  /// Bodyweight delta since the previous weigh-in, from [bodyLogs] rows
+  /// ordered newest first (the shape `getBodyLogs()` returns) — not
+  /// necessarily "yesterday": `getBodyLogs()` orders same-day entries
+  /// deterministically (see its doc), so two weigh-ins logged hours apart on
+  /// the same calendar day compare against each other too. Null when there
+  /// are fewer than two entries to compare.
   ///
   /// A pure function so the sign can be covered by a test with no database:
   /// feed it two rows and check `latest - previous` comes out the right way

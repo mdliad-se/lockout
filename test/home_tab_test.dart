@@ -221,6 +221,67 @@ void main() {
       expect(opened, 'log');
     });
 
+    testWidgets(
+        'a session logged today with no burn estimate reads ESTIMATE '
+        'UNAVAILABLE, not NO SESSION YET', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: HomeHub(
+              eyebrow: 'TODAY - SUN',
+              title: 'LEGS',
+              heroColor: Colors.orange,
+              heroActions: const [],
+              summary: const HomeHubSummary(
+                kcalEaten: 0,
+                kcalTarget: null,
+                weightKg: null,
+                weightDeltaKg: null,
+                // Non-null zero: a session WAS logged today, but no estimate
+                // could be produced for it (no bodyweight on record).
+                burnedTodayKcal: 0.0,
+              ),
+              actions: const [],
+            ),
+          ),
+        ),
+      ));
+
+      expect(find.text('ESTIMATE UNAVAILABLE'), findsOneWidget);
+      expect(find.text('NO SESSION YET'), findsNothing);
+    });
+
+    testWidgets(
+        'CALORIES row is dropped entirely when the Food tab is disabled, '
+        'not left showing a value the user cannot act on',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: HomeHub(
+              eyebrow: 'TODAY - MON',
+              title: 'LEGS',
+              heroColor: Colors.orange,
+              heroActions: const [],
+              foodTabEnabled: false,
+              summary: const HomeHubSummary(
+                kcalEaten: 1240,
+                kcalTarget: 1850,
+                weightKg: 72.5,
+                weightDeltaKg: -0.4,
+                burnedTodayKcal: 388.0,
+              ),
+              actions: const [],
+            ),
+          ),
+        ),
+      ));
+
+      expect(find.text('CALORIES'), findsNothing);
+      expect(find.text('1240 / 1850 kcal'), findsNothing);
+      expect(find.byType(CalmRow), findsNWidgets(2));
+    });
+
     testWidgets('tapping an ActionTile fires its onTap', (tester) async {
       var tapped = false;
       await tester.pumpWidget(MaterialApp(
