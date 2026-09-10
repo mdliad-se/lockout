@@ -100,6 +100,33 @@ class TrainingDay {
       isRestDay: map['is_rest_day'] == 1,
     );
   }
+
+  /// [id] and [routineId] are identity, never copied over.
+  TrainingDay copyWith({
+    String? name,
+    String? tag,
+    int? orderIndex,
+    String? focus,
+    String? note,
+    bool? isRestDay,
+    List<WarmupItem>? warmups,
+    List<ExerciseDef>? exercises,
+    List<FinisherItem>? finishers,
+  }) {
+    return TrainingDay(
+      id: id,
+      routineId: routineId,
+      name: name ?? this.name,
+      tag: tag ?? this.tag,
+      orderIndex: orderIndex ?? this.orderIndex,
+      focus: focus ?? this.focus,
+      note: note ?? this.note,
+      isRestDay: isRestDay ?? this.isRestDay,
+      warmups: warmups ?? this.warmups,
+      exercises: exercises ?? this.exercises,
+      finishers: finishers ?? this.finishers,
+    );
+  }
 }
 
 // Warmup Entry

@@ -15,6 +15,10 @@ import '../widgets/jinatra_input.dart';
 import '../widgets/sheet_scaffold.dart';
 import 'exercise_video_screen.dart';
 
+/// Runs a nested sheet/pick action that resolves whether it changed
+/// anything, so the caller knows whether to refresh.
+typedef RefreshAfter = Future<void> Function(Future<bool?> Function() action);
+
 class RoutinesTab extends StatefulWidget {
   const RoutinesTab({super.key});
 
@@ -102,33 +106,54 @@ class RoutinesTabState extends State<RoutinesTab> {
   /// A [TrainingDay] loaded from the DB never carries its exercises inline —
   /// they live in [_dayExercises], loaded separately. Hydrate a copy so
   /// [dayRowSummary] and [DayRow] see the real count.
-  TrainingDay _hydrated(TrainingDay day) => TrainingDay(
-        id: day.id,
-        routineId: day.routineId,
-        name: day.name,
-        tag: day.tag,
-        orderIndex: day.orderIndex,
-        focus: day.focus,
-        note: day.note,
-        isRestDay: day.isRestDay,
-        exercises: _dayExercises[day.id] ?? [],
-      );
+  TrainingDay _hydrated(TrainingDay day) =>
+      day.copyWith(exercises: _dayExercises[day.id] ?? []);
 
   // --- CREATE ROUTINE ---
 
+  /// Controllers and selection state are created here, once per sheet open,
+  /// rather than inside the builder passed to [showJinatraSheet] — that
+  /// builder is re-invoked on every rebuild of the sheet's own drag-handling
+  /// state (see `_BottomSheetState` in the framework), which would otherwise
+  /// hand back fresh controllers/locals — and silently clear whatever the
+  /// user had typed or picked — on a drag that does not dismiss the sheet.
   Future<void> _openCreateRoutineSheet() async {
-    final saved = await showJinatraSheet<bool>(
-      context: context,
-      title: 'CREATE NEW ROUTINE',
-      builder: (ctx) => _buildCreateRoutineForm(ctx),
-    );
-    if (saved == true && mounted) await reload();
-  }
-
-  Widget _buildCreateRoutineForm(BuildContext sheetCtx) {
     final nameCtrl = TextEditingController();
     var mode = SchedulingMode.weekday;
     var template = RoutineTemplate.all.first;
+    try {
+      final saved = await showJinatraSheet<bool>(
+        context: context,
+        title: 'CREATE NEW ROUTINE',
+        builder: (ctx) => _buildCreateRoutineForm(
+          ctx,
+          nameCtrl: nameCtrl,
+          mode: mode,
+          template: template,
+          onModeChanged: (m) => mode = m,
+          onTemplateChanged: (t) => template = t,
+        ),
+      );
+      if (saved == true && mounted) await reload();
+    } finally {
+      nameCtrl.dispose();
+    }
+  }
+
+  Widget _buildCreateRoutineForm(
+    BuildContext sheetCtx, {
+    required TextEditingController nameCtrl,
+    required SchedulingMode mode,
+    required RoutineTemplate template,
+    required ValueChanged<SchedulingMode> onModeChanged,
+    required ValueChanged<RoutineTemplate> onTemplateChanged,
+  }) {
+    // Local copies drive this sheet instance's own rebuilds; the callbacks
+    // above keep the hoisted state in `_openCreateRoutineSheet` current too,
+    // so a re-invocation of this builder (a drag that doesn't dismiss) picks
+    // up the last choice instead of resetting to the initial default.
+    var localMode = mode;
+    var localTemplate = template;
 
     return StatefulBuilder(
       builder: (context, setSheet) => Column(
@@ -147,25 +172,29 @@ class RoutinesTabState extends State<RoutinesTab> {
               Expanded(
                 child: _choice(
                   label: 'WEEKDAY',
-                  selected: mode == SchedulingMode.weekday,
-                  onTap: () =>
-                      setSheet(() => mode = SchedulingMode.weekday),
+                  selected: localMode == SchedulingMode.weekday,
+                  onTap: () => setSheet(() {
+                    localMode = SchedulingMode.weekday;
+                    onModeChanged(localMode);
+                  }),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _choice(
                   label: 'ROTATING',
-                  selected: mode == SchedulingMode.rotating,
-                  onTap: () =>
-                      setSheet(() => mode = SchedulingMode.rotating),
+                  selected: localMode == SchedulingMode.rotating,
+                  onTap: () => setSheet(() {
+                    localMode = SchedulingMode.rotating;
+                    onModeChanged(localMode);
+                  }),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 6),
           Text(
-            mode == SchedulingMode.weekday
+            localMode == SchedulingMode.weekday
                 ? 'Each day is pinned to a weekday. Today\'s workout is whichever day matches today.'
                 : 'Days cycle in order, one per calendar day, ignoring weekdays.',
             style: JinatraTokens.bodyText(
@@ -177,22 +206,27 @@ class RoutinesTabState extends State<RoutinesTab> {
           Text('START FROM', style: JinatraTokens.monoData(fontSize: 12)),
           const SizedBox(height: 8),
           ...RoutineTemplate.all.map((t) {
-            final selected = t.key == template.key;
+            final selected = t.key == localTemplate.key;
             return GestureDetector(
-              onTap: () => setSheet(() => template = t),
+              onTap: () => setSheet(() {
+                localTemplate = t;
+                onTemplateChanged(localTemplate);
+              }),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: selected
+                decoration: JinatraTokens.cardDecoration(
+                  background: selected
                       ? JinatraTokens.mistTeal
                       : JinatraTokens.paper,
-                  border: Border.all(
-                    color: selected
-                        ? JinatraTokens.deepTeal
-                        : JinatraTokens.ink,
-                    width: selected ? 3 : 2,
-                  ),
+                  borderColor: selected
+                      ? JinatraTokens.deepTeal
+                      : JinatraTokens.ink,
+                  borderWidth: selected
+                      ? JinatraTokens.borderControl
+                      : JinatraTokens.borderDivider,
+                  radius: JinatraTokens.radiusTile,
+                  hasShadow: false,
                 ),
                 child: Row(
                   children: [
@@ -235,13 +269,13 @@ class RoutinesTabState extends State<RoutinesTab> {
               final typed = nameCtrl.text.trim();
               final name = typed.isNotEmpty
                   ? typed
-                  : (template.key == 'blank' ? '' : template.name);
+                  : (localTemplate.key == 'blank' ? '' : localTemplate.name);
               if (name.isEmpty) return;
 
               await RoutineFactory.createFromTemplate(
                 name: name,
-                mode: mode,
-                template: template,
+                mode: localMode,
+                template: localTemplate,
               );
               if (sheetCtx.mounted) Navigator.pop(sheetCtx, true);
             },
@@ -260,9 +294,12 @@ class RoutinesTabState extends State<RoutinesTab> {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
-          border: Border.all(color: JinatraTokens.ink, width: 3),
+        decoration: JinatraTokens.cardDecoration(
+          background: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
+          borderWidth: JinatraTokens.borderControl,
+          radius: JinatraTokens.radiusTile,
+          hasShadow: !selected,
+          shadowOffset: JinatraTokens.shadowSm,
         ),
         child: Center(
           child: Text(
@@ -281,21 +318,50 @@ class RoutinesTabState extends State<RoutinesTab> {
   /// Opens the training-day form. Resolves `true` only when the day was
   /// actually saved, so a caller that must close a parent sheet (the day
   /// detail sheet, on an edit) can tell a save apart from a dismiss.
-  Future<bool?> _openDayFormSheet(String routineId, {TrainingDay? existing}) {
-    return showJinatraSheet<bool>(
-      context: context,
-      title: existing == null ? 'ADD TRAINING DAY' : 'EDIT DAY',
-      builder: (ctx) => _buildDayForm(ctx, routineId, existing: existing),
-    );
-  }
-
-  Widget _buildDayForm(BuildContext sheetCtx, String routineId,
-      {TrainingDay? existing}) {
+  Future<bool?> _openDayFormSheet(String routineId, {TrainingDay? existing}) async {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final focusCtrl = TextEditingController(text: existing?.focus ?? '');
     final noteCtrl = TextEditingController(text: existing?.note ?? '');
     var tag = existing?.tag ?? ScheduleService.weekdayPickerOrder.first;
     var isRest = existing?.isRestDay ?? false;
+    try {
+      return await showJinatraSheet<bool>(
+        context: context,
+        title: existing == null ? 'ADD TRAINING DAY' : 'EDIT DAY',
+        builder: (ctx) => _buildDayForm(
+          ctx,
+          routineId,
+          existing: existing,
+          nameCtrl: nameCtrl,
+          focusCtrl: focusCtrl,
+          noteCtrl: noteCtrl,
+          tag: tag,
+          isRest: isRest,
+          onTagChanged: (v) => tag = v,
+          onRestChanged: (v) => isRest = v,
+        ),
+      );
+    } finally {
+      nameCtrl.dispose();
+      focusCtrl.dispose();
+      noteCtrl.dispose();
+    }
+  }
+
+  Widget _buildDayForm(
+    BuildContext sheetCtx,
+    String routineId, {
+    TrainingDay? existing,
+    required TextEditingController nameCtrl,
+    required TextEditingController focusCtrl,
+    required TextEditingController noteCtrl,
+    required String tag,
+    required bool isRest,
+    required ValueChanged<String> onTagChanged,
+    required ValueChanged<bool> onRestChanged,
+  }) {
+    var localTag = tag;
+    var localIsRest = isRest;
 
     return StatefulBuilder(
       builder: (context, setSheet) => Column(
@@ -308,21 +374,23 @@ class RoutinesTabState extends State<RoutinesTab> {
             spacing: 8,
             runSpacing: 8,
             children: ScheduleService.weekdayPickerOrder.map((d) {
-              final selected = tag == d;
+              final selected = localTag == d;
               return GestureDetector(
-                onTap: () => setSheet(() => tag = d),
+                onTap: () => setSheet(() {
+                  localTag = d;
+                  onTagChanged(localTag);
+                }),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: selected
+                  decoration: JinatraTokens.cardDecoration(
+                    background: selected
                         ? JinatraTokens.signal
                         : JinatraTokens.paper,
-                    border:
-                        Border.all(color: JinatraTokens.ink, width: 2),
-                    boxShadow: selected
-                        ? null
-                        : [JinatraTokens.hardShadow(offset: 2)],
+                    borderWidth: JinatraTokens.borderControl,
+                    radius: JinatraTokens.radiusTile,
+                    hasShadow: !selected,
+                    shadowOffset: JinatraTokens.shadowSm,
                   ),
                   child: Text(d,
                       style: JinatraTokens.monoData(
@@ -359,9 +427,12 @@ class RoutinesTabState extends State<RoutinesTab> {
                     style: JinatraTokens.monoData(fontSize: 13)),
               ),
               Switch(
-                value: isRest,
+                value: localIsRest,
                 activeThumbColor: JinatraTokens.deepTeal,
-                onChanged: (v) => setSheet(() => isRest = v),
+                onChanged: (v) => setSheet(() {
+                  localIsRest = v;
+                  onRestChanged(localIsRest);
+                }),
               ),
             ],
           ),
@@ -375,11 +446,11 @@ class RoutinesTabState extends State<RoutinesTab> {
                 id: existing?.id ?? _newId(),
                 routineId: routineId,
                 name: nameCtrl.text.trim(),
-                tag: tag,
+                tag: localTag,
                 orderIndex: existing?.orderIndex ?? dayCount,
                 focus: focusCtrl.text.trim(),
                 note: noteCtrl.text.trim(),
-                isRestDay: isRest,
+                isRestDay: localIsRest,
               ).toMap());
               if (sheetCtx.mounted) Navigator.pop(sheetCtx, true);
             },
@@ -397,17 +468,26 @@ class RoutinesTabState extends State<RoutinesTab> {
     required String dayId,
     required bool isWarmup,
     required int index,
-  }) {
-    return showJinatraSheet<bool>(
-      context: context,
-      title: isWarmup ? 'ADD WARM-UP ITEM' : 'ADD FINISHER ITEM',
-      builder: (ctx) => _buildSubItemForm(
-        ctx,
-        dayId: dayId,
-        isWarmup: isWarmup,
-        index: index,
-      ),
-    );
+  }) async {
+    final nameCtrl = TextEditingController();
+    final amtCtrl = TextEditingController();
+    try {
+      return await showJinatraSheet<bool>(
+        context: context,
+        title: isWarmup ? 'ADD WARM-UP ITEM' : 'ADD FINISHER ITEM',
+        builder: (ctx) => _buildSubItemForm(
+          ctx,
+          dayId: dayId,
+          isWarmup: isWarmup,
+          index: index,
+          nameCtrl: nameCtrl,
+          amtCtrl: amtCtrl,
+        ),
+      );
+    } finally {
+      nameCtrl.dispose();
+      amtCtrl.dispose();
+    }
   }
 
   Widget _buildSubItemForm(
@@ -415,10 +495,9 @@ class RoutinesTabState extends State<RoutinesTab> {
     required String dayId,
     required bool isWarmup,
     required int index,
+    required TextEditingController nameCtrl,
+    required TextEditingController amtCtrl,
   }) {
-    final nameCtrl = TextEditingController();
-    final amtCtrl = TextEditingController();
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -488,16 +567,7 @@ class RoutinesTabState extends State<RoutinesTab> {
 
   /// Resolves `true` if the exercise was saved or removed — either way the
   /// caller's list is stale and must refresh.
-  Future<bool?> _openExerciseSheet(ExerciseDef ex, {bool isNew = false}) {
-    return showJinatraSheet<bool>(
-      context: context,
-      title: isNew ? 'ADD EXERCISE' : 'EDIT EXERCISE',
-      builder: (ctx) => _buildExerciseForm(ctx, ex, isNew: isNew),
-    );
-  }
-
-  Widget _buildExerciseForm(BuildContext sheetCtx, ExerciseDef ex,
-      {bool isNew = false}) {
+  Future<bool?> _openExerciseSheet(ExerciseDef ex, {bool isNew = false}) async {
     final setsCtrl = TextEditingController(text: ex.targetSets.toString());
     final repsMinCtrl =
         TextEditingController(text: ex.targetRepsMin.toString());
@@ -509,7 +579,46 @@ class RoutinesTabState extends State<RoutinesTab> {
     final restCtrl = TextEditingController(text: ex.restDefaultS.toString());
     final noteCtrl = TextEditingController(text: ex.note);
     final videoCtrl = TextEditingController(text: ex.videoUrl);
+    try {
+      return await showJinatraSheet<bool>(
+        context: context,
+        title: isNew ? 'ADD EXERCISE' : 'EDIT EXERCISE',
+        builder: (ctx) => _buildExerciseForm(
+          ctx,
+          ex,
+          isNew: isNew,
+          setsCtrl: setsCtrl,
+          repsMinCtrl: repsMinCtrl,
+          repsMaxCtrl: repsMaxCtrl,
+          weightCtrl: weightCtrl,
+          restCtrl: restCtrl,
+          noteCtrl: noteCtrl,
+          videoCtrl: videoCtrl,
+        ),
+      );
+    } finally {
+      setsCtrl.dispose();
+      repsMinCtrl.dispose();
+      repsMaxCtrl.dispose();
+      weightCtrl.dispose();
+      restCtrl.dispose();
+      noteCtrl.dispose();
+      videoCtrl.dispose();
+    }
+  }
 
+  Widget _buildExerciseForm(
+    BuildContext sheetCtx,
+    ExerciseDef ex, {
+    bool isNew = false,
+    required TextEditingController setsCtrl,
+    required TextEditingController repsMinCtrl,
+    required TextEditingController repsMaxCtrl,
+    required TextEditingController weightCtrl,
+    required TextEditingController restCtrl,
+    required TextEditingController noteCtrl,
+    required TextEditingController videoCtrl,
+  }) {
     final group = ex.muscleGroup.isNotEmpty
         ? ex.muscleGroup
         : ExerciseLibrary.groupFor(ex.name);
@@ -525,8 +634,13 @@ class RoutinesTabState extends State<RoutinesTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Not a sectionHeader: the SheetScaffold title above
+                  // ("ADD EXERCISE" / "EDIT EXERCISE") already carries that
+                  // weight, so this is a secondary line, not a second
+                  // heading.
                   Text(ex.name.toUpperCase(),
-                      style: JinatraTokens.sectionHeader(fontSize: 18)),
+                      style: JinatraTokens.bodyText(
+                          fontWeight: FontWeight.w800, fontSize: 15)),
                   if (group.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Container(
@@ -552,10 +666,11 @@ class RoutinesTabState extends State<RoutinesTab> {
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: JinatraTokens.signal,
-                  border: Border.all(color: JinatraTokens.ink, width: 2),
-                  boxShadow: [JinatraTokens.hardShadow(offset: 3)],
+                decoration: JinatraTokens.cardDecoration(
+                  background: JinatraTokens.signal,
+                  borderWidth: JinatraTokens.borderControl,
+                  radius: JinatraTokens.radiusPill,
+                  shadowOffset: JinatraTokens.shadowSm,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -685,8 +800,9 @@ class RoutinesTabState extends State<RoutinesTab> {
       builder: (ctx) => AlertDialog(
         backgroundColor: JinatraTokens.sweetCream,
         shape: RoundedRectangleBorder(
-          side: BorderSide(color: JinatraTokens.ink, width: 3),
-          borderRadius: BorderRadius.zero,
+          side: BorderSide(
+              color: JinatraTokens.ink, width: JinatraTokens.borderControl),
+          borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
         ),
         title: Text('DELETE ROUTINE?',
             style: JinatraTokens.sectionHeader(fontSize: 16)),
@@ -755,8 +871,13 @@ class RoutinesTabState extends State<RoutinesTab> {
         },
       ),
     );
-    if (!mounted) return;
-    await reload();
+    // No trailing `reload()` here: every mutation path reachable from
+    // `_buildDayDetail` (`refreshAfter`, the warm-up/finisher remove
+    // handlers, EDIT DAY, DELETE DAY) already calls `_loadAllRoutinesData()`
+    // itself the moment it changes something, so `RoutinesTabState` is
+    // already current by the time this sheet closes. Reloading again here
+    // would re-run the N+1x3 query walk over every routine and day for
+    // nothing — whether or not anything changed.
   }
 
   Widget _buildDayDetail(
@@ -782,16 +903,33 @@ class RoutinesTabState extends State<RoutinesTab> {
     }
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // v1 showed the day's focus (muscle groups) on the card's summary
+        // row; `DayRow`'s signature is fixed and has no slot for it, so it
+        // surfaces here instead — read-only, the edit form is where it's set.
+        if (day.focus.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              day.focus,
+              style: JinatraTokens.monoData(
+                fontSize: 11,
+                color: JinatraTokens.ink.withValues(alpha: 0.65),
+              ),
+            ),
+          ),
         if (day.note.isNotEmpty)
           Container(
             width: double.infinity,
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: JinatraTokens.signal,
-              border: Border.all(color: JinatraTokens.ink, width: 2),
+            decoration: JinatraTokens.cardDecoration(
+              background: JinatraTokens.signal,
+              borderWidth: JinatraTokens.borderControl,
+              radius: JinatraTokens.radiusTile,
+              hasShadow: false,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -958,7 +1096,7 @@ class RoutinesTabState extends State<RoutinesTab> {
     ExerciseDef ex,
     Color accent,
     Color onAccent,
-    Future<void> Function(Future<bool?> Function()) refreshAfter,
+    RefreshAfter refreshAfter,
   ) {
     return GestureDetector(
       onTap: () => refreshAfter(() => _openExerciseSheet(ex)),
@@ -966,9 +1104,12 @@ class RoutinesTabState extends State<RoutinesTab> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 7),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-        decoration: BoxDecoration(
-          color: JinatraTokens.sweetCream,
-          border: Border.all(color: JinatraTokens.ink, width: 2),
+        decoration: JinatraTokens.cardDecoration(
+          background: JinatraTokens.sweetCream,
+          borderWidth: JinatraTokens.borderControl,
+          radius: JinatraTokens.radiusTile,
+          hasShadow: true,
+          shadowOffset: JinatraTokens.shadowSm,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1017,9 +1158,11 @@ class RoutinesTabState extends State<RoutinesTab> {
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                decoration: BoxDecoration(
-                  color: JinatraTokens.paper,
-                  border: Border.all(color: JinatraTokens.ink, width: 2),
+                decoration: JinatraTokens.cardDecoration(
+                  background: JinatraTokens.paper,
+                  borderWidth: JinatraTokens.borderControl,
+                  radius: JinatraTokens.radiusPill,
+                  hasShadow: false,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1124,13 +1267,34 @@ class RoutinesTabState extends State<RoutinesTab> {
               ),
               PopupMenuButton<String>(
                 icon: Icon(Icons.more_vert, color: JinatraTokens.ink),
+                color: JinatraTokens.paper,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(JinatraTokens.radiusTile),
+                  side: BorderSide(
+                      color: JinatraTokens.ink,
+                      width: JinatraTokens.borderControl),
+                ),
                 onSelected: (v) {
                   if (v == 'active') _setActive(routine);
                   if (v == 'delete') _confirmDeleteRoutine(routine);
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'active', child: Text('SET AS ACTIVE')),
-                  PopupMenuItem(value: 'delete', child: Text('DELETE')),
+                // v1 hid SET AS ACTIVE once the routine was already active;
+                // a fixed two-item menu can't express that, so filter here.
+                itemBuilder: (_) => [
+                  if (!isActive)
+                    PopupMenuItem(
+                      value: 'active',
+                      child: Text('SET AS ACTIVE',
+                          style: JinatraTokens.monoData(fontSize: 12)),
+                    ),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Text('DELETE',
+                        style: JinatraTokens.monoData(
+                            fontSize: 12, color: JinatraTokens.signal)),
+                  ),
                 ],
               ),
             ],
@@ -1159,9 +1323,11 @@ class RoutinesTabState extends State<RoutinesTab> {
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: JinatraTokens.deepTeal,
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
+                  decoration: JinatraTokens.cardDecoration(
+                    background: JinatraTokens.deepTeal,
+                    borderWidth: JinatraTokens.borderControl,
+                    radius: JinatraTokens.radiusPill,
+                    shadowOffset: JinatraTokens.shadowSm,
                   ),
                   child: Text('+ ADD DAY',
                       style: JinatraTokens.monoData(

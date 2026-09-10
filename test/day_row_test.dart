@@ -42,6 +42,21 @@ void main() {
       expect(dayRowSummary(_day(name: 'Off', rest: true)), 'REST');
     });
 
+    test('a rest day says REST even if exercise rows are still attached',
+        () {
+      // REST is checked before EMPTY in dayRowSummary; a rest day built with
+      // an empty exercise list (as above) can't tell REST from EMPTY on its
+      // own — only a rest day that also carries exercises proves REST wins.
+      expect(
+        dayRowSummary(_day(
+          name: 'Off',
+          rest: true,
+          exercises: [_ex('Leg Press', 4)],
+        )),
+        'REST',
+      );
+    });
+
     test('a training day with no exercises says EMPTY', () {
       expect(dayRowSummary(_day()), 'EMPTY');
     });
