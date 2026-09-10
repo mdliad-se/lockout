@@ -33,7 +33,7 @@ class NavTabDef {
   });
 }
 
-class BottomNav extends StatelessWidget {
+class BottomNav extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
   final bool foodTabEnabled;
@@ -79,11 +79,51 @@ class BottomNav extends StatelessWidget {
   static List<NavTabDef> visibleTabs({bool foodTabEnabled = true}) =>
       _allTabs.where((t) => t.id != 'food' || foodTabEnabled).toList();
 
+  /// The most recently *measured* rendered height of a live `BottomNav`,
+  /// including its own bottom safe-area inset — `0.0` until one has laid
+  /// out at least once (there is no bar to clear yet, e.g. in a widget test
+  /// that pumps a tab on its own with no `MainScreen`/`BottomNav` around it
+  /// at all). `showUndoBanner` (`lib/widgets/undo_banner.dart`) reads this
+  /// so its `Positioned(bottom: ...)` clears the bar instead of sitting on
+  /// top of it for the whole 5s undo window. A measured value rather than a
+  /// guessed constant so it can't fall short on an unusual font-scale or
+  /// device inset, and can't overshoot (pushing the banner needlessly high)
+  /// where no bar exists to clear at all.
+  static final ValueNotifier<double> lastRenderedHeight =
+      ValueNotifier<double>(0.0);
+
+  @override
+  State<BottomNav> createState() => _BottomNavState();
+}
+
+class _BottomNavState extends State<BottomNav> {
+  final _barKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(_reportHeight);
+  }
+
+  @override
+  void didUpdateWidget(covariant BottomNav oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback(_reportHeight);
+  }
+
+  void _reportHeight(Duration _) {
+    final height = _barKey.currentContext?.size?.height;
+    if (height != null && height != BottomNav.lastRenderedHeight.value) {
+      BottomNav.lastRenderedHeight.value = height;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final tabs = visibleTabs(foodTabEnabled: foodTabEnabled);
+    final tabs = BottomNav.visibleTabs(foodTabEnabled: widget.foodTabEnabled);
 
     return Container(
+      key: _barKey,
       decoration: BoxDecoration(
         color: JinatraTokens.sweetCream,
         border: Border(
@@ -94,12 +134,12 @@ class BottomNav extends StatelessWidget {
         top: false,
         child: Row(
           children: List.generate(tabs.length, (index) {
-            final isActive = currentIndex == index;
+            final isActive = widget.currentIndex == index;
             final item = tabs[index];
 
             return Expanded(
               child: GestureDetector(
-                onTap: () => onTap(index),
+                onTap: () => widget.onTap(index),
                 behavior: HitTestBehavior.opaque,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(

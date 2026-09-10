@@ -183,7 +183,7 @@ void main() {
     // Ambiguity resolution 2: two weigh-ins on the same calendar day are a
     // morning-vs-evening swing, not a day-over-day change, and must compare
     // against each other in insertion order (`getBodyLogs`'s
-    // `rowid DESC` tiebreak) rather than an order that could invert the
+    // `id DESC` tiebreak) rather than an order that could invert the
     // sign.
     testWidgets(
         'two same-day entries compare in insertion order, not an '
@@ -196,7 +196,7 @@ void main() {
       await settle(tester);
 
       final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      // The second insert (79.0) is the latest by rowid; the delta must be
+      // The second insert (79.0) is the latest by id; the delta must be
       // 79.0 - 80.0, not the other way round.
       expect(hero.title, '79.0 KG');
       expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY');
@@ -471,6 +471,102 @@ void main() {
       expect(historyRow.value, '2');
     });
 
+    // Second-round review, Finding 1: the banner is deliberately reachable
+    // without closing the sheet it was triggered from, and undo tapped from
+    // there used to leave the still-open sheet showing the deleted row's
+    // absence forever — only closing and reopening it picked the restore
+    // back up, while the tab behind it (and the DB) already agreed the row
+    // was back. `_HistoryList` now listens to the same `ValueNotifier`
+    // `reload()` updates, so it hears the restore live.
+    testWidgets(
+        'undo tapped while the LOG HISTORY sheet is still open updates '
+        'that open sheet, not just the tab behind it', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 81.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('LOG HISTORY'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      // The sheet is still open throughout this test — never closed.
+      expect(find.byType(SheetScaffold), findsOneWidget);
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget,
+          reason: 'the delete already removed the row from the open sheet');
+
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      // The still-open sheet shows the restored row without having been
+      // closed and reopened, and the count behind it agrees.
+      expect(find.byType(SheetScaffold), findsOneWidget);
+      expect(find.byIcon(Icons.delete_outline), findsNWidgets(2),
+          reason: 'the open sheet must reflect the restore live');
+      final historyRow =
+          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'LOG HISTORY'));
+      expect(historyRow.value, '2');
+    });
+
+    // Second-round review, Finding 2: `insertBodyLog`'s restore keeps every
+    // column, including `id`, but SQLite mints a brand new `rowid` on the
+    // reinsert. Ordering `getBodyLogs()` on `rowid DESC` therefore made a
+    // restored same-day entry look like the *latest* weigh-in even when it
+    // was logged first that day, silently rewriting the headline weight and
+    // flipping the delta's sign. `id` (a `microsecondsSinceEpoch` value) is
+    // untouched by the restore, so ordering on `id DESC` instead keeps it in
+    // its original chronological slot.
+    testWidgets(
+        'a same-day delete then undo does not flip the headline weight or '
+        'the delta sign', (tester) async {
+      final db = DatabaseService.instance;
+      // 'm2' > 'm1' lexicographically, matching insertion order the same
+      // way a real `microsecondsSinceEpoch` id would.
+      await _insertLog(db, id: 'm1', dateStr: '2026-09-05', weightKg: 80.0);
+      await _insertLog(db, id: 'm2', dateStr: '2026-09-05', weightKg: 79.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      var hero = tester.widget<HeroCard>(find.byType(HeroCard));
+      expect(hero.title, '79.0 KG');
+      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY');
+
+      await tester.tap(find.text('LOG HISTORY'));
+      await tester.pumpAndSettle();
+
+      // 'm2' (79.0) sorts first (newest), so it's the first delete
+      // affordance.
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      await tester.tap(find.byIcon(Icons.close)); // SheetScaffold's dismiss
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      hero = tester.widget<HeroCard>(find.byType(HeroCard));
+      expect(hero.title, '79.0 KG',
+          reason: 'the restored later weigh-in must still be the latest');
+      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY',
+          reason: 'the delta sign must not flip after a same-day restore');
+
+      final order = (await db.getBodyLogs()).map((r) => r['id']).toList();
+      expect(order, ['m2', 'm1']);
+    });
+
     // Finding 1: the button visibly did nothing — the routine WAS created,
     // but its SnackBar rendered behind the still-open sheet and barrier.
     // Also closes Finding 4's coverage gap: no prior test opened the
@@ -592,6 +688,179 @@ void main() {
 
       expect(find.byType(SheetScaffold), findsOneWidget);
       expect(find.textContaining('valid weight'), findsOneWidget);
+    });
+
+    // Second-round review, Finding 8: a blank waist field silently stored
+    // `0.0` ("not measured"), but typing the more explicit "0" was rejected
+    // as an invalid measurement — two different answers to the same
+    // question. Both must now agree.
+    testWidgets(
+        'typing "0" for waist is accepted the same way a blank field is',
+        (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('+ LOG MEASUREMENT'));
+      await tester.pumpAndSettle();
+
+      final fields = find.byType(TextField);
+      await tester.enterText(fields.first, '77.0');
+      await tester.enterText(fields.at(1), '0');
+      await tester.pump();
+      await tester.tap(find.text('SAVE MEASUREMENT'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.byType(SheetScaffold), findsNothing,
+          reason: 'a waist of "0" must not be treated as invalid input');
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect(rows.single['waist_cm'], 0.0);
+    });
+
+    // Second-round review, Finding 5: two deletes fired before either
+    // banner's 5s window has closed used to paint at the exact same
+    // `left`/`right`/`bottom` rect, so the newer one hid the older
+    // entirely. Both undos still worked (this was a presentation bug, not
+    // data loss), but the hidden one was untappable until the top one
+    // cleared.
+    testWidgets(
+        'two banners on screen at once stack instead of hiding one another',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 81.0);
+      await _insertLog(db, id: 'c', dateStr: '2026-09-03', weightKg: 82.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('LOG HISTORY'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final undoTexts = find.text('UNDO');
+      expect(undoTexts, findsNWidgets(2));
+
+      final firstRect = tester.getRect(undoTexts.at(0));
+      final secondRect = tester.getRect(undoTexts.at(1));
+      expect(firstRect.overlaps(secondRect), isFalse,
+          reason:
+              'a second delete must not paint its banner over the first');
+
+      // Flush both banners' 5s auto-dismiss Timers so none is left pending
+      // when the test ends.
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    // Second-round review, Finding 6: the UNDO tap target measured
+    // 64.8x33.0dp — short of the 40dp bar this same file holds the delete
+    // glyph to — and its semantics merged into one node with the message
+    // and a bare `tap` action, so a screen-reader tap anywhere on the
+    // banner fired undo, not just on the button.
+    testWidgets(
+        'UNDO has at least a 40dp tap target and its own button semantics',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      final semanticsHandle = tester.ensureSemantics();
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('LOG HISTORY'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('UNDO'), findsOneWidget);
+      final undoDetector = find
+          .ancestor(
+              of: find.text('UNDO'), matching: find.byType(GestureDetector))
+          .first;
+      final size = tester.getSize(undoDetector);
+      expect(size.width, greaterThanOrEqualTo(40));
+      expect(size.height, greaterThanOrEqualTo(40));
+
+      final undoNode = tester.getSemantics(find.text('UNDO'));
+      final undoData = undoNode.getSemanticsData();
+      expect(undoData.flagsCollection.isButton, isTrue);
+      expect(undoData.label, 'Undo',
+          reason: 'the UNDO node must not have merged with the message '
+              'text into one node');
+
+      semanticsHandle.dispose();
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    // Second-round review, Finding 7: `_createRecommendedRoutine` popped
+    // whatever was topmost on the Navigator after its `await`, unguarded —
+    // if the sheet's own route was no longer current by then (dragged away
+    // mid-flight), that popped the *next* route down instead, which in the
+    // app is `MainScreen`'s own route. Pushing `BodyTab` on top of a base
+    // screen here makes an errant pop observable the way a standalone
+    // `pumpWidget(BodyTab())` cannot (there is nothing else on the stack to
+    // wrongly pop there).
+    testWidgets(
+        'dismissing the sheet mid-flight during CREATE THIS ROUTINE does '
+        'not pop an unrelated route behind it', (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '75.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BodyTab()),
+                ),
+                child: const Text('OPEN BODY'),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await settle(tester);
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.tap(find.text('OPEN BODY'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      await tester.tap(find.text('RECOMMENDED PLAN'));
+      await tester.pumpAndSettle();
+
+      // Starts `_createRecommendedRoutine`, which awaits
+      // `RoutineFactory.createFromTemplate` — a real, asynchronous sqflite
+      // write, so this returns before that await resolves. Dismissing the
+      // sheet immediately afterwards, with no `pump` in between to let the
+      // create finish first, simulates the sheet closing out from under
+      // the in-flight call.
+      await tester.tap(find.text('CREATE THIS ROUTINE'));
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.byType(BodyTab), findsOneWidget,
+          reason: 'an unguarded pop would have closed this route instead, '
+              'since the sheet\'s own route was no longer current');
+      expect(find.text('OPEN BODY'), findsNothing);
+
+      final routines = await db.getRoutines();
+      expect(routines.length, 1,
+          reason: 'the routine is still created regardless of the pop');
+
+      await tester.pump(const Duration(seconds: 5));
     });
 
     // Finding 11: every other test in this file runs at the 800x2000

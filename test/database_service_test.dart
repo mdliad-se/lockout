@@ -60,6 +60,43 @@ void main() {
       final rows = await db.getBodyLogs();
       expect(rows.first['id'], 'late');
     });
+
+    // Second-round review, Finding 2: `insertBodyLog`'s undo restore
+    // (`ConflictAlgorithm.replace` on the same `id`) keeps every column,
+    // but SQLite assigns the reinserted row a brand new `rowid`. Ordering on
+    // `rowid DESC` therefore made a restored same-day entry look like the
+    // latest weigh-in regardless of when it was actually logged that day.
+    // `id` is a `microsecondsSinceEpoch` value untouched by that same
+    // REPLACE, so ordering on it instead keeps a restored row in its
+    // original chronological slot.
+    test(
+        'a delete then restore of the same id keeps its original position, '
+        'not the newest', () async {
+      final db = DatabaseService.instance;
+      await db.insertBodyLog(BodyEntry(
+        id: 'm1',
+        dateStr: '2026-09-05',
+        weightKg: 80.0,
+      ).toMap());
+      await db.insertBodyLog(BodyEntry(
+        id: 'm2',
+        dateStr: '2026-09-05',
+        weightKg: 79.0,
+      ).toMap());
+
+      await db.deleteBodyLog('m2');
+      // The restore: same id, same every column, but a fresh SQLite rowid.
+      await db.insertBodyLog(BodyEntry(
+        id: 'm2',
+        dateStr: '2026-09-05',
+        weightKg: 79.0,
+      ).toMap());
+
+      final rows = await db.getBodyLogs();
+      expect(rows.map((r) => r['id']).toList(), ['m2', 'm1'],
+          reason: 'm2 was logged later that day and must still sort first '
+              'after being restored');
+    });
   });
 
   group('DatabaseService.getSessionLogsForDate', () {

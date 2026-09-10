@@ -25,6 +25,18 @@ class BodyTab extends StatefulWidget {
 
 class BodyTabState extends State<BodyTab> {
   List<BodyEntry> _bodyLogs = [];
+  // `_HistoryList` inside an already-open LOG HISTORY sheet reads this
+  // directly rather than the plain `_bodyLogs` field above (Finding 1):
+  // `showJinatraSheet`'s modal route lives in the root `Overlay`, a sibling
+  // of this State's own Element subtree rather than a descendant of it, so
+  // `setState` here cannot reach back into an already-built sheet. A
+  // `ValueNotifier` does, because `ValueListenableBuilder` subscribes to
+  // the object itself, not to an ancestor rebuild — so an UNDO tapped from
+  // the banner while the sheet is still open (the banner is deliberately
+  // reachable without closing it) updates that list live instead of only
+  // the next time the sheet opens.
+  final ValueNotifier<List<BodyEntry>> _bodyLogsNotifier =
+      ValueNotifier<List<BodyEntry>>(const []);
   GoalSnapshot? _goal;
   String _heightUnit = 'cm';
   bool _isLoading = true;
@@ -33,6 +45,12 @@ class BodyTabState extends State<BodyTab> {
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _bodyLogsNotifier.dispose();
+    super.dispose();
   }
 
   /// Called by MainScreen so a height or goal changed in Settings shows here.
@@ -44,17 +62,19 @@ class BodyTabState extends State<BodyTab> {
     final goal = await GoalService.instance.snapshot();
 
     if (!mounted) return;
+    // Derived from `goal.bodyLogs` rather than a second `getBodyLogs()`
+    // call: the sparkline/latest-weight series and the delta `build()`
+    // computes from `_goal.bodyLogs` used to come from two separate
+    // queries that happened to agree in practice but had no structural
+    // reason to — one list, one query, so they cannot drift apart.
+    final logs = goal.bodyLogs.map(BodyEntry.fromMap).toList();
     setState(() {
-      // Derived from `goal.bodyLogs` rather than a second `getBodyLogs()`
-      // call: the sparkline/latest-weight series and the delta `build()`
-      // computes from `_goal.bodyLogs` used to come from two separate
-      // queries that happened to agree in practice but had no structural
-      // reason to — one list, one query, so they cannot drift apart.
-      _bodyLogs = goal.bodyLogs.map(BodyEntry.fromMap).toList();
+      _bodyLogs = logs;
       _heightUnit = unit == 'ft' ? 'ft' : 'cm';
       _goal = goal;
       _isLoading = false;
     });
+    _bodyLogsNotifier.value = logs;
   }
 
   Future<void> _openMeasurementSheet() async {
@@ -70,14 +90,10 @@ class BodyTabState extends State<BodyTab> {
   /// Deletes [log] immediately, then offers a few seconds to reverse it —
   /// this destroys logged history that cannot be reconstructed, and nothing
   /// short of a real undo window is an acceptable guard on a single 40dp
-  /// tap (Finding 3 / Ruling F). `showUndoBanner` inserts into the root
-  /// `Overlay` rather than a `ScaffoldMessenger` SnackBar specifically
-  /// because this can be called from inside the still-open LOG HISTORY
-  /// sheet, and a SnackBar there would render entirely behind it — see the
-  /// doc on `showUndoBanner` for the mechanics. Because the banner and its
-  /// undo callback are owned by this (always-mounted, IndexedStack-kept-
-  /// alive) State rather than the sheet's, undo keeps working after the
-  /// sheet that triggered the delete has been closed.
+  /// tap (Finding 3 / Ruling F). See the doc on `showUndoBanner` for why it
+  /// uses the root `Overlay` rather than a `ScaffoldMessenger` SnackBar, and
+  /// why undo keeps working after the LOG HISTORY sheet that triggered the
+  /// delete has been closed.
   Future<void> _deleteLog(BodyEntry log) async {
     await DatabaseService.instance.deleteBodyLog(log.id);
     // A removed weight changes TDEE, so the calorie target moves too.
@@ -103,9 +119,25 @@ class BodyTabState extends State<BodyTab> {
     await reload();
   }
 
-  Future<void> _createRecommendedRoutine() async {
+  /// [sheetContext] is the RECOMMENDED PLAN sheet's own `BuildContext`
+  /// (`builder: (ctx) => ...` in `_buildPlanCard`'s caller), captured here
+  /// rather than reached for after the `await` below (Finding 7): if the
+  /// sheet is dragged away while `createFromTemplate` is in flight, its
+  /// route pops itself, and `Navigator.of(context).maybePop()` — `context`
+  /// being this State's own, long-lived one — would then pop whatever is
+  /// *next* topmost on that same Navigator instead, which in the app is
+  /// `MainScreen`'s own route. `ModalRoute.of`/`Navigator.of` are read
+  /// synchronously, before the `await`, while `sheetContext` is definitely
+  /// still valid; `route.isCurrent` afterwards is a plain property read on
+  /// the `Route` object itself, safe even if the underlying widget is long
+  /// gone, and answers "is this specific sheet still the one on top" rather
+  /// than "is *something* poppable".
+  Future<void> _createRecommendedRoutine(BuildContext sheetContext) async {
     final rec = _goal?.training;
     if (rec == null) return;
+
+    final route = ModalRoute.of(sheetContext);
+    final navigator = Navigator.of(sheetContext);
 
     await RoutineFactory.createFromTemplate(
       name: rec.template.name,
@@ -121,8 +153,11 @@ class BodyTabState extends State<BodyTab> {
     // occupies y=158..844 and the SnackBar would render at y=765..844,
     // entirely behind the sheet and its barrier, so the routine was created
     // but nothing visibly happened (Finding 1). Popping the sheet first
-    // puts this tab's Scaffold back on top before the SnackBar is queued.
-    Navigator.of(context).maybePop();
+    // puts this tab's Scaffold back on top before the SnackBar is queued —
+    // but only if that sheet is still the thing on top to pop.
+    if (route != null && route.isCurrent) {
+      navigator.pop();
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -144,7 +179,7 @@ class BodyTabState extends State<BodyTab> {
     }
 
     // `_bodyLogs` is ordered newest-first (`getBodyLogs`'s
-    // `date_str DESC, rowid DESC`), so the first entry is the latest weight
+    // `date_str DESC, id DESC`), so the first entry is the latest weight
     // and the chronological (oldest-first) order the sparkline needs is the
     // reverse of that.
     final latest = _bodyLogs.isEmpty ? null : _bodyLogs.first.weightKg;
@@ -248,7 +283,7 @@ class BodyTabState extends State<BodyTab> {
             onTap: () => showJinatraSheet<void>(
               context: context,
               title: 'RECOMMENDED TRAINING PLAN',
-              builder: (ctx) => _buildPlanCard(),
+              builder: (ctx) => _buildPlanCard(ctx),
             ),
           ),
           CalmRow(
@@ -267,8 +302,8 @@ class BodyTabState extends State<BodyTab> {
             onTap: () => showJinatraSheet<void>(
               context: context,
               title: 'LOG HISTORY',
-              builder: (ctx) =>
-                  _HistoryList(logs: _bodyLogs, onDelete: _deleteLog),
+              builder: (ctx) => _HistoryList(
+                  logsNotifier: _bodyLogsNotifier, onDelete: _deleteLog),
             ),
           ),
           const SizedBox(height: 28),
@@ -519,7 +554,7 @@ class BodyTabState extends State<BodyTab> {
     );
   }
 
-  Widget _buildPlanCard() {
+  Widget _buildPlanCard(BuildContext sheetContext) {
     final rec = _goal?.training;
     if (rec == null) {
       return JinatraCard(
@@ -571,7 +606,7 @@ class BodyTabState extends State<BodyTab> {
           const SizedBox(height: 6),
           JinatraButton(
             label: 'CREATE THIS ROUTINE',
-            onPressed: _createRecommendedRoutine,
+            onPressed: () => _createRecommendedRoutine(sheetContext),
           ),
         ],
       ),
@@ -639,17 +674,30 @@ class _MeasurementFormState extends State<_MeasurementForm> {
     super.dispose();
   }
 
-  /// Parses a required, strictly-positive, finite measurement. `null` means
+  /// Parses a required, strictly-positive, finite weight. `null` means
   /// "reject": `double.tryParse` happily accepts `Infinity`/`-Infinity`
   /// (which then renders as `INFINITY KG` in the hero and breaks the
   /// sparkline's normalisation into NaN) and a non-numeric string used to
-  /// silently fall back to a bogus `0`. Blank is only valid for [waist],
-  /// which is optional.
-  double? _parseMeasurement(String raw, {required bool required}) {
+  /// silently fall back to a bogus `0`.
+  double? _parseWeight(String raw) {
     final text = raw.trim();
-    if (text.isEmpty) return required ? null : 0.0;
+    if (text.isEmpty) return null;
     final value = double.tryParse(text);
     if (value == null || !value.isFinite || value <= 0) return null;
+    return value;
+  }
+
+  /// Parses an optional waist measurement. Blank text and a literal "0"
+  /// both mean "not measured" and store `0.0` — before this fix, blank
+  /// silently stored `0.0` but typing the more explicit "0" was rejected as
+  /// invalid, two different answers to the same question. `null` means
+  /// "reject": `Infinity`/`-Infinity` and a negative value are not a real
+  /// waist measurement either way.
+  double? _parseWaist(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return 0.0;
+    final value = double.tryParse(text);
+    if (value == null || !value.isFinite || value < 0) return null;
     return value;
   }
 
@@ -657,14 +705,12 @@ class _MeasurementFormState extends State<_MeasurementForm> {
     // Guards against two fast taps inserting two rows.
     if (_saving) return;
 
-    final weight = _parseMeasurement(_weightCtrl.text, required: true);
+    final weight = _parseWeight(_weightCtrl.text);
     if (weight == null) {
       setState(() => _error = 'Enter a valid weight in kg, e.g. 72.5.');
       return;
     }
-    final waistText = _waistCtrl.text.trim();
-    final waist =
-        waistText.isEmpty ? 0.0 : _parseMeasurement(waistText, required: true);
+    final waist = _parseWaist(_waistCtrl.text);
     if (waist == null) {
       setState(() => _error = 'Waist must be a valid measurement in cm.');
       return;
@@ -754,49 +800,39 @@ class _MeasurementFormState extends State<_MeasurementForm> {
 
 // --- HISTORY LIST WIDGET ---
 //
-// Also a `StatefulWidget` rather than a plain builder for the same reason as
-// `_MeasurementForm`: `showJinatraSheet`'s builder can be re-invoked while
-// the sheet is open, and a local list rebuilt from `widget.logs` on every
-// invocation would silently undo an in-sheet delete. Owning the working copy
-// in `State` lets a delete remove the row from the still-open sheet
-// immediately, instead of only being visible the next time the sheet opens.
-class _HistoryList extends StatefulWidget {
-  final List<BodyEntry> logs;
+// A `ValueListenableBuilder` over `BodyTabState._bodyLogsNotifier` rather
+// than a plain builder fed a `List<BodyEntry>` snapshot (Finding 1):
+// `showJinatraSheet`'s modal route lives in the root `Overlay`, a sibling of
+// `BodyTabState`'s own Element subtree rather than a descendant of it, so
+// that State's `setState` cannot reach back into an already-open sheet — a
+// snapshot taken when the sheet opened would still read 1 row after an
+// UNDO put a 2nd back, until the sheet was closed and reopened. Listening to
+// the notifier directly sidesteps that: it updates whenever
+// `BodyTabState.reload()` does, regardless of which Element subtree is
+// currently listening, including this sheet's, while it's open.
+class _HistoryList extends StatelessWidget {
+  final ValueNotifier<List<BodyEntry>> logsNotifier;
   final Future<void> Function(BodyEntry) onDelete;
 
-  const _HistoryList({required this.logs, required this.onDelete});
-
-  @override
-  State<_HistoryList> createState() => _HistoryListState();
-}
-
-class _HistoryListState extends State<_HistoryList> {
-  late List<BodyEntry> _logs;
-
-  @override
-  void initState() {
-    super.initState();
-    _logs = List.of(widget.logs);
-  }
-
-  Future<void> _handleDelete(BodyEntry log) async {
-    await widget.onDelete(log);
-    if (!mounted) return;
-    setState(() => _logs.removeWhere((l) => l.id == log.id));
-  }
+  const _HistoryList({required this.logsNotifier, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
-    if (_logs.isEmpty) {
-      return Text(
-        'No weight entries yet.',
-        style: JinatraTokens.monoData(
-          color: JinatraTokens.ink.withValues(alpha: 0.6),
-        ),
-      );
-    }
+    return ValueListenableBuilder<List<BodyEntry>>(
+      valueListenable: logsNotifier,
+      builder: (context, logs, _) {
+        if (logs.isEmpty) {
+          return Text(
+            'No weight entries yet.',
+            style: JinatraTokens.monoData(
+              color: JinatraTokens.ink.withValues(alpha: 0.6),
+            ),
+          );
+        }
 
-    return Column(children: _logs.map(_row).toList());
+        return Column(children: logs.map(_row).toList());
+      },
+    );
   }
 
   Widget _row(BodyEntry log) {
@@ -828,7 +864,7 @@ class _HistoryListState extends State<_HistoryList> {
               // this row" would put the same glyph on two different
               // actions on screen at once.
               GestureDetector(
-                onTap: () => _handleDelete(log),
+                onTap: () => onDelete(log),
                 behavior: HitTestBehavior.opaque,
                 child: Padding(
                   padding: const EdgeInsets.all(12),

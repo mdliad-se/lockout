@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/main_screen.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/theme/app_palette.dart';
@@ -85,6 +86,48 @@ void main() {
       await _settle(tester);
       expect(tester.takeException(), isNull);
     }
+  });
+
+  // Second-round review, Finding 4: `showUndoBanner`'s `Positioned(bottom:
+  // 24)` only cleared the screen edge, not this app's own `BottomNav` — at
+  // 390 wide the reviewer measured the bar at y 1515..1600 and the banner's
+  // text at y 1527..1561, sitting directly on top of it (and everything it
+  // labels) for the whole 5s undo window. `BodyTab` is exercised here
+  // specifically, inside the real `MainScreen`/`BottomNav` this only shows
+  // up in — `body_tab_test.dart` pumps `BodyTab` standalone, with no bottom
+  // nav present to overlap in the first place.
+  testWidgets(
+      'the UNDO banner clears the bottom navigation bar instead of '
+      'painting over it', (tester) async {
+    await DatabaseService.instance.insertBodyLog(BodyEntry(
+      id: 'a',
+      dateStr: '2026-09-01',
+      weightKg: 80.0,
+    ).toMap());
+
+    await tester.binding.setSurfaceSize(const Size(390, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const MaterialApp(home: MainScreen()));
+    await _settle(tester);
+
+    await tester.tap(_navLabel('BODY'));
+    await _settle(tester);
+
+    await tester.tap(find.text('LOG HISTORY'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+    await _settle(tester);
+
+    expect(find.text('UNDO'), findsOneWidget);
+    final bannerBottom = tester.getBottomLeft(find.text('UNDO')).dy;
+    final navTop = tester.getTopLeft(find.byType(BottomNav)).dy;
+    expect(bannerBottom, lessThanOrEqualTo(navTop),
+        reason: 'the banner must sit above the bottom nav, not over it');
+
+    // Flush the banner's 5s auto-dismiss Timer so none is left pending when
+    // the test ends.
+    await tester.pump(const Duration(seconds: 6));
   });
 }
 

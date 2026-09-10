@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/jinatra_tokens.dart';
+import 'bottom_nav.dart';
 
 /// Shows a dismissible "MESSAGE — UNDO" banner for [duration], above
 /// *everything* currently on screen, including an open [showJinatraSheet]
@@ -18,30 +19,35 @@ import '../theme/jinatra_tokens.dart';
 /// (`rootOverlay: true`) puts this banner above every route, sheet included,
 /// and — because it does not live inside the sheet's own subtree — it keeps
 /// working even after the sheet that triggered the delete has been closed.
-///
-/// Returns a callback that dismisses the banner immediately, without
-/// running [onUndo]; callers do not need it today but it keeps the widget
-/// testable without waiting out the full [duration].
-VoidCallback showUndoBanner(
+/// `body_tab.dart` and `food_tab.dart` point back at this doc rather than
+/// repeating the rationale.
+void showUndoBanner(
   BuildContext context, {
   required String message,
   required VoidCallback onUndo,
   Duration duration = const Duration(seconds: 5),
 }) {
   final overlay = Overlay.of(context, rootOverlay: true);
+  final slot = _claimBannerSlot();
   late final OverlayEntry entry;
   var removed = false;
 
   void dismiss() {
     if (removed) return;
     removed = true;
+    _releaseBannerSlot(slot);
     entry.remove();
+    // `OverlayEntry.dispose()` tears down an internal `ValueNotifier`
+    // `remove()` alone does not touch — without this, every delete leaves
+    // one undisposed behind (Finding 3).
+    entry.dispose();
   }
 
   entry = OverlayEntry(
     builder: (ctx) => _UndoBanner(
       message: message,
       duration: duration,
+      stackSlot: slot,
       onUndo: () {
         dismiss();
         onUndo();
@@ -51,18 +57,50 @@ VoidCallback showUndoBanner(
   );
 
   overlay.insert(entry);
-  return dismiss;
 }
+
+/// Slots currently in use by an on-screen banner, so a second delete fired
+/// before the first banner's window closes stacks above it instead of
+/// painting in the exact same rect and hiding it (Finding 5). Module-level
+/// because BODY and FOOD share this one root-Overlay mechanism and must
+/// stack against each other too, not just against their own prior banner.
+/// A `Set` rather than a plain counter: releasing a slot out of order (the
+/// first of two banners dismissed while the second is still showing) must
+/// not let a third banner reuse the still-occupied slot the second one
+/// holds, which a simple increment/decrement counter would allow.
+final Set<int> _occupiedBannerSlots = <int>{};
+
+int _claimBannerSlot() {
+  var slot = 0;
+  while (_occupiedBannerSlots.contains(slot)) {
+    slot++;
+  }
+  _occupiedBannerSlots.add(slot);
+  return slot;
+}
+
+void _releaseBannerSlot(int slot) => _occupiedBannerSlots.remove(slot);
+
+/// Extra vertical space one stacked banner needs above another —
+/// approximate rendered height of a single banner's content plus a visible
+/// gap. Not measured the way `BottomNav.lastRenderedHeight` is (a second
+/// banner's own height isn't known until the first frame it's already
+/// stacked in), but a little extra clearance here costs nothing, where a
+/// second banner still partly hidden under the first costs the affordance
+/// entirely.
+const double _stackSpacing = 64.0;
 
 class _UndoBanner extends StatefulWidget {
   final String message;
   final Duration duration;
+  final int stackSlot;
   final VoidCallback onUndo;
   final VoidCallback onExpire;
 
   const _UndoBanner({
     required this.message,
     required this.duration,
+    required this.stackSlot,
     required this.onUndo,
     required this.onExpire,
   });
@@ -94,52 +132,89 @@ class _UndoBannerState extends State<_UndoBanner> {
     final bg = JinatraTokens.deepTeal;
     final on = JinatraTokens.onAccentColor(bg);
 
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 24,
-      child: SafeArea(
-        child: Material(
-          type: MaterialType.transparency,
-          child: Semantics(
-            liveRegion: true,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: JinatraTokens.cardDecoration(
-                background: bg,
-                shadowOffset: JinatraTokens.shadowSm,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.message,
-                      style: JinatraTokens.monoData(color: on, fontSize: 12),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: widget.onUndo,
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      child: Text(
-                        'UNDO',
-                        style: JinatraTokens.monoData(
-                          color: on,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
+    return ValueListenableBuilder<double>(
+      valueListenable: BottomNav.lastRenderedHeight,
+      builder: (context, navHeight, _) {
+        return Positioned(
+          left: 16,
+          right: 16,
+          // `24` clears the screen edge; `navHeight` clears the app's own
+          // bottom navigation bar (measured, `0.0` where none is mounted —
+          // e.g. a widget test that pumps a tab on its own), which this
+          // banner would otherwise sit directly on top of for its whole 5s
+          // window (Finding 4). `stackSlot * _stackSpacing` clears any
+          // other banner still showing (Finding 5).
+          bottom: 24 + navHeight + (widget.stackSlot * _stackSpacing),
+          child: SafeArea(
+            child: Material(
+              type: MaterialType.transparency,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: JinatraTokens.cardDecoration(
+                  background: bg,
+                  shadowOffset: JinatraTokens.shadowSm,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      // A separate `Semantics` node (forced by `container:
+                      // true`) from the UNDO button below — without this,
+                      // Flutter merges both into a single node with the
+                      // message and "UNDO" concatenated into one label and
+                      // a bare `tap` action, so a screen-reader tap
+                      // anywhere on the banner fires undo instead of just
+                      // on the button (Finding 6).
+                      child: Semantics(
+                        container: true,
+                        liveRegion: true,
+                        child: Text(
+                          widget.message,
+                          style:
+                              JinatraTokens.monoData(color: on, fontSize: 12),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Semantics(
+                      container: true,
+                      button: true,
+                      label: 'Undo',
+                      child: GestureDetector(
+                        onTap: widget.onUndo,
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          // Padding lives inside the detector so the
+                          // tappable area grows past 40dp without
+                          // enlarging the visible glyph — the previous
+                          // `vertical: 8` measured 64.8x33.0dp, short of
+                          // the 40dp bar this same task's test holds the
+                          // delete glyph to (Finding 6).
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 14),
+                          // Excluded so the raw text doesn't also
+                          // contribute its own label — the `Semantics`
+                          // above already names this node "Undo".
+                          child: ExcludeSemantics(
+                            child: Text(
+                              'UNDO',
+                              style: JinatraTokens.monoData(
+                                color: on,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

@@ -394,14 +394,32 @@ class DatabaseService {
   }
 
   // --- BODY LOGS ---
-  /// Newest first. `rowid DESC` is a required tiebreaker, not decoration:
+  /// Newest first. `id DESC` is a required tiebreaker, not decoration:
   /// `body_tab.dart` mints one row per save, so multiple weigh-ins on the
   /// same `date_str` are normal, and `date_str DESC` alone leaves same-day
   /// rows in SQLite-undefined order (see `getLastPerformance` above for the
   /// same pattern applied to sessions).
+  ///
+  /// Tiebreaks on `id`, not `rowid`. `id` is a `microsecondsSinceEpoch`
+  /// value minted once per row and never reused; `rowid` is SQLite's own
+  /// internal row number, which `INSERT ... ON CONFLICT REPLACE` (what
+  /// `insertBodyLog`'s undo restore uses) reassigns to a *new* value on
+  /// every insert, including a restore of a row that already has an `id`.
+  /// Ordering on `rowid DESC` therefore made an undone-then-restored
+  /// same-day entry jump to "latest" even when it wasn't the one most
+  /// recently weighed in, silently rewriting the headline weight
+  /// `GoalService.snapshot()` reads from `bodyLogs.first` and flipping
+  /// `GoalService.weightDeltaKg`'s sign. `id` is preserved by that same
+  /// REPLACE (it's the column being conflicted on), so ordering on it
+  /// instead keeps a restored row in its original chronological slot.
+  /// Every consumer of this method (`GoalService.snapshot()`,
+  /// `GoalService.weightDeltaKg`, `body_tab.dart`'s hero/sparkline/BMI) only
+  /// ever reads relative order (`bodyLogs.first`, `bodyLogs[0]`/`[1]`), not
+  /// `rowid` itself, so this is a same-shape substitution, not a behaviour
+  /// change for any row that was never deleted and restored.
   Future<List<Map<String, dynamic>>> getBodyLogs() async {
     final db = await instance.database;
-    return await db.query('body_logs', orderBy: 'date_str DESC, rowid DESC');
+    return await db.query('body_logs', orderBy: 'date_str DESC, id DESC');
   }
 
   Future<void> insertBodyLog(Map<String, dynamic> row) async {
