@@ -81,14 +81,24 @@ int _claimBannerSlot() {
 
 void _releaseBannerSlot(int slot) => _occupiedBannerSlots.remove(slot);
 
-/// Extra vertical space one stacked banner needs above another —
-/// approximate rendered height of a single banner's content plus a visible
-/// gap. Not measured the way `BottomNav.lastRenderedHeight` is (a second
-/// banner's own height isn't known until the first frame it's already
-/// stacked in), but a little extra clearance here costs nothing, where a
-/// second banner still partly hidden under the first costs the affordance
-/// entirely.
-const double _stackSpacing = 64.0;
+/// Extra vertical space one stacked banner needs above another — a single
+/// banner's own rendered height (measured at 75.0dp with the default
+/// single-line message and this file's padding/border/shadow — see the
+/// probe in this file's git history for third-round review, Finding 3, and
+/// re-measure if the message text, padding, border or shadow ever change)
+/// plus 9dp of visible gap. Was `64.0`, *below* that measured height, so two
+/// stacked banner cards overlapped by 11dp and the upper one painted over
+/// the lower's ink border and hard shadow — the opposite of what this
+/// constant's old doc claimed ("a little extra clearance"). Not measured
+/// live the way `BottomNav.lastRenderedHeight` is (a second banner's own
+/// height isn't known until the first frame it's already stacked in, and
+/// unlike the nav bar there's no single shared instance to read a height
+/// off of before the second banner itself needs to lay out), so this stays
+/// a constant tied to the current design instead — pick the Column-based
+/// layout this file's doc mentions as the alternative if the message ever
+/// needs to wrap to more than one line, since a fixed constant cannot track
+/// a variable-height card.
+const double _stackSpacing = 84.0;
 
 class _UndoBanner extends StatefulWidget {
   final String message;
@@ -124,6 +134,14 @@ class _UndoBannerState extends State<_UndoBanner> {
     // UNDO tap (e.g. the whole app being popped in a test) — cancelling here
     // too means this never leaves a Timer pending past the widget's own life.
     _timer?.cancel();
+    // Third-round review, Finding 5: the same non-`dismiss()` teardown that
+    // could leave `_timer` pending also leaked `widget.stackSlot` out of
+    // `_occupiedBannerSlots` forever, since only `dismiss()` (the UNDO-tap /
+    // expiry path) released it. `Set.remove` on an already-released slot
+    // (the normal path, where `dismiss()` released it first) is a no-op, so
+    // this is safe to call unconditionally rather than tracked with an
+    // extra "did dismiss() already run" flag.
+    _releaseBannerSlot(widget.stackSlot);
     super.dispose();
   }
 
@@ -149,6 +167,15 @@ class _UndoBannerState extends State<_UndoBanner> {
             child: Material(
               type: MaterialType.transparency,
               child: Container(
+                // Keyed per stack slot so a test can measure this card's
+                // own rect (border, shadow and all) directly instead of a
+                // proxy like the "UNDO" text inside it — third-round
+                // review, Finding 3: the prior stacking test compared two
+                // "UNDO" `Text` rects, which sit `_stackSpacing` apart *by
+                // construction* (that's the offset applied to the whole
+                // card), so it could never see the cards themselves
+                // overlapping.
+                key: ValueKey('undo_banner_card_${widget.stackSlot}'),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: JinatraTokens.cardDecoration(

@@ -182,12 +182,15 @@ void main() {
 
     // Ambiguity resolution 2: two weigh-ins on the same calendar day are a
     // morning-vs-evening swing, not a day-over-day change, and must compare
-    // against each other in insertion order (`getBodyLogs`'s
-    // `id DESC` tiebreak) rather than an order that could invert the
-    // sign.
+    // against each other by id, highest first (`getBodyLogs`'s `id DESC`
+    // tiebreak — a textual comparison of a clock-derived id, not literally
+    // "insertion order"; the two coincide here and for any forward-moving
+    // clock, but diverge if the device clock is ever set backwards between
+    // two saves. Third-round review, Finding 7.) rather than an order that
+    // could invert the sign.
     testWidgets(
-        'two same-day entries compare in insertion order, not an '
-        'accidentally inverted one', (tester) async {
+        'two same-day entries compare by id, highest (latest by clock) '
+        'first, not an accidentally inverted order', (tester) async {
       final db = DatabaseService.instance;
       await _insertLog(db, id: 'a', dateStr: '2026-09-05', weightKg: 80.0);
       await _insertLog(db, id: 'b', dateStr: '2026-09-05', weightKg: 79.0);
@@ -567,6 +570,110 @@ void main() {
       expect(order, ['m2', 'm1']);
     });
 
+    // Third-round review, Finding 1: the test above deletes and restores the
+    // NEWEST same-day row ('m2'), which — because a fresh restore also lands
+    // on the newest SQLite rowid — comes back on top under the old,
+    // `rowid DESC` ordering too, so it cannot distinguish the fix from the
+    // bug. Deleting and restoring the OLDER of a same-day pair does
+    // discriminate. Mutation-verified: fails (headline title becomes
+    // '80.0 KG', q1, instead of '79.0 KG') with `getBodyLogs()`'s `orderBy`
+    // reverted to `'date_str DESC, rowid DESC'`, passes at HEAD.
+    testWidgets(
+        'deleting and undoing the OLDER of a same-day pair does not steal '
+        'the headline', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'q1', dateStr: '2026-09-05', weightKg: 80.0);
+      await _insertLog(db, id: 'q2', dateStr: '2026-09-05', weightKg: 79.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      var hero = tester.widget<HeroCard>(find.byType(HeroCard));
+      expect(hero.title, '79.0 KG');
+      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY');
+
+      await tester.tap(find.text('LOG HISTORY'));
+      await tester.pumpAndSettle();
+
+      // q2 (79.0, newest) sorts first, so it's delete affordance .first;
+      // q1 (80.0, older) is .at(1) — deliberately delete the older one.
+      await tester.tap(find.byIcon(Icons.delete_outline).at(1));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      await tester.tap(find.byIcon(Icons.close)); // SheetScaffold's dismiss
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      hero = tester.widget<HeroCard>(find.byType(HeroCard));
+      expect(hero.title, '79.0 KG',
+          reason: 'q2 was never touched; restoring the older q1 must not '
+              'steal the headline');
+      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY',
+          reason: 'the delta sign must not flip after restoring the older '
+              'entry');
+
+      final order = (await db.getBodyLogs()).map((r) => r['id']).toList();
+      expect(order, ['q2', 'q1']);
+    });
+
+    // Third-round review, Finding 1, second discriminating shape: delete a
+    // row, log a newer entry in the interim, then restore the deleted row.
+    // Under `rowid DESC` the restore always lands on the highest rowid in
+    // the table, so it wrongly outranks even a row logged after it was
+    // deleted; under `id DESC` its untouched, smaller id keeps it behind
+    // that newer row. Mutation-verified: fails (headline title becomes
+    // '80.0 KG', r1, instead of '78.0 KG', r3) with `getBodyLogs()`'s
+    // `orderBy` reverted to `'date_str DESC, rowid DESC'`, passes at HEAD.
+    testWidgets(
+        'restoring a row after a newer one was logged meanwhile does not '
+        'steal the headline', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'r1', dateStr: '2026-09-05', weightKg: 80.0);
+      await _insertLog(db, id: 'r2', dateStr: '2026-09-05', weightKg: 79.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('LOG HISTORY'));
+      await tester.pumpAndSettle();
+
+      // Delete r1 (80.0, the older entry) — .at(1), same as above.
+      await tester.tap(find.byIcon(Icons.delete_outline).at(1));
+      await tester.pumpAndSettle();
+      await settle(tester);
+      expect(find.text('UNDO'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close)); // SheetScaffold's dismiss
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      // A newer same-day weigh-in logged while r1's undo window is still
+      // open — inserted directly to isolate the ordering behaviour from an
+      // unrelated form flow; `_restoreLog`'s own `reload()` below is what
+      // must pick this row up correctly.
+      await _insertLog(db, id: 'r3', dateStr: '2026-09-05', weightKg: 78.0);
+
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
+      expect(hero.title, '78.0 KG',
+          reason: 'r3 was logged after r1 was deleted and must remain the '
+              'headline even after r1 is restored');
+      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY',
+          reason: 'r3 vs r2 (79.0), not r3 vs the restored r1');
+
+      final order = (await db.getBodyLogs()).map((r) => r['id']).toList();
+      expect(order, ['r3', 'r2', 'r1']);
+    });
+
     // Finding 1: the button visibly did nothing — the routine WAS created,
     // but its SnackBar rendered behind the still-open sheet and barrier.
     // Also closes Finding 4's coverage gap: no prior test opened the
@@ -747,8 +854,24 @@ void main() {
       final undoTexts = find.text('UNDO');
       expect(undoTexts, findsNWidgets(2));
 
-      final firstRect = tester.getRect(undoTexts.at(0));
-      final secondRect = tester.getRect(undoTexts.at(1));
+      // Third-round review, Finding 3: comparing the two "UNDO" `Text`
+      // rects cannot catch a card overlap, because that offset
+      // (`stackSlot * _stackSpacing`) is applied to the whole card — the
+      // two `Text`s are exactly `_stackSpacing` apart *by construction* no
+      // matter what `_stackSpacing` is set to, even a value smaller than
+      // the card's actual rendered height. Comparing the cards themselves
+      // (keyed `undo_banner_card_<slot>`, third-round review Finding 3)
+      // is what actually proves one card's ink border and shadow aren't
+      // painted over by the other.
+      final firstCard =
+          find.byKey(const ValueKey('undo_banner_card_0'));
+      final secondCard =
+          find.byKey(const ValueKey('undo_banner_card_1'));
+      expect(firstCard, findsOneWidget);
+      expect(secondCard, findsOneWidget);
+
+      final firstRect = tester.getRect(firstCard);
+      final secondRect = tester.getRect(secondCard);
       expect(firstRect.overlaps(secondRect), isFalse,
           reason:
               'a second delete must not paint its banner over the first');

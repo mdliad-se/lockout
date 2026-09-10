@@ -105,13 +105,18 @@ class MealSection extends StatelessWidget {
             onTap: () => onDelete(e),
             behavior: HitTestBehavior.opaque,
             // Padding lives *inside* the detector so the tappable area grows
-            // to a ~36dp square without enlarging the visible glyph —
+            // to a 40dp square without enlarging the visible glyph —
             // `HitTestBehavior.opaque` alone only makes the existing 16x16
             // box register taps everywhere within it, it does not resize
-            // that box. The old row used a ~40x40 `IconButton`; this is the
-            // screen's only delete path, with no confirmation and no undo.
+            // that box. Matches BODY's delete affordance
+            // (`body_tab.dart`, `EdgeInsets.all(12)` around the same 16dp
+            // glyph) so the two delete flows feel identical (third-round
+            // review, Finding 8) — this used to be `EdgeInsets.all(10)`,
+            // ~36dp. This is the screen's only delete path with no upfront
+            // confirmation, but (Ruling F) `showUndoBanner` gives a few
+            // seconds to reverse it, same as BODY.
             child: Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               child: Icon(
                 Icons.close,
                 size: 16,

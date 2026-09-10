@@ -118,6 +118,31 @@ class _BottomNavState extends State<BottomNav> {
     }
   }
 
+  // Third-round review, Finding 2: this static ValueNotifier had no
+  // teardown at all — once any `BottomNav` had ever mounted in this
+  // process, `lastRenderedHeight` stayed at its last measured value
+  // forever, so a `BodyTab` pumped standalone (no `MainScreen` around it)
+  // *after* a `MainScreen` had mounted and unmounted would still see a
+  // stale non-zero inset instead of the `0.0` the doc on
+  // `lastRenderedHeight` promises. Resetting to `0.0` here is the cheap
+  // fix, not the preferred one: `MainScreen` is `home:` in this app and
+  // never unmounts in production, so this line does not fire there, and it
+  // does not solve the sibling problem that `lastRenderedHeight` is also
+  // never re-measured on a MediaQuery-only relayout (keyboard, rotation,
+  // font scale) with no new frame from `BottomNav` itself — it can still go
+  // stale *high* while mounted. The doc-preferred fix (publish the inset
+  // through an `InheritedWidget` `MainScreen` owns, read via the caller's
+  // `context` in `showUndoBanner`) removes the static, and with it both
+  // problems, but is a larger structural change than this finding's given
+  // scope; this reset at least makes the one property this class currently
+  // documents (0.0 for a tab pumped with no bar ever mounted) hold even
+  // after a bar-bearing widget has come and gone in the same test process.
+  @override
+  void dispose() {
+    BottomNav.lastRenderedHeight.value = 0.0;
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final tabs = BottomNav.visibleTabs(foodTabEnabled: widget.foodTabEnabled);

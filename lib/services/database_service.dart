@@ -378,9 +378,22 @@ class DatabaseService {
   }
 
   // --- FOOD LOGS ---
+  /// `id ASC` (oldest-logged-first, matching the order a meal's items were
+  /// actually added) so a delete-then-undo (Ruling F, shared with
+  /// `getBodyLogs()` above) restores a row into its original slot instead
+  /// of letting SQLite's rowid fall-back order jump it to the end. Third-
+  /// round review, Finding 4: with no `orderBy` at all, `food_logs` fell
+  /// back to `rowid`, which `insertFoodLog`'s `ConflictAlgorithm.replace`
+  /// restore reassigns on every insert including a restore of a row that
+  /// already has an `id` — the exact defect `getBodyLogs()` was fixed for.
+  /// `food_logs.id` is minted the same way BODY's is
+  /// (`DateTime.now().microsecondsSinceEpoch.toString()`, see
+  /// `food_tab.dart`), so it sorts the same way: textually, not
+  /// numerically, correct for same-width ids.
   Future<List<Map<String, dynamic>>> getFoodLogsForDate(String dateStr) async {
     final db = await instance.database;
-    return await db.query('food_logs', where: 'date_str = ?', whereArgs: [dateStr]);
+    return await db.query('food_logs',
+        where: 'date_str = ?', whereArgs: [dateStr], orderBy: 'id ASC');
   }
 
   Future<void> insertFoodLog(Map<String, dynamic> row) async {
@@ -417,6 +430,25 @@ class DatabaseService {
   /// ever reads relative order (`bodyLogs.first`, `bodyLogs[0]`/`[1]`), not
   /// `rowid` itself, so this is a same-shape substitution, not a behaviour
   /// change for any row that was never deleted and restored.
+  ///
+  /// Third-round review, Finding 6: `id DESC` is a *textual* (lexicographic)
+  /// comparison — `body_logs.id` is `TEXT PRIMARY KEY`, not a numeric
+  /// column, so SQLite sorts it byte-for-byte, not by value. That happens to
+  /// agree with the numeric ordering of every id this app currently mints
+  /// (`DateTime.now().microsecondsSinceEpoch.toString()`) because they are
+  /// all the same digit width (16 digits, true for the entire range of
+  /// plausible install dates), so a lexicographically-larger id is always
+  /// the numerically-larger, later one. It would *not* agree for ids of
+  /// different digit widths sharing one `date_str` — the initial commit
+  /// minted `millisecondsSinceEpoch` ids (13 digits), and a 13-digit id
+  /// would sort as textually *greater* than (i.e. "newer" than) any
+  /// 16-digit `microsecondsSinceEpoch` id, since `'9' > '1'` is compared
+  /// before either string's length matters. No currently-installed schema
+  /// mixes the two, so this is a latent risk, not a live bug, but it's why
+  /// this tiebreak is not simply "insertion order": it is *clock* order —
+  /// same as insertion order for a clock that only ever moves forward, but
+  /// the two diverge the moment the device clock is set backwards between
+  /// two saves, which insertion order alone would still get right.
   Future<List<Map<String, dynamic>>> getBodyLogs() async {
     final db = await instance.database;
     return await db.query('body_logs', orderBy: 'date_str DESC, id DESC');

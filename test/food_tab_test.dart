@@ -160,8 +160,10 @@ void main() {
     // enlarge the box it is applied to). `tester.tap` hits the widget's
     // centre regardless of its size, so the test above cannot catch a
     // shrunk hit target — this test measures the actual tappable area
-    // instead, against a 36dp floor (16dp icon + 10dp padding each side).
-    testWidgets('the delete affordance has at least a 36dp tappable area',
+    // instead, against a 40dp floor (16dp icon + 12dp padding each side,
+    // third-round review Finding 8 — matches BODY's delete affordance
+    // exactly instead of falling short at ~36dp).
+    testWidgets('the delete affordance has at least a 40dp tappable area',
         (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
@@ -179,8 +181,8 @@ void main() {
       );
       expect(detector, findsOneWidget);
       final size = tester.getSize(detector);
-      expect(size.width, greaterThanOrEqualTo(36));
-      expect(size.height, greaterThanOrEqualTo(36));
+      expect(size.width, greaterThanOrEqualTo(40));
+      expect(size.height, greaterThanOrEqualTo(40));
     });
 
     // Q1: macro rounding must not manufacture precision in either
@@ -373,6 +375,90 @@ void main() {
       expect(restored.first['carb_g'], 45.0);
       expect(restored.first['fat_g'], 14.0);
       expect(restored.first['meal_slot'], 'Breakfast');
+    });
+
+    // Third-round review, Finding 4: Ruling F parity gap. `getFoodLogsForDate`
+    // had no `orderBy` at all, so it fell back to SQLite's `rowid`, which
+    // `insertFoodLog`'s `ConflictAlgorithm.replace` restore reassigns —
+    // exactly the defect `getBodyLogs()` was fixed for, just surviving on
+    // FOOD's side of the shared UNDO mechanism. `Alpha, Beta, Gamma` in
+    // Breakfast, delete `Alpha`, tap UNDO — a rowid-fallback restore always
+    // lands the restored row last, regardless of which one was removed, so
+    // this discriminates against the bug (a test deleting `Gamma`, already
+    // last, would pass either way). Mutation-verified: fails (order becomes
+    // `['Beta', 'Gamma', 'Alpha']` instead of `['Alpha', 'Beta', 'Gamma']`)
+    // with `getFoodLogsForDate`'s `orderBy: 'id ASC'` reverted to none,
+    // passes at HEAD.
+    testWidgets(
+        'deleting the first entry of a meal and undoing restores its '
+        'original position, not the end of the list', (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: '1000000000000001',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Alpha',
+        kcal: 100,
+      ).toMap());
+      await db.insertFoodLog(FoodEntry(
+        id: '1000000000000002',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Beta',
+        kcal: 200,
+      ).toMap());
+      await db.insertFoodLog(FoodEntry(
+        id: '1000000000000003',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Gamma',
+        kcal: 300,
+      ).toMap());
+
+      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      final rowFinder = find.descendant(
+        of: find.byType(MealSection),
+        matching: find.byType(Text),
+      );
+      expect(
+          tester
+              .widgetList<Text>(rowFinder)
+              .map((t) => t.data)
+              .where((d) => ['Alpha', 'Beta', 'Gamma'].contains(d))
+              .toList(),
+          ['Alpha', 'Beta', 'Gamma']);
+
+      // Delete Alpha, the oldest/first entry, then undo it.
+      await tester.tap(find.byIcon(Icons.close).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+      expect(find.text('Alpha'), findsNothing);
+
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final restoredOrder = (await db.getFoodLogsForDate(today))
+          .map((r) => r['name'])
+          .toList();
+      expect(restoredOrder, ['Alpha', 'Beta', 'Gamma'],
+          reason:
+              'Alpha was logged first; restoring it must not push it to '
+              'the end behind Beta and Gamma');
+
+      final texts = tester
+          .widgetList<Text>(find.descendant(
+            of: find.byType(MealSection),
+            matching: find.byType(Text),
+          ))
+          .map((t) => t.data)
+          .where((d) => ['Alpha', 'Beta', 'Gamma'].contains(d))
+          .toList();
+      expect(texts, ['Alpha', 'Beta', 'Gamma'],
+          reason: 'the on-screen order must match the restored DB order');
     });
 
     // Same failure mode Finding 1 documented for BODY's CREATE THIS

@@ -20,7 +20,14 @@ void main() {
   });
 
   group('DatabaseService.getBodyLogs', () {
-    test('same-day entries come back newest-inserted-first, not undefined',
+    // Third-round review, Finding 7: this test's name and comment used to
+    // say "rowid DESC tiebreaker" and "newest-inserted-first" — stale since
+    // the fix moved the tiebreak to `id DESC`. 'b2' > 'b1' lexicographically
+    // (`id` is `TEXT`, so this is a textual, not numeric, comparison — see
+    // `getBodyLogs()`'s doc), which also happens to be insertion order here,
+    // but it's the id comparison, not "the second weigh-in that day", that
+    // this query actually guarantees.
+    test('same-day entries come back highest-id-first, not undefined',
         () async {
       final db = DatabaseService.instance;
       // Two weigh-ins on the same calendar day: a loss, logged twice.
@@ -37,9 +44,9 @@ void main() {
 
       final rows = await db.getBodyLogs();
       expect(rows.length, 2);
-      // The later insert (the second weigh-in that day) must sort first —
-      // date_str DESC alone cannot distinguish these, so the rowid DESC
-      // tiebreaker is what makes this deterministic.
+      // 'b2' sorts before 'b1' textually — date_str DESC alone cannot
+      // distinguish these, so the id DESC tiebreaker is what makes this
+      // deterministic.
       expect(rows[0]['id'], 'b2');
       expect(rows[1]['id'], 'b1');
     });
@@ -96,6 +103,90 @@ void main() {
       expect(rows.map((r) => r['id']).toList(), ['m2', 'm1'],
           reason: 'm2 was logged later that day and must still sort first '
               'after being restored');
+    });
+
+    // Third-round review, Finding 1: the test above deletes and restores the
+    // *newest* same-day row, which — because a fresh restore also lands on
+    // the newest `rowid` — comes back on top under the old, broken
+    // `rowid DESC` ordering too. It cannot tell the fix apart from the bug.
+    // Deleting and restoring the OLDER of a same-day pair does discriminate:
+    // under `rowid DESC` the restore's fresh rowid is still the highest in
+    // the table, so it wrongly jumps to newest; under `id DESC` its
+    // untouched, smaller id keeps it in its original, older slot.
+    // Mutation-verified: fails (order becomes ['o1', 'o2']) with
+    // `getBodyLogs()`'s `orderBy` reverted to `'date_str DESC, rowid DESC'`,
+    // passes at HEAD.
+    test(
+        'restoring the OLDER of a same-day pair does not jump it to '
+        'newest', () async {
+      final db = DatabaseService.instance;
+      await db.insertBodyLog(BodyEntry(
+        id: 'o1',
+        dateStr: '2026-09-05',
+        weightKg: 80.0,
+      ).toMap());
+      await db.insertBodyLog(BodyEntry(
+        id: 'o2',
+        dateStr: '2026-09-05',
+        weightKg: 79.0,
+      ).toMap());
+
+      // Delete and restore o1 — the OLDER entry that day — not o2.
+      await db.deleteBodyLog('o1');
+      await db.insertBodyLog(BodyEntry(
+        id: 'o1',
+        dateStr: '2026-09-05',
+        weightKg: 80.0,
+      ).toMap());
+
+      final rows = await db.getBodyLogs();
+      expect(rows.map((r) => r['id']).toList(), ['o2', 'o1'],
+          reason: 'o1 was logged first that day; restoring it must not '
+              'make it outrank o2, which was never touched');
+    });
+
+    // Third-round review, Finding 1, second discriminating shape: delete a
+    // row, insert a newer one in the interim, then restore the deleted row.
+    // Under `rowid DESC` the restore always gets the highest rowid in the
+    // table regardless of how many newer rows were inserted meanwhile, so
+    // it wrongly outranks even a row logged after it was deleted; under
+    // `id DESC` its untouched, smaller id keeps it behind that newer row.
+    // Mutation-verified: fails (order becomes ['p1', 'p3', 'p2']) with
+    // `getBodyLogs()`'s `orderBy` reverted to `'date_str DESC, rowid DESC'`,
+    // passes at HEAD.
+    test(
+        'restoring a deleted row after a newer same-day row was inserted '
+        'keeps it behind that newer row', () async {
+      final db = DatabaseService.instance;
+      await db.insertBodyLog(BodyEntry(
+        id: 'p1',
+        dateStr: '2026-09-05',
+        weightKg: 80.0,
+      ).toMap());
+      await db.insertBodyLog(BodyEntry(
+        id: 'p2',
+        dateStr: '2026-09-05',
+        weightKg: 79.0,
+      ).toMap());
+
+      await db.deleteBodyLog('p1');
+      // A newer same-day entry logged while p1 was deleted.
+      await db.insertBodyLog(BodyEntry(
+        id: 'p3',
+        dateStr: '2026-09-05',
+        weightKg: 78.0,
+      ).toMap());
+      // Restore p1 last.
+      await db.insertBodyLog(BodyEntry(
+        id: 'p1',
+        dateStr: '2026-09-05',
+        weightKg: 80.0,
+      ).toMap());
+
+      final rows = await db.getBodyLogs();
+      expect(rows.map((r) => r['id']).toList(), ['p3', 'p2', 'p1'],
+          reason: 'p1 was logged before p2 and p3 that day; restoring it '
+              'last must not make it outrank either');
     });
   });
 
