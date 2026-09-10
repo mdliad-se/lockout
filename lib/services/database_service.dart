@@ -359,9 +359,18 @@ class DatabaseService {
   }
 
   // --- WORKOUT LOGS ---
+  /// `date_str DESC, id DESC` (newest day first, newest-within-a-day
+  /// first) — the same restore-fidelity tiebreak `getBodyLogs()` carries
+  /// for `body_logs`. `session_logs.id` is minted the same way
+  /// (`DateTime.now().millisecondsSinceEpoch.toString()`, see
+  /// `today_tab.dart`), so it sorts the same way: textually, correct for
+  /// same-width ids. Without this, two sessions sharing a `date_str` sort
+  /// by SQLite's rowid fallback, which a delete-then-undo (LOG's own
+  /// Ruling F delete, Task 11) reassigns on restore — the exact defect
+  /// `getBodyLogs()`/`getFoodLogsForDate()` were fixed for.
   Future<List<Map<String, dynamic>>> getSessionLogs() async {
     final db = await instance.database;
-    return await db.query('session_logs', orderBy: 'date_str DESC');
+    return await db.query('session_logs', orderBy: 'date_str DESC, id DESC');
   }
 
   /// Sessions logged on exactly [dateStr], scoped in the same style as
