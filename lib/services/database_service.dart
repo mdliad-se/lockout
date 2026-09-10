@@ -359,18 +359,26 @@ class DatabaseService {
   }
 
   // --- WORKOUT LOGS ---
-  /// `date_str DESC, id DESC` (newest day first, newest-within-a-day
-  /// first) — the same restore-fidelity tiebreak `getBodyLogs()` carries
-  /// for `body_logs`. `session_logs.id` is minted the same way
-  /// (`DateTime.now().millisecondsSinceEpoch.toString()`, see
-  /// `today_tab.dart`), so it sorts the same way: textually, correct for
-  /// same-width ids. Without this, two sessions sharing a `date_str` sort
-  /// by SQLite's rowid fallback, which a delete-then-undo (LOG's own
-  /// Ruling F delete, Task 11) reassigns on restore — the exact defect
+  /// Newest day first, newest-within-a-day first (`date_str DESC, id
+  /// DESC`), scoped to `status = 'completed'` so this list, its aggregates
+  /// (LOG's hero/tiles) and `currentStreakDays` — which is fed by
+  /// `getWorkoutDates()`, filtered the same way — never disagree on what
+  /// counts as a logged workout.
+  ///
+  /// The id tiebreak matters: `session_logs.id` is minted the same way
+  /// `body_logs.id` is (`DateTime.now().millisecondsSinceEpoch.toString()`,
+  /// see `today_tab.dart`), so it sorts the same way — textually, correct
+  /// for same-width ids. Without it, two sessions sharing a `date_str` fall
+  /// back to SQLite's rowid order, which a delete-then-undo (LOG's Ruling F
+  /// delete, Task 11) reassigns on restore — the exact defect
   /// `getBodyLogs()`/`getFoodLogsForDate()` were fixed for.
   Future<List<Map<String, dynamic>>> getSessionLogs() async {
     final db = await instance.database;
-    return await db.query('session_logs', orderBy: 'date_str DESC, id DESC');
+    return await db.query(
+      'session_logs',
+      where: "status = 'completed'",
+      orderBy: 'date_str DESC, id DESC',
+    );
   }
 
   /// Sessions logged on exactly [dateStr], scoped in the same style as
@@ -538,10 +546,40 @@ class DatabaseService {
     );
   }
 
+  /// Deletes a session and its sets atomically. `set_logs.session_id` has
+  /// no FK/`ON DELETE CASCADE`, so without a transaction a crash between
+  /// the two statements below orphans `set_logs` rows: invisible to every
+  /// query (`getLastPerformance` JOINs `session_logs`) yet still faithfully
+  /// exported by `dumpTable` into every future backup.
   Future<void> deleteSessionLog(String id) async {
     final db = await instance.database;
-    await db.delete('session_logs', where: 'id = ?', whereArgs: [id]);
-    await db.delete('set_logs', where: 'session_id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      await txn.delete('session_logs', where: 'id = ?', whereArgs: [id]);
+      await txn.delete('set_logs', where: 'session_id = ?', whereArgs: [id]);
+    });
+  }
+
+  /// Re-inserts a session header and its sets atomically — the LOG undo
+  /// path's counterpart to `deleteSessionLog`'s transaction above. Without
+  /// it, an interruption between the two inserts leaves a header with no
+  /// sets, which the UI cannot distinguish from a legitimately
+  /// detail-free entry.
+  Future<void> restoreSessionLog(
+    Map<String, dynamic> sessionRow,
+    List<Map<String, dynamic>> setRows,
+  ) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      await txn.insert('session_logs', sessionRow,
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      if (setRows.isNotEmpty) {
+        final batch = txn.batch();
+        for (final row in setRows) {
+          batch.insert('set_logs', row, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+        await batch.commit(noResult: true);
+      }
+    });
   }
 
   // --- BACKUP SUPPORT ---

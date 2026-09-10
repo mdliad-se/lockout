@@ -210,11 +210,12 @@ void main() {
 
     testWidgets(
         'deleting a session offers UNDO, which restores the session and its '
-        'sets', (tester) async {
+        'sets, 3+ sets across 2 exercises, in their original id sequence',
+        (tester) async {
       final db = DatabaseService.instance;
       await _insertSession(
         db,
-        _log(id: 's1', dayName: 'MON - Legs', kcal: 200.0, totalSets: 1),
+        _log(id: 's1', dayName: 'MON - Legs', kcal: 200.0, totalSets: 3),
         sets: [
           SetLog(
             id: 's1-1',
@@ -224,6 +225,26 @@ void main() {
             setIndex: 0,
             weightKg: 100,
             reps: 5,
+            isCompleted: true,
+          ),
+          SetLog(
+            id: 's1-2',
+            sessionExerciseId: '',
+            sessionId: 's1',
+            exerciseName: 'Squat',
+            setIndex: 1,
+            weightKg: 100,
+            reps: 4,
+            isCompleted: true,
+          ),
+          SetLog(
+            id: 's1-3',
+            sessionExerciseId: '',
+            sessionId: 's1',
+            exerciseName: 'Bench Press',
+            setIndex: 0,
+            weightKg: 60,
+            reps: 8,
             isCompleted: true,
           ),
         ],
@@ -257,10 +278,19 @@ void main() {
       expect(restored.first['kcal_burned'], 200.0);
 
       final restoredSets = await db.getSetLogsForSession('s1');
-      expect(restoredSets.length, 1);
-      expect(restoredSets.first['exercise_name'], 'Squat');
-      expect(restoredSets.first['weight_kg'], 100);
-      expect(restoredSets.first['reps'], 5);
+      expect(restoredSets.length, 3);
+      // `getSetLogsForSession` reads `rowid ASC`; asserting the full id
+      // sequence locks the `insertSetLogs`-order -> `rowid ASC`-read
+      // dependency `_restoreLog`'s doc comment relies on, which a
+      // single-set case cannot exercise.
+      expect(restoredSets.map((s) => s['id']).toList(), ['s1-1', 's1-2', 's1-3']);
+      expect(restoredSets[0]['exercise_name'], 'Squat');
+      expect(restoredSets[0]['reps'], 5);
+      expect(restoredSets[1]['exercise_name'], 'Squat');
+      expect(restoredSets[1]['reps'], 4);
+      expect(restoredSets[2]['exercise_name'], 'Bench Press');
+      expect(restoredSets[2]['weight_kg'], 60);
+      expect(restoredSets[2]['reps'], 8);
     });
 
     testWidgets(

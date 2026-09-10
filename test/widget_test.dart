@@ -83,8 +83,43 @@ void main() {
       expect(ScheduleService.currentStreakDays(dates), 0);
     });
 
+    // A gap of 3 (above) also trips a mutated `> 2` bound, so it does not
+    // discriminate the boundary. A gap of exactly 2 (the day-before-
+    // yesterday case) only breaks the streak under the real `> 1` bound.
+    test('a gap of exactly two days (day before yesterday) also breaks '
+        'the streak', () {
+      final now = DateTime.now();
+      final dates = [key(now.subtract(const Duration(days: 2)))];
+      expect(ScheduleService.currentStreakDays(dates), 0);
+    });
+
     test('no history means no streak', () {
       expect(ScheduleService.currentStreakDays([]), 0);
+    });
+  });
+
+  // `dayNumber` must derive purely from calendar fields, not wall-clock
+  // subtraction, so it is exact across a real DST transition on any host
+  // — including this one (UTC+6, no DST transitions of its own), which is
+  // exactly why these use fixed, explicitly-timed `DateTime`s spanning
+  // real 2026 US transition dates rather than `DateTime.now()`.
+  group('ScheduleService - dayNumber (DST safety)', () {
+    test('a spring-forward 23h gap still counts as one calendar day', () {
+      // 2026-03-08 -> 2026-03-09 is the US spring-forward date: on a
+      // DST-observing host these two local instants are only 23h apart,
+      // which `Duration.inDays` would floor to 0.
+      final before = DateTime(2026, 3, 8, 1, 0);
+      final after = DateTime(2026, 3, 9, 0, 0);
+      expect(ScheduleService.dayNumber(after) - ScheduleService.dayNumber(before), 1);
+    });
+
+    test('a fall-back 47h gap still counts as exactly two calendar days', () {
+      // 2026-11-01 -> 2026-11-03 straddles the US fall-back date: on a
+      // DST-observing host these two local instants are 47h apart, which
+      // `Duration.inDays` would floor to 1, masking a genuine 2-day gap.
+      final before = DateTime(2026, 11, 1, 1, 0);
+      final after = DateTime(2026, 11, 3, 0, 0);
+      expect(ScheduleService.dayNumber(after) - ScheduleService.dayNumber(before), 2);
     });
   });
 

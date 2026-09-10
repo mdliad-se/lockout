@@ -75,15 +75,14 @@ class LogTabState extends State<LogTab> {
     setState(() => _expanded.add(log.id));
   }
 
-  /// Deletes [log] (and its set detail — `deleteSessionLog` removes both)
-  /// immediately, then offers a few seconds to reverse it through the same
-  /// `showUndoBanner` BODY and FOOD use, rather than the confirm-dialog
-  /// gate this screen used pre-v2: that guarded the tap with a modal, but
-  /// left no way back once DELETE was actually pressed, and duplicated a
-  /// second destructive-delete mechanism alongside the one BODY/FOOD had
-  /// already converged on. The sets are fetched *before* the delete — a
-  /// closed card never populates `_expandedSets`, so that cache cannot be
-  /// relied on to still hold them for restore.
+  /// Deletes [log] and its set detail immediately (`deleteSessionLog`
+  /// removes both, atomically), then offers a few seconds to reverse it
+  /// through the same `showUndoBanner` mechanism BODY and FOOD already use
+  /// (Ruling F) — not the pre-v2 confirm-dialog, which guarded the tap with
+  /// a modal but left no way back once DELETE was actually pressed. The
+  /// sets are fetched *before* the delete — a closed card never populates
+  /// `_expandedSets`, so that cache cannot be relied on to still hold them
+  /// for restore.
   Future<void> _deleteLog(SessionLog log) async {
     final db = DatabaseService.instance;
     final setRows = (await db.getSetLogsForSession(log.id))
@@ -103,17 +102,18 @@ class LogTabState extends State<LogTab> {
   }
 
   /// Re-inserts [log] with its original id and every field intact, then its
-  /// [sets] the same way — `insertSessionLog`/`insertSetLogs` both use
-  /// `ConflictAlgorithm.replace`, so this is a true restore, not a
-  /// near-copy with freshly minted ids. Reinserting the sets in their
+  /// [sets] the same way, atomically (`DatabaseService.restoreSessionLog`)
+  /// so an interruption mid-restore cannot leave a header with no sets.
+  /// `ConflictAlgorithm.replace` on both tables makes this a true restore,
+  /// not a near-copy with freshly minted ids. Reinserting the sets in their
   /// original order preserves `getSetLogsForSession`'s `rowid ASC` reading
   /// of them even though the delete cleared their prior rowids.
   Future<void> _restoreLog(SessionLog log, List<SetLog> sets) async {
     final db = DatabaseService.instance;
-    await db.insertSessionLog(log.toMap());
-    if (sets.isNotEmpty) {
-      await db.insertSetLogs(sets.map((s) => s.toMap()).toList());
-    }
+    await db.restoreSessionLog(
+      log.toMap(),
+      sets.map((s) => s.toMap()).toList(),
+    );
     if (!mounted) return;
     await _loadLogs();
   }
@@ -124,9 +124,15 @@ class LogTabState extends State<LogTab> {
   double get _totalBurnedKcal =>
       _logs.fold<double>(0, (s, l) => s + l.kcalBurned);
 
-  /// Estimates stay marked as estimates even in an aggregate.
-  String get _totalBurnedLabel =>
-      _totalBurnedKcal <= 0 ? '--' : '~${_totalBurnedKcal.round()} kcal';
+  /// Estimates stay marked as estimates even in an aggregate. Reuses
+  /// `SessionLog.formatKcal` rather than re-deriving its rounding and `~`
+  /// prefix rules — the exact duplication `sessionArchiveLine` exists to
+  /// eliminate — falling back to `--` since `formatKcal` returns `''` for
+  /// "no estimate", not "0 kcal".
+  String get _totalBurnedLabel {
+    final label = SessionLog.formatKcal(_totalBurnedKcal);
+    return label.isEmpty ? '--' : label;
+  }
 
   String get _streakLabel {
     if (_streakDays == 0) return 'NO ACTIVE STREAK';
@@ -300,13 +306,17 @@ class LogTabState extends State<LogTab> {
               }),
             const SizedBox(height: 6),
             // Padding lives *inside* the detector so the tappable area
-            // grows to a ~40dp-tall bar without enlarging the visible text
-            // — matches BODY's and FOOD's delete affordance (Ruling F).
+            // grows to a 40dp-tall bar without enlarging the visible text.
+            // The affordance itself is deliberately not BODY/FOOD's —
+            // those use an `Icons.delete_outline` button; the brief
+            // specifies a red text link for LOG. What matches (Ruling F)
+            // is the hit box and the shared `showUndoBanner` mechanism,
+            // not the widget.
             GestureDetector(
               onTap: () => _deleteLog(log),
               behavior: HitTestBehavior.opaque,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 13),
+                padding: const EdgeInsets.symmetric(vertical: 14),
                 child: Text(
                   'DELETE ENTRY',
                   style: JinatraTokens.monoData(fontSize: 10, color: JinatraTokens.signal),
