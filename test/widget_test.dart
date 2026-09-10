@@ -180,6 +180,66 @@ void main() {
       expect(back.isCompleted, isTrue);
     });
 
+    test('day copyWith keeps identity, overrides given fields, and carries '
+        'warmups/finishers along with exercises', () {
+      final day = TrainingDay(
+        id: 'd1',
+        routineId: 'r1',
+        name: 'Push',
+        tag: 'MON',
+        orderIndex: 0,
+        focus: 'Chest',
+        note: 'Go slow',
+        isRestDay: false,
+      );
+
+      final exercises = [
+        ExerciseDef(
+          id: 'e1',
+          dayId: 'd1',
+          name: 'Bench Press',
+          targetSets: 4,
+          targetRepsMin: 8,
+          targetRepsMax: 12,
+        ),
+      ];
+      final warmups = [
+        WarmupItem(id: 'w1', dayId: 'd1', name: 'Arm circles', amt: '3 min', orderIndex: 0),
+      ];
+      final finishers = [
+        FinisherItem(id: 'f1', dayId: 'd1', name: 'Burpees', amt: '30s', orderIndex: 0),
+      ];
+
+      final hydrated = day.copyWith(
+        exercises: exercises,
+        warmups: warmups,
+        finishers: finishers,
+      );
+
+      // id and routineId are identity — never copied over, even though
+      // copyWith takes no id/routineId parameters to override them with.
+      expect(hydrated.id, 'd1');
+      expect(hydrated.routineId, 'r1');
+      // Fields not passed to copyWith fall back to the original.
+      expect(hydrated.name, 'Push');
+      expect(hydrated.tag, 'MON');
+      expect(hydrated.focus, 'Chest');
+      expect(hydrated.note, 'Go slow');
+      expect(hydrated.isRestDay, isFalse);
+      // The fields that were passed are the ones that change.
+      expect(hydrated.exercises, exercises);
+      expect(hydrated.warmups, warmups);
+      expect(hydrated.finishers, finishers);
+
+      final renamedRestDay = day.copyWith(name: 'Off', isRestDay: true);
+      expect(renamedRestDay.name, 'Off');
+      expect(renamedRestDay.isRestDay, isTrue);
+      // Untouched fields, including the lists, still fall back — copyWith
+      // does not silently drop what it wasn't asked to change.
+      expect(renamedRestDay.tag, 'MON');
+      expect(renamedRestDay.exercises, isEmpty);
+    });
+
     test('session duration label switches to hours past 60 minutes', () {
       SessionLog withDuration(int seconds) => SessionLog(
             id: 'x',

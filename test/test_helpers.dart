@@ -1,4 +1,18 @@
+import 'package:flutter_test/flutter_test.dart';
 import 'package:lockout/services/database_service.dart';
+
+/// Drives a bounded number of timed frames rather than `pumpAndSettle`.
+///
+/// `CircularProgressIndicator`'s indeterminate animation repeats forever, so
+/// `pumpAndSettle` never terminates while one is on screen. This pumps
+/// enough (fast, real) sqflite reads' worth of frames to resolve instead.
+/// Shared by `today_tab_test.dart` and `routines_tab_test.dart` — both drive
+/// the same in-memory-DB seam and previously duplicated this verbatim.
+Future<void> settle(WidgetTester tester, {int maxPumps = 20}) async {
+  for (var i = 0; i < maxPumps; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
 
 /// Wipes every backup table and restores the same seed rows
 /// `DatabaseService._createDB` writes on a fresh install.

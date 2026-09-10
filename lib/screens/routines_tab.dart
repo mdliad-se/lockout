@@ -19,6 +19,11 @@ import 'exercise_video_screen.dart';
 /// anything, so the caller knows whether to refresh.
 typedef RefreshAfter = Future<void> Function(Future<bool?> Function() action);
 
+/// A fresh row id. Time-based rather than a counter/uuid dependency; every
+/// caller inserts immediately, so collision would require two inserts in the
+/// same microsecond.
+String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
+
 class RoutinesTab extends StatefulWidget {
   const RoutinesTab({super.key});
 
@@ -92,8 +97,6 @@ class RoutinesTabState extends State<RoutinesTab> {
     });
   }
 
-  String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
-
   void _openVideo(String name, String url) {
     Navigator.push(
       context,
@@ -111,206 +114,17 @@ class RoutinesTabState extends State<RoutinesTab> {
 
   // --- CREATE ROUTINE ---
 
-  /// Controllers and selection state are created here, once per sheet open,
-  /// rather than inside the builder passed to [showJinatraSheet] — that
-  /// builder is re-invoked on every rebuild of the sheet's own drag-handling
-  /// state (see `_BottomSheetState` in the framework), which would otherwise
-  /// hand back fresh controllers/locals — and silently clear whatever the
-  /// user had typed or picked — on a drag that does not dismiss the sheet.
+  /// Opens the create-routine form. `_CreateRoutineForm` owns its own
+  /// controller and selection state (see its class doc for why that, rather
+  /// than hoisting, is what keeps typed state alive across a non-dismissing
+  /// drag without also reintroducing a use-after-dispose).
   Future<void> _openCreateRoutineSheet() async {
-    final nameCtrl = TextEditingController();
-    var mode = SchedulingMode.weekday;
-    var template = RoutineTemplate.all.first;
-    try {
-      final saved = await showJinatraSheet<bool>(
-        context: context,
-        title: 'CREATE NEW ROUTINE',
-        builder: (ctx) => _buildCreateRoutineForm(
-          ctx,
-          nameCtrl: nameCtrl,
-          mode: mode,
-          template: template,
-          onModeChanged: (m) => mode = m,
-          onTemplateChanged: (t) => template = t,
-        ),
-      );
-      if (saved == true && mounted) await reload();
-    } finally {
-      nameCtrl.dispose();
-    }
-  }
-
-  Widget _buildCreateRoutineForm(
-    BuildContext sheetCtx, {
-    required TextEditingController nameCtrl,
-    required SchedulingMode mode,
-    required RoutineTemplate template,
-    required ValueChanged<SchedulingMode> onModeChanged,
-    required ValueChanged<RoutineTemplate> onTemplateChanged,
-  }) {
-    // Local copies drive this sheet instance's own rebuilds; the callbacks
-    // above keep the hoisted state in `_openCreateRoutineSheet` current too,
-    // so a re-invocation of this builder (a drag that doesn't dismiss) picks
-    // up the last choice instead of resetting to the initial default.
-    var localMode = mode;
-    var localTemplate = template;
-
-    return StatefulBuilder(
-      builder: (context, setSheet) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          JinatraInput(
-            label: 'Routine Name',
-            controller: nameCtrl,
-            hint: 'e.g. Push / Pull / Legs',
-          ),
-          Text('SCHEDULING MODE', style: JinatraTokens.monoData(fontSize: 12)),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _choice(
-                  label: 'WEEKDAY',
-                  selected: localMode == SchedulingMode.weekday,
-                  onTap: () => setSheet(() {
-                    localMode = SchedulingMode.weekday;
-                    onModeChanged(localMode);
-                  }),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _choice(
-                  label: 'ROTATING',
-                  selected: localMode == SchedulingMode.rotating,
-                  onTap: () => setSheet(() {
-                    localMode = SchedulingMode.rotating;
-                    onModeChanged(localMode);
-                  }),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            localMode == SchedulingMode.weekday
-                ? 'Each day is pinned to a weekday. Today\'s workout is whichever day matches today.'
-                : 'Days cycle in order, one per calendar day, ignoring weekdays.',
-            style: JinatraTokens.bodyText(
-              fontSize: 12,
-              color: JinatraTokens.ink.withValues(alpha: 0.7),
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text('START FROM', style: JinatraTokens.monoData(fontSize: 12)),
-          const SizedBox(height: 8),
-          ...RoutineTemplate.all.map((t) {
-            final selected = t.key == localTemplate.key;
-            return GestureDetector(
-              onTap: () => setSheet(() {
-                localTemplate = t;
-                onTemplateChanged(localTemplate);
-              }),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: JinatraTokens.cardDecoration(
-                  background: selected
-                      ? JinatraTokens.mistTeal
-                      : JinatraTokens.paper,
-                  borderColor: selected
-                      ? JinatraTokens.deepTeal
-                      : JinatraTokens.ink,
-                  borderWidth: selected
-                      ? JinatraTokens.borderControl
-                      : JinatraTokens.borderDivider,
-                  radius: JinatraTokens.radiusTile,
-                  hasShadow: false,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      selected
-                          ? Icons.check_box
-                          : Icons.check_box_outline_blank,
-                      size: 18,
-                      color: JinatraTokens.ink,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(t.name,
-                              style: JinatraTokens.bodyText(
-                                  fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 2),
-                          Text(
-                            t.blurb,
-                            style: JinatraTokens.monoData(
-                              fontSize: 10,
-                              color: JinatraTokens.ink
-                                  .withValues(alpha: 0.65),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-          const SizedBox(height: 16),
-          JinatraButton(
-            label: 'SAVE ROUTINE',
-            onPressed: () async {
-              final typed = nameCtrl.text.trim();
-              final name = typed.isNotEmpty
-                  ? typed
-                  : (localTemplate.key == 'blank' ? '' : localTemplate.name);
-              if (name.isEmpty) return;
-
-              await RoutineFactory.createFromTemplate(
-                name: name,
-                mode: localMode,
-                template: localTemplate,
-              );
-              if (sheetCtx.mounted) Navigator.pop(sheetCtx, true);
-            },
-          ),
-        ],
-      ),
+    final saved = await showJinatraSheet<bool>(
+      context: context,
+      title: 'CREATE NEW ROUTINE',
+      builder: (ctx) => const _CreateRoutineForm(),
     );
-  }
-
-  Widget _choice({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: JinatraTokens.cardDecoration(
-          background: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
-          borderWidth: JinatraTokens.borderControl,
-          radius: JinatraTokens.radiusTile,
-          hasShadow: !selected,
-          shadowOffset: JinatraTokens.shadowSm,
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: JinatraTokens.monoData(
-              color: selected ? JinatraTokens.onPrimary : JinatraTokens.ink,
-            ),
-          ),
-        ),
-      ),
-    );
+    if (saved == true && mounted) await reload();
   }
 
   // --- ADD / EDIT TRAINING DAY ---
@@ -318,144 +132,15 @@ class RoutinesTabState extends State<RoutinesTab> {
   /// Opens the training-day form. Resolves `true` only when the day was
   /// actually saved, so a caller that must close a parent sheet (the day
   /// detail sheet, on an edit) can tell a save apart from a dismiss.
-  Future<bool?> _openDayFormSheet(String routineId, {TrainingDay? existing}) async {
-    final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final focusCtrl = TextEditingController(text: existing?.focus ?? '');
-    final noteCtrl = TextEditingController(text: existing?.note ?? '');
-    var tag = existing?.tag ?? ScheduleService.weekdayPickerOrder.first;
-    var isRest = existing?.isRestDay ?? false;
-    try {
-      return await showJinatraSheet<bool>(
-        context: context,
-        title: existing == null ? 'ADD TRAINING DAY' : 'EDIT DAY',
-        builder: (ctx) => _buildDayForm(
-          ctx,
-          routineId,
-          existing: existing,
-          nameCtrl: nameCtrl,
-          focusCtrl: focusCtrl,
-          noteCtrl: noteCtrl,
-          tag: tag,
-          isRest: isRest,
-          onTagChanged: (v) => tag = v,
-          onRestChanged: (v) => isRest = v,
-        ),
-      );
-    } finally {
-      nameCtrl.dispose();
-      focusCtrl.dispose();
-      noteCtrl.dispose();
-    }
-  }
-
-  Widget _buildDayForm(
-    BuildContext sheetCtx,
-    String routineId, {
-    TrainingDay? existing,
-    required TextEditingController nameCtrl,
-    required TextEditingController focusCtrl,
-    required TextEditingController noteCtrl,
-    required String tag,
-    required bool isRest,
-    required ValueChanged<String> onTagChanged,
-    required ValueChanged<bool> onRestChanged,
-  }) {
-    var localTag = tag;
-    var localIsRest = isRest;
-
-    return StatefulBuilder(
-      builder: (context, setSheet) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('DAY OF WEEK', style: JinatraTokens.monoData(fontSize: 12)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: ScheduleService.weekdayPickerOrder.map((d) {
-              final selected = localTag == d;
-              return GestureDetector(
-                onTap: () => setSheet(() {
-                  localTag = d;
-                  onTagChanged(localTag);
-                }),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 8),
-                  decoration: JinatraTokens.cardDecoration(
-                    background: selected
-                        ? JinatraTokens.signal
-                        : JinatraTokens.paper,
-                    borderWidth: JinatraTokens.borderControl,
-                    radius: JinatraTokens.radiusTile,
-                    hasShadow: !selected,
-                    shadowOffset: JinatraTokens.shadowSm,
-                  ),
-                  child: Text(d,
-                      style: JinatraTokens.monoData(
-                        fontSize: 12,
-                        color: selected
-                            ? JinatraTokens.onAccent
-                            : JinatraTokens.ink,
-                      )),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 16),
-          JinatraInput(
-            label: 'Day Name',
-            controller: nameCtrl,
-            hint: 'e.g. Push',
-          ),
-          JinatraInput(
-            label: 'Focus (muscle groups)',
-            controller: focusCtrl,
-            hint: 'e.g. Chest - Shoulders - Triceps',
-          ),
-          JinatraInput(
-            label: 'Day Note (optional)',
-            controller: noteCtrl,
-            hint: 'Injury cautions, tempo rules...',
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text('MARK AS REST DAY',
-                    style: JinatraTokens.monoData(fontSize: 13)),
-              ),
-              Switch(
-                value: localIsRest,
-                activeThumbColor: JinatraTokens.deepTeal,
-                onChanged: (v) => setSheet(() {
-                  localIsRest = v;
-                  onRestChanged(localIsRest);
-                }),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          JinatraButton(
-            label: existing == null ? 'ADD DAY' : 'SAVE DAY',
-            onPressed: () async {
-              if (nameCtrl.text.trim().isEmpty) return;
-              final dayCount = (_routineDays[routineId] ?? []).length;
-              await DatabaseService.instance.insertDay(TrainingDay(
-                id: existing?.id ?? _newId(),
-                routineId: routineId,
-                name: nameCtrl.text.trim(),
-                tag: localTag,
-                orderIndex: existing?.orderIndex ?? dayCount,
-                focus: focusCtrl.text.trim(),
-                note: noteCtrl.text.trim(),
-                isRestDay: localIsRest,
-              ).toMap());
-              if (sheetCtx.mounted) Navigator.pop(sheetCtx, true);
-            },
-          ),
-        ],
+  Future<bool?> _openDayFormSheet(String routineId, {TrainingDay? existing}) {
+    final dayCount = (_routineDays[routineId] ?? []).length;
+    return showJinatraSheet<bool>(
+      context: context,
+      title: existing == null ? 'ADD TRAINING DAY' : 'EDIT DAY',
+      builder: (ctx) => _DayForm(
+        routineId: routineId,
+        existing: existing,
+        dayCount: dayCount,
       ),
     );
   }
@@ -468,76 +153,15 @@ class RoutinesTabState extends State<RoutinesTab> {
     required String dayId,
     required bool isWarmup,
     required int index,
-  }) async {
-    final nameCtrl = TextEditingController();
-    final amtCtrl = TextEditingController();
-    try {
-      return await showJinatraSheet<bool>(
-        context: context,
-        title: isWarmup ? 'ADD WARM-UP ITEM' : 'ADD FINISHER ITEM',
-        builder: (ctx) => _buildSubItemForm(
-          ctx,
-          dayId: dayId,
-          isWarmup: isWarmup,
-          index: index,
-          nameCtrl: nameCtrl,
-          amtCtrl: amtCtrl,
-        ),
-      );
-    } finally {
-      nameCtrl.dispose();
-      amtCtrl.dispose();
-    }
-  }
-
-  Widget _buildSubItemForm(
-    BuildContext sheetCtx, {
-    required String dayId,
-    required bool isWarmup,
-    required int index,
-    required TextEditingController nameCtrl,
-    required TextEditingController amtCtrl,
   }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        JinatraInput(
-          label: 'Movement',
-          controller: nameCtrl,
-          hint: isWarmup ? 'e.g. Arm circles' : 'e.g. Push-ups',
-        ),
-        JinatraInput(
-          label: 'Amount',
-          controller: amtCtrl,
-          hint: isWarmup ? 'e.g. 3-4 min' : 'e.g. 12-15 reps',
-        ),
-        JinatraButton(
-          label: 'ADD',
-          onPressed: () async {
-            if (nameCtrl.text.trim().isEmpty) return;
-            final db = DatabaseService.instance;
-            if (isWarmup) {
-              await db.insertWarmup(WarmupItem(
-                id: _newId(),
-                dayId: dayId,
-                name: nameCtrl.text.trim(),
-                amt: amtCtrl.text.trim(),
-                orderIndex: index,
-              ).toMap());
-            } else {
-              await db.insertFinisher(FinisherItem(
-                id: _newId(),
-                dayId: dayId,
-                name: nameCtrl.text.trim(),
-                amt: amtCtrl.text.trim(),
-                orderIndex: index,
-              ).toMap());
-            }
-            if (sheetCtx.mounted) Navigator.pop(sheetCtx, true);
-          },
-        ),
-      ],
+    return showJinatraSheet<bool>(
+      context: context,
+      title: isWarmup ? 'ADD WARM-UP ITEM' : 'ADD FINISHER ITEM',
+      builder: (ctx) => _SubItemForm(
+        dayId: dayId,
+        isWarmup: isWarmup,
+        index: index,
+      ),
     );
   }
 
@@ -567,230 +191,15 @@ class RoutinesTabState extends State<RoutinesTab> {
 
   /// Resolves `true` if the exercise was saved or removed — either way the
   /// caller's list is stale and must refresh.
-  Future<bool?> _openExerciseSheet(ExerciseDef ex, {bool isNew = false}) async {
-    final setsCtrl = TextEditingController(text: ex.targetSets.toString());
-    final repsMinCtrl =
-        TextEditingController(text: ex.targetRepsMin.toString());
-    final repsMaxCtrl =
-        TextEditingController(text: ex.targetRepsMax.toString());
-    final weightCtrl = TextEditingController(
-      text: ex.targetWeightKg == 0 ? '' : ex.targetWeightKg.toString(),
-    );
-    final restCtrl = TextEditingController(text: ex.restDefaultS.toString());
-    final noteCtrl = TextEditingController(text: ex.note);
-    final videoCtrl = TextEditingController(text: ex.videoUrl);
-    try {
-      return await showJinatraSheet<bool>(
-        context: context,
-        title: isNew ? 'ADD EXERCISE' : 'EDIT EXERCISE',
-        builder: (ctx) => _buildExerciseForm(
-          ctx,
-          ex,
-          isNew: isNew,
-          setsCtrl: setsCtrl,
-          repsMinCtrl: repsMinCtrl,
-          repsMaxCtrl: repsMaxCtrl,
-          weightCtrl: weightCtrl,
-          restCtrl: restCtrl,
-          noteCtrl: noteCtrl,
-          videoCtrl: videoCtrl,
-        ),
-      );
-    } finally {
-      setsCtrl.dispose();
-      repsMinCtrl.dispose();
-      repsMaxCtrl.dispose();
-      weightCtrl.dispose();
-      restCtrl.dispose();
-      noteCtrl.dispose();
-      videoCtrl.dispose();
-    }
-  }
-
-  Widget _buildExerciseForm(
-    BuildContext sheetCtx,
-    ExerciseDef ex, {
-    bool isNew = false,
-    required TextEditingController setsCtrl,
-    required TextEditingController repsMinCtrl,
-    required TextEditingController repsMaxCtrl,
-    required TextEditingController weightCtrl,
-    required TextEditingController restCtrl,
-    required TextEditingController noteCtrl,
-    required TextEditingController videoCtrl,
-  }) {
-    final group = ex.muscleGroup.isNotEmpty
-        ? ex.muscleGroup
-        : ExerciseLibrary.groupFor(ex.name);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Not a sectionHeader: the SheetScaffold title above
-                  // ("ADD EXERCISE" / "EDIT EXERCISE") already carries that
-                  // weight, so this is a secondary line, not a second
-                  // heading.
-                  Text(ex.name.toUpperCase(),
-                      style: JinatraTokens.bodyText(
-                          fontWeight: FontWeight.w800, fontSize: 15)),
-                  if (group.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: JinatraTokens.mistTeal,
-                        border:
-                            Border.all(color: JinatraTokens.ink, width: 2),
-                      ),
-                      child: Text(group.toUpperCase(),
-                          style: JinatraTokens.monoData(fontSize: 10)),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            GestureDetector(
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _openVideo(ex.name, videoCtrl.text.trim());
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: JinatraTokens.cardDecoration(
-                  background: JinatraTokens.signal,
-                  borderWidth: JinatraTokens.borderControl,
-                  radius: JinatraTokens.radiusPill,
-                  shadowOffset: JinatraTokens.shadowSm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.play_arrow,
-                        size: 15, color: JinatraTokens.onAccent),
-                    const SizedBox(width: 4),
-                    Text('WATCH',
-                        style: JinatraTokens.monoData(
-                            fontSize: 11, color: JinatraTokens.onAccent)),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            Expanded(
-              child: JinatraInput(
-                label: 'Sets',
-                controller: setsCtrl,
-                keyboardType: TextInputType.number,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: JinatraInput(
-                label: 'Min Reps',
-                controller: repsMinCtrl,
-                keyboardType: TextInputType.number,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: JinatraInput(
-                label: 'Max Reps',
-                controller: repsMaxCtrl,
-                keyboardType: TextInputType.number,
-              ),
-            ),
-          ],
-        ),
-        Row(
-          children: [
-            Expanded(
-              child: JinatraInput(
-                label: 'Weight (kg)',
-                controller: weightCtrl,
-                hint: '0',
-                keyboardType: TextInputType.number,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: JinatraInput(
-                label: 'Rest (sec)',
-                controller: restCtrl,
-                keyboardType: TextInputType.number,
-              ),
-            ),
-          ],
-        ),
-        JinatraInput(
-          label: 'Note',
-          controller: noteCtrl,
-          hint: 'Cues, injury notes, tempo...',
-        ),
-        JinatraInput(
-          label: 'Pinned Video URL (optional)',
-          controller: videoCtrl,
-          hint: 'Leave empty to auto-search YouTube',
-        ),
-        Text(
-          'Empty video URL means WATCH opens a YouTube search for a 3D / '
-          'animated form demo of this exercise. Paste a link to pin one.',
-          style: JinatraTokens.bodyText(
-            fontSize: 11,
-            color: JinatraTokens.ink.withValues(alpha: 0.65),
-          ),
-        ),
-        const SizedBox(height: 16),
-        JinatraButton(
-          label: isNew ? 'ADD TO DAY' : 'SAVE CHANGES',
-          onPressed: () async {
-            final minReps =
-                int.tryParse(repsMinCtrl.text) ?? ex.targetRepsMin;
-            var maxReps =
-                int.tryParse(repsMaxCtrl.text) ?? ex.targetRepsMax;
-            if (maxReps < minReps) maxReps = minReps;
-
-            await DatabaseService.instance.insertExercise(
-              ex.copyWith(
-                targetSets: int.tryParse(setsCtrl.text) ?? ex.targetSets,
-                targetRepsMin: minReps,
-                targetRepsMax: maxReps,
-                targetWeightKg: double.tryParse(weightCtrl.text) ?? 0.0,
-                restDefaultS:
-                    int.tryParse(restCtrl.text) ?? ex.restDefaultS,
-                note: noteCtrl.text.trim(),
-                videoUrl: videoCtrl.text.trim(),
-                muscleGroup: group,
-              ).toMap(),
-            );
-            if (sheetCtx.mounted) Navigator.pop(sheetCtx, true);
-          },
-        ),
-        if (!isNew) ...[
-          const SizedBox(height: 10),
-          JinatraButton(
-            label: 'REMOVE EXERCISE',
-            isSignal: true,
-            onPressed: () async {
-              await DatabaseService.instance.deleteExercise(ex.id);
-              if (sheetCtx.mounted) Navigator.pop(sheetCtx, true);
-            },
-          ),
-        ],
-      ],
+  Future<bool?> _openExerciseSheet(ExerciseDef ex, {bool isNew = false}) {
+    return showJinatraSheet<bool>(
+      context: context,
+      title: isNew ? 'ADD EXERCISE' : 'EDIT EXERCISE',
+      builder: (ctx) => _ExerciseForm(
+        ex: ex,
+        isNew: isNew,
+        onWatch: _openVideo,
+      ),
     );
   }
 
@@ -1304,9 +713,13 @@ class RoutinesTabState extends State<RoutinesTab> {
             spacing: 6,
             runSpacing: 6,
             children: [
+              // `color` is a foreground tone here (the outline + text), not
+              // a background — `mistTeal` is a surface tone and reads at
+              // ~1.1-1.3:1 contrast against `paper` in every palette. `ink`
+              // is the legible choice v1 used for this chip's outline/text.
               _tag(routine.schedulingMode.name.toUpperCase(),
-                  JinatraTokens.mistTeal),
-              _tag('${days.length} DAYS', JinatraTokens.mistTeal),
+                  JinatraTokens.ink),
+              _tag('${days.length} DAYS', JinatraTokens.ink),
               if (isActive) _tag('ACTIVE', JinatraTokens.signal, filled: true),
             ],
           ),
@@ -1387,6 +800,637 @@ class RoutinesTabState extends State<RoutinesTab> {
           color: filled ? JinatraTokens.onAccentColor(color) : color,
         ),
       ),
+    );
+  }
+}
+
+// --- FORM WIDGETS ---
+//
+// Each of the four sheet forms below is its own `StatefulWidget` rather than
+// a builder function fed hoisted controllers/locals. `showJinatraSheet`'s
+// `builder` is re-invoked on every rebuild of the sheet's own drag-handling
+// state (`_BottomSheetState._handleDragStart`/`_handleDragEnd`, both call
+// `setState`), but re-invoking a builder only recreates the `Widget`
+// description — a `StatefulWidget`'s `State` (and everything it owns,
+// including its `TextEditingController`s) survives that exactly the way a
+// `StatefulBuilder`'s closure state used to. The difference is disposal:
+// `State.dispose()` runs when the widget is actually removed from the tree,
+// which for a modal route is when its exit animation finishes — not when
+// `showJinatraSheet`'s returned Future completes, which fires when the pop
+// *starts* (`Route.didPop` -> `didComplete`), roughly 200ms earlier while
+// the sheet is still mounted and rebuilding. Disposing controllers in a
+// `finally` around that `await` (the previous fix wave's approach) tore them
+// down while `EditableText` was still subscribed to them, producing a
+// use-after-dispose the instant a field had been focused/edited before
+// close. Owning the controllers in `State` ties disposal to the same
+// lifecycle event that removes the widget, so there is no window where the
+// controller is gone but something in the tree still points at it.
+
+class _CreateRoutineForm extends StatefulWidget {
+  const _CreateRoutineForm();
+
+  @override
+  State<_CreateRoutineForm> createState() => _CreateRoutineFormState();
+}
+
+class _CreateRoutineFormState extends State<_CreateRoutineForm> {
+  final _nameCtrl = TextEditingController();
+  var _mode = SchedulingMode.weekday;
+  var _template = RoutineTemplate.all.first;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        JinatraInput(
+          label: 'Routine Name',
+          controller: _nameCtrl,
+          hint: 'e.g. Push / Pull / Legs',
+        ),
+        Text('SCHEDULING MODE', style: JinatraTokens.monoData(fontSize: 12)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _choice(
+                label: 'WEEKDAY',
+                selected: _mode == SchedulingMode.weekday,
+                onTap: () => setState(() => _mode = SchedulingMode.weekday),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _choice(
+                label: 'ROTATING',
+                selected: _mode == SchedulingMode.rotating,
+                onTap: () => setState(() => _mode = SchedulingMode.rotating),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _mode == SchedulingMode.weekday
+              ? 'Each day is pinned to a weekday. Today\'s workout is whichever day matches today.'
+              : 'Days cycle in order, one per calendar day, ignoring weekdays.',
+          style: JinatraTokens.bodyText(
+            fontSize: 12,
+            color: JinatraTokens.ink.withValues(alpha: 0.7),
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text('START FROM', style: JinatraTokens.monoData(fontSize: 12)),
+        const SizedBox(height: 8),
+        ...RoutineTemplate.all.map((t) {
+          final selected = t.key == _template.key;
+          return GestureDetector(
+            onTap: () => setState(() => _template = t),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: JinatraTokens.cardDecoration(
+                background:
+                    selected ? JinatraTokens.mistTeal : JinatraTokens.paper,
+                borderColor:
+                    selected ? JinatraTokens.deepTeal : JinatraTokens.ink,
+                borderWidth: selected
+                    ? JinatraTokens.borderControl
+                    : JinatraTokens.borderDivider,
+                radius: JinatraTokens.radiusTile,
+                hasShadow: false,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    selected
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
+                    size: 18,
+                    color: JinatraTokens.ink,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(t.name,
+                            style: JinatraTokens.bodyText(
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 2),
+                        Text(
+                          t.blurb,
+                          style: JinatraTokens.monoData(
+                            fontSize: 10,
+                            color: JinatraTokens.ink.withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 16),
+        JinatraButton(
+          label: 'SAVE ROUTINE',
+          onPressed: () async {
+            final typed = _nameCtrl.text.trim();
+            final name = typed.isNotEmpty
+                ? typed
+                : (_template.key == 'blank' ? '' : _template.name);
+            if (name.isEmpty) return;
+
+            await RoutineFactory.createFromTemplate(
+              name: name,
+              mode: _mode,
+              template: _template,
+            );
+            if (!context.mounted) return;
+            Navigator.pop(context, true);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+Widget _choice({
+  required String label,
+  required bool selected,
+  required VoidCallback onTap,
+}) {
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.all(12),
+      decoration: JinatraTokens.cardDecoration(
+        background: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
+        borderWidth: JinatraTokens.borderControl,
+        radius: JinatraTokens.radiusTile,
+        hasShadow: !selected,
+        shadowOffset: JinatraTokens.shadowSm,
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: JinatraTokens.monoData(
+            color: selected ? JinatraTokens.onPrimary : JinatraTokens.ink,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _DayForm extends StatefulWidget {
+  final String routineId;
+  final TrainingDay? existing;
+  final int dayCount;
+
+  const _DayForm({
+    required this.routineId,
+    required this.dayCount,
+    this.existing,
+  });
+
+  @override
+  State<_DayForm> createState() => _DayFormState();
+}
+
+class _DayFormState extends State<_DayForm> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _focusCtrl;
+  late final TextEditingController _noteCtrl;
+  late String _tag;
+  late bool _isRest;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    _nameCtrl = TextEditingController(text: existing?.name ?? '');
+    _focusCtrl = TextEditingController(text: existing?.focus ?? '');
+    _noteCtrl = TextEditingController(text: existing?.note ?? '');
+    _tag = existing?.tag ?? ScheduleService.weekdayPickerOrder.first;
+    _isRest = existing?.isRestDay ?? false;
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _focusCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final existing = widget.existing;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('DAY OF WEEK', style: JinatraTokens.monoData(fontSize: 12)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ScheduleService.weekdayPickerOrder.map((d) {
+            final selected = _tag == d;
+            return GestureDetector(
+              onTap: () => setState(() => _tag = d),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: JinatraTokens.cardDecoration(
+                  background:
+                      selected ? JinatraTokens.signal : JinatraTokens.paper,
+                  borderWidth: JinatraTokens.borderControl,
+                  radius: JinatraTokens.radiusTile,
+                  hasShadow: !selected,
+                  shadowOffset: JinatraTokens.shadowSm,
+                ),
+                child: Text(d,
+                    style: JinatraTokens.monoData(
+                      fontSize: 12,
+                      color: selected
+                          ? JinatraTokens.onAccent
+                          : JinatraTokens.ink,
+                    )),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 16),
+        JinatraInput(
+          label: 'Day Name',
+          controller: _nameCtrl,
+          hint: 'e.g. Push',
+        ),
+        JinatraInput(
+          label: 'Focus (muscle groups)',
+          controller: _focusCtrl,
+          hint: 'e.g. Chest - Shoulders - Triceps',
+        ),
+        JinatraInput(
+          label: 'Day Note (optional)',
+          controller: _noteCtrl,
+          hint: 'Injury cautions, tempo rules...',
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text('MARK AS REST DAY',
+                  style: JinatraTokens.monoData(fontSize: 13)),
+            ),
+            Switch(
+              value: _isRest,
+              activeThumbColor: JinatraTokens.deepTeal,
+              onChanged: (v) => setState(() => _isRest = v),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        JinatraButton(
+          label: existing == null ? 'ADD DAY' : 'SAVE DAY',
+          onPressed: () async {
+            if (_nameCtrl.text.trim().isEmpty) return;
+            await DatabaseService.instance.insertDay(TrainingDay(
+              id: existing?.id ?? _newId(),
+              routineId: widget.routineId,
+              name: _nameCtrl.text.trim(),
+              tag: _tag,
+              orderIndex: existing?.orderIndex ?? widget.dayCount,
+              focus: _focusCtrl.text.trim(),
+              note: _noteCtrl.text.trim(),
+              isRestDay: _isRest,
+            ).toMap());
+            if (!context.mounted) return;
+            Navigator.pop(context, true);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _SubItemForm extends StatefulWidget {
+  final String dayId;
+  final bool isWarmup;
+  final int index;
+
+  const _SubItemForm({
+    required this.dayId,
+    required this.isWarmup,
+    required this.index,
+  });
+
+  @override
+  State<_SubItemForm> createState() => _SubItemFormState();
+}
+
+class _SubItemFormState extends State<_SubItemForm> {
+  final _nameCtrl = TextEditingController();
+  final _amtCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _amtCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        JinatraInput(
+          label: 'Movement',
+          controller: _nameCtrl,
+          hint: widget.isWarmup ? 'e.g. Arm circles' : 'e.g. Push-ups',
+        ),
+        JinatraInput(
+          label: 'Amount',
+          controller: _amtCtrl,
+          hint: widget.isWarmup ? 'e.g. 3-4 min' : 'e.g. 12-15 reps',
+        ),
+        JinatraButton(
+          label: 'ADD',
+          onPressed: () async {
+            if (_nameCtrl.text.trim().isEmpty) return;
+            final db = DatabaseService.instance;
+            if (widget.isWarmup) {
+              await db.insertWarmup(WarmupItem(
+                id: _newId(),
+                dayId: widget.dayId,
+                name: _nameCtrl.text.trim(),
+                amt: _amtCtrl.text.trim(),
+                orderIndex: widget.index,
+              ).toMap());
+            } else {
+              await db.insertFinisher(FinisherItem(
+                id: _newId(),
+                dayId: widget.dayId,
+                name: _nameCtrl.text.trim(),
+                amt: _amtCtrl.text.trim(),
+                orderIndex: widget.index,
+              ).toMap());
+            }
+            if (!context.mounted) return;
+            Navigator.pop(context, true);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _ExerciseForm extends StatefulWidget {
+  final ExerciseDef ex;
+  final bool isNew;
+  final void Function(String name, String videoUrl) onWatch;
+
+  const _ExerciseForm({
+    required this.ex,
+    required this.onWatch,
+    this.isNew = false,
+  });
+
+  @override
+  State<_ExerciseForm> createState() => _ExerciseFormState();
+}
+
+class _ExerciseFormState extends State<_ExerciseForm> {
+  late final TextEditingController _setsCtrl;
+  late final TextEditingController _repsMinCtrl;
+  late final TextEditingController _repsMaxCtrl;
+  late final TextEditingController _weightCtrl;
+  late final TextEditingController _restCtrl;
+  late final TextEditingController _noteCtrl;
+  late final TextEditingController _videoCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final ex = widget.ex;
+    _setsCtrl = TextEditingController(text: ex.targetSets.toString());
+    _repsMinCtrl = TextEditingController(text: ex.targetRepsMin.toString());
+    _repsMaxCtrl = TextEditingController(text: ex.targetRepsMax.toString());
+    _weightCtrl = TextEditingController(
+      text: ex.targetWeightKg == 0 ? '' : ex.targetWeightKg.toString(),
+    );
+    _restCtrl = TextEditingController(text: ex.restDefaultS.toString());
+    _noteCtrl = TextEditingController(text: ex.note);
+    _videoCtrl = TextEditingController(text: ex.videoUrl);
+  }
+
+  @override
+  void dispose() {
+    _setsCtrl.dispose();
+    _repsMinCtrl.dispose();
+    _repsMaxCtrl.dispose();
+    _weightCtrl.dispose();
+    _restCtrl.dispose();
+    _noteCtrl.dispose();
+    _videoCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ex = widget.ex;
+    final group = ex.muscleGroup.isNotEmpty
+        ? ex.muscleGroup
+        : ExerciseLibrary.groupFor(ex.name);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Not a sectionHeader: the SheetScaffold title above
+                  // ("ADD EXERCISE" / "EDIT EXERCISE") already carries that
+                  // weight, so this is a secondary line, not a second
+                  // heading.
+                  Text(ex.name.toUpperCase(),
+                      style: JinatraTokens.bodyText(
+                          fontWeight: FontWeight.w800, fontSize: 15)),
+                  if (group.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    // v2 chrome, matching the WATCH pill beside it — this was
+                    // the last raw `BoxDecoration` (square corners, 2px
+                    // border) left in the sheet.
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: JinatraTokens.cardDecoration(
+                        background: JinatraTokens.mistTeal,
+                        borderWidth: JinatraTokens.borderControl,
+                        radius: JinatraTokens.radiusPill,
+                        hasShadow: false,
+                      ),
+                      child: Text(group.toUpperCase(),
+                          style: JinatraTokens.monoData(fontSize: 10)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            GestureDetector(
+              onTap: () {
+                Navigator.pop(context);
+                widget.onWatch(ex.name, _videoCtrl.text.trim());
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: JinatraTokens.cardDecoration(
+                  background: JinatraTokens.signal,
+                  borderWidth: JinatraTokens.borderControl,
+                  radius: JinatraTokens.radiusPill,
+                  shadowOffset: JinatraTokens.shadowSm,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.play_arrow,
+                        size: 15, color: JinatraTokens.onAccent),
+                    const SizedBox(width: 4),
+                    Text('WATCH',
+                        style: JinatraTokens.monoData(
+                            fontSize: 11, color: JinatraTokens.onAccent)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(
+              child: JinatraInput(
+                label: 'Sets',
+                controller: _setsCtrl,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: JinatraInput(
+                label: 'Min Reps',
+                controller: _repsMinCtrl,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: JinatraInput(
+                label: 'Max Reps',
+                controller: _repsMaxCtrl,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: JinatraInput(
+                label: 'Weight (kg)',
+                controller: _weightCtrl,
+                hint: '0',
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: JinatraInput(
+                label: 'Rest (sec)',
+                controller: _restCtrl,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        JinatraInput(
+          label: 'Note',
+          controller: _noteCtrl,
+          hint: 'Cues, injury notes, tempo...',
+        ),
+        JinatraInput(
+          label: 'Pinned Video URL (optional)',
+          controller: _videoCtrl,
+          hint: 'Leave empty to auto-search YouTube',
+        ),
+        Text(
+          'Empty video URL means WATCH opens a YouTube search for a 3D / '
+          'animated form demo of this exercise. Paste a link to pin one.',
+          style: JinatraTokens.bodyText(
+            fontSize: 11,
+            color: JinatraTokens.ink.withValues(alpha: 0.65),
+          ),
+        ),
+        const SizedBox(height: 16),
+        JinatraButton(
+          label: widget.isNew ? 'ADD TO DAY' : 'SAVE CHANGES',
+          onPressed: () async {
+            final minReps =
+                int.tryParse(_repsMinCtrl.text) ?? ex.targetRepsMin;
+            var maxReps =
+                int.tryParse(_repsMaxCtrl.text) ?? ex.targetRepsMax;
+            if (maxReps < minReps) maxReps = minReps;
+
+            await DatabaseService.instance.insertExercise(
+              ex.copyWith(
+                targetSets: int.tryParse(_setsCtrl.text) ?? ex.targetSets,
+                targetRepsMin: minReps,
+                targetRepsMax: maxReps,
+                targetWeightKg: double.tryParse(_weightCtrl.text) ?? 0.0,
+                restDefaultS:
+                    int.tryParse(_restCtrl.text) ?? ex.restDefaultS,
+                note: _noteCtrl.text.trim(),
+                videoUrl: _videoCtrl.text.trim(),
+                muscleGroup: group,
+              ).toMap(),
+            );
+            if (!context.mounted) return;
+            Navigator.pop(context, true);
+          },
+        ),
+        if (!widget.isNew) ...[
+          const SizedBox(height: 10),
+          JinatraButton(
+            label: 'REMOVE EXERCISE',
+            isSignal: true,
+            onPressed: () async {
+              await DatabaseService.instance.deleteExercise(ex.id);
+              if (!context.mounted) return;
+              Navigator.pop(context, true);
+            },
+          ),
+        ],
+      ],
     );
   }
 }

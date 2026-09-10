@@ -12,22 +12,25 @@ import 'package:lockout/widgets/sheet_scaffold.dart';
 import 'test_helpers.dart';
 
 /// Direct coverage for `RoutinesTab`, which had zero widget coverage before
-/// this fix wave: the day-detail sheet's `refreshAfter` staleness guard, the
-/// EDIT DAY sheet-pop, and the drag-does-not-reset-typed-state regression
-/// from Task 8's review (every sheet form used to build its
+/// the first fix wave: the day-detail sheet's `refreshAfter` staleness
+/// guard, the EDIT DAY sheet-pop, and the drag-does-not-reset-typed-state
+/// regression from Task 8's review (every sheet form used to build its
 /// `TextEditingController`s and local form state inside the builder passed
 /// to `showJinatraSheet`, so a drag that only rebuilt the sheet's own
 /// drag-handling state — without dismissing it — silently reset them).
 ///
-/// Same in-memory-DB seam as `today_tab_test.dart`: a file-backed sqflite
-/// database never finishes opening inside `testWidgets`' fake-async zone in
-/// this environment, but an in-memory one resolves instantly.
-Future<void> _settle(WidgetTester tester, {int maxPumps = 20}) async {
-  for (var i = 0; i < maxPumps; i++) {
-    await tester.pump(const Duration(milliseconds: 50));
-  }
-}
-
+/// A second review wave found that fix's disposal half was backwards: it
+/// disposed every controller in a `finally` around the `showJinatraSheet`
+/// await, which resolves when the sheet's pop *starts*, not when its exit
+/// animation finishes — so any sheet that had been typed into threw a
+/// use-after-dispose the moment it closed. The four
+/// `type into a field, then close the sheet` tests below are the regression
+/// coverage for that: each would fail (`tester.takeException()` non-null)
+/// against the disposed-in-`finally` version and pass against the
+/// StatefulWidget-owns-its-controllers fix.
+///
+/// `settle` (in-memory-DB seam, bounded-pump helper) is shared with
+/// `today_tab_test.dart` via `test_helpers.dart`.
 void main() {
   setUpAll(() {
     databaseFactory = databaseFactoryFfiNoIsolate;
@@ -76,7 +79,7 @@ void main() {
     ).toMap());
 
     await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
-    await _settle(tester);
+    await settle(tester);
 
     // Open the day-detail sheet.
     await tester.tap(find.text('Push Day'));
@@ -110,7 +113,7 @@ void main() {
     final day = await seedRoutineWithDay();
 
     await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
-    await _settle(tester);
+    await settle(tester);
 
     await tester.tap(find.text('Push Day'));
     await tester.pumpAndSettle();
@@ -134,7 +137,7 @@ void main() {
     await seedRoutineWithDay();
 
     await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
-    await _settle(tester);
+    await settle(tester);
 
     await tester.tap(find.text('+ NEW'));
     await tester.pumpAndSettle();
@@ -164,5 +167,118 @@ void main() {
         reason: 'the small drag must not have dismissed the sheet');
     expect(find.text(typed), findsOneWidget,
         reason: 'the typed routine name must survive a non-dismissing drag');
+  });
+
+  // Second review wave: the first fix wave hoisted controllers out of the
+  // rebuilt builder (fixing the drag-state-loss bug above) but disposed them
+  // in a `finally` around `showJinatraSheet`'s await, which resolves when
+  // the sheet's pop *starts* — not when its exit animation finishes and the
+  // sheet is actually removed from the tree. Any field that had been
+  // focused/edited was still wired to `EditableText` via
+  // `Listenable.merge([controller, ...])` for the ~200ms the sheet spent
+  // sliding away, so closing a typed-into sheet threw a use-after-dispose.
+  // Each of these four tests types into one of the four sheet forms and
+  // then closes it, matching the reviewer's reproduction; none of the three
+  // tests above would have caught it, since none of them types into a field
+  // and then lets the sheet actually close.
+  group('typing into a form then closing the sheet does not throw', () {
+    testWidgets('create-routine form: type, then SAVE ROUTINE', (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+
+      await tester.tap(find.text('+ NEW'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'e.g. Push / Pull / Legs'),
+          'My Custom Split');
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('SAVE ROUTINE'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SAVE ROUTINE'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('day form: + ADD DAY, type a day name, then ADD DAY',
+        (tester) async {
+      await seedRoutineWithDay();
+
+      await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+
+      await tester.tap(find.text('+ ADD DAY'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'e.g. Push'), 'Pull Day');
+      await tester.pump();
+
+      await tester.tap(find.text('ADD DAY'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'sub-item form: + ADD WARM-UP, type a movement, then ADD',
+        (tester) async {
+      await seedRoutineWithDay();
+
+      await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('+ ADD WARM-UP'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'e.g. Arm circles'),
+          'Band pull-aparts');
+      await tester.pump();
+
+      await tester.tap(find.text('ADD'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('exercise form: edit an exercise, type a note, then SAVE CHANGES',
+        (tester) async {
+      final day = await seedRoutineWithDay();
+      await DatabaseService.instance.insertExercise(ExerciseDef(
+        id: 'e1',
+        dayId: day.id,
+        name: 'Bench Press',
+        targetSets: 4,
+        targetRepsMin: 8,
+        targetRepsMax: 12,
+      ).toMap());
+
+      await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Bench Press'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'Cues, injury notes, tempo...'),
+          'slow eccentric');
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('SAVE CHANGES'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SAVE CHANGES'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    });
   });
 }

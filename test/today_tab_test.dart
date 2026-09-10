@@ -19,18 +19,10 @@ import 'test_helpers.dart';
 /// database — there is no way to build a meaningful `TodayTab` in these
 /// scenarios without one, unlike `HomeHub` itself (which is why `HomeHub`
 /// stays presentation-only and gets tested with no database at all in
-/// `home_tab_test.dart`).
-///
-/// `CircularProgressIndicator`'s indeterminate animation repeats forever, so
-/// `pumpAndSettle` never terminates while one is on screen. `_settle` drives
-/// a bounded number of timed frames instead — long enough for the real
-/// (fast) sqflite reads behind every load to resolve.
-Future<void> _settle(WidgetTester tester, {int maxPumps = 20}) async {
-  for (var i = 0; i < maxPumps; i++) {
-    await tester.pump(const Duration(milliseconds: 50));
-  }
-}
-
+/// `home_tab_test.dart`). `settle` (the bounded-pump helper, since
+/// `pumpAndSettle` never terminates while a `CircularProgressIndicator`'s
+/// indeterminate animation is on screen) lives in `test_helpers.dart`,
+/// shared with `routines_tab_test.dart`.
 void main() {
   setUpAll(() {
     // `testWidgets`' fake-async zone never lets a *file-backed* sqflite
@@ -76,7 +68,7 @@ void main() {
       await db.setActiveRoutine('r1');
 
       await tester.pumpWidget(const MaterialApp(home: TodayTab()));
-      await _settle(tester);
+      await settle(tester);
 
       expect(find.text('START SESSION'), findsNothing);
       expect(find.text('CUSTOM SESSION'), findsOneWidget);
@@ -95,7 +87,7 @@ void main() {
       await tester.pumpWidget(const MaterialApp(
         home: TodayTab(foodTabEnabled: false),
       ));
-      await _settle(tester);
+      await settle(tester);
 
       expect(find.text('CALORIES'), findsNothing);
       expect(find.text('LOG FOOD'), findsNothing);
@@ -104,7 +96,7 @@ void main() {
       // WEIGH IN tile's onTap is `() => go?.call('body')`, which must no-op
       // rather than throw when `go` is null.
       await tester.tap(find.text('WEIGH IN'));
-      await _settle(tester, maxPumps: 2);
+      await settle(tester, maxPumps: 2);
       expect(tester.takeException(), isNull);
     });
   });
@@ -141,18 +133,18 @@ void main() {
       // EnergyEstimator.estimate() cannot produce a figure.
 
       await tester.pumpWidget(const MaterialApp(home: TodayTab()));
-      await _settle(tester);
+      await settle(tester);
 
       expect(find.text('NO SESSION YET'), findsOneWidget);
 
       await tester.tap(find.text('START SESSION'));
-      await _settle(tester);
+      await settle(tester);
 
       await tester.tap(find.text('LOG SET'));
-      await _settle(tester, maxPumps: 4);
+      await settle(tester, maxPumps: 4);
 
       await tester.tap(find.text('FINISH SESSION & SAVE'));
-      await _settle(tester);
+      await settle(tester);
 
       // Back on the hub: the session was saved (proved by the assertion
       // below), but with no bodyweight on record no estimate could be made.
@@ -193,7 +185,7 @@ void main() {
       ).toMap());
 
       await tester.pumpWidget(const MaterialApp(home: TodayTab()));
-      await _settle(tester);
+      await settle(tester);
 
       // A single weigh-in: a value, but no delta yet.
       expect(find.text('LOG A WEIGHT'), findsNothing);
