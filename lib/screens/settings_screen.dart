@@ -170,16 +170,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// Height in cm from whichever unit the user is currently editing.
+  ///
+  /// Guarded the same way [_sanitisedTargetWeightKg] is, and for the same
+  /// reason: `double.tryParse` accepts 'Infinity' and 'NaN', `Infinity > 0`
+  /// is true, and `double.infinity.toStringAsFixed(2)` is the literal string
+  /// 'Infinity'. No numeric field here carries `inputFormatters`, so paste or
+  /// a letters keyboard reaches this. A non-finite height stored to
+  /// `height_cm` made `NutritionPlanner.build` throw `Unsupported operation:
+  /// Infinity or NaN toInt` out of `GoalService.snapshot()` — which BODY,
+  /// FOOD, TODAY and Settings itself all call, so one typed word bricked four
+  /// screens until the row was overwritten. Anything not finite and positive
+  /// falls back to the same 175.0 default unparseable text already lands on.
   double _resolveHeightCm() {
     if (_heightUnit == 'ft') {
       final feet = int.tryParse(_heightFtCtrl.text.trim()) ?? 0;
       final inches = double.tryParse(_heightInCtrl.text.trim()) ?? 0;
       final cm = Units.feetInchesToCm(feet, inches);
-      return cm > 0 ? cm : 175.0;
+      return _usableHeightCm(cm);
     }
     final cm = double.tryParse(_heightCmCtrl.text.trim()) ?? 0;
-    return cm > 0 ? cm : 175.0;
+    return _usableHeightCm(cm);
   }
+
+  static double _usableHeightCm(double cm) =>
+      cm.isFinite && cm > 0 ? cm : 175.0;
 
   /// Keeps the hidden unit's fields in sync so switching units never loses
   /// the value the user just typed.
@@ -387,7 +401,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeading(title: 'APPEARANCE'),
+          // NOT const: `SectionHeading.build` reads `JinatraTokens.ink`, and a
+          // const widget is canonicalised to one instance — `updateChild`
+          // then sees an identical child and skips the rebuild, so the
+          // heading keeps the old palette's near-black ink on the new
+          // palette's near-black canvas. Settings lives in an `IndexedStack`
+          // and never unmounts, so the stale colour survives for the process
+          // lifetime. Same hazard `main.dart` documents for `MainScreen`.
+          // ignore: prefer_const_constructors
+          SectionHeading(title: 'APPEARANCE'),
           const SizedBox(height: 4),
           Text(
             'Eight neubrutalist palettes. Applies instantly.',
@@ -444,9 +466,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           borderRadius: BorderRadius.circular(JinatraTokens.radiusTile),
           border: Border.all(
             color: selected ? JinatraTokens.signal : JinatraTokens.ink,
-            width: selected ? 4 : 2,
+            width: selected
+                ? JinatraTokens.borderHero
+                : JinatraTokens.borderDivider,
           ),
-          boxShadow: [JinatraTokens.hardShadow(offset: selected ? 4 : 2)],
+          // Shadows only ever sit on the 3/6/10 scale the spec pins, so the
+          // selected swatch lifts to the card offset rather than an ad-hoc 4.
+          boxShadow: [
+            JinatraTokens.hardShadow(
+              offset:
+                  selected ? JinatraTokens.shadowMd : JinatraTokens.shadowSm,
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -530,7 +561,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeading(title: 'PROFILE & PREFERENCES'),
+          // NOT const — reads a palette colour at build time; see APPEARANCE.
+          // ignore: prefer_const_constructors
+          SectionHeading(title: 'PROFILE & PREFERENCES'),
           const SizedBox(height: 14),
 
           Text('HEIGHT UNIT', style: JinatraTokens.monoData(fontSize: 12)),
@@ -639,7 +672,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeading(title: 'GOAL & CALORIE TARGET'),
+          // NOT const — reads a palette colour at build time; see APPEARANCE.
+          // ignore: prefer_const_constructors
+          SectionHeading(title: 'GOAL & CALORIE TARGET'),
           const SizedBox(height: 4),
           Text(
             'Your daily calories are calculated from these, not guessed. BMR '
@@ -898,7 +933,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeading(title: 'REMINDERS & ACCOUNTABILITY'),
+          // NOT const — reads a palette colour at build time; see APPEARANCE.
+          // ignore: prefer_const_constructors
+          SectionHeading(title: 'REMINDERS & ACCOUNTABILITY'),
           const SizedBox(height: 4),
           Text(
             'Scheduled by your device from local data. Nothing is sent anywhere.',
@@ -948,7 +985,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeading(title: 'DATA BACKUP'),
+          // NOT const — reads a palette colour at build time; see APPEARANCE.
+          // ignore: prefer_const_constructors
+          SectionHeading(title: 'DATA BACKUP'),
           const SizedBox(height: 8),
           Text(
             'Export writes every routine, workout, set, meal, body entry and '
@@ -979,7 +1018,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeading(title: 'ABOUT LOCKOUT'),
+          // NOT const — reads a palette colour at build time; see APPEARANCE.
+          // ignore: prefer_const_constructors
+          SectionHeading(title: 'ABOUT LOCKOUT'),
           const SizedBox(height: 8),
           Text(
             'LOCKOUT v1.1.0\nPublished by Jinatra Ltd. under GPL-3.0-or-later.\n'

@@ -106,4 +106,88 @@ void main() {
       expect(snap.calorieTarget, isNot(1800));
     });
   });
+
+  /// The write-side guard in Settings is only one of three ways a poisoned
+  /// row reaches `loadProfile`. `BackupService.importFromJson` validates the
+  /// app tag and schema version and then writes `user_settings` rows
+  /// verbatim, so a hand-edited or older-build backup restores
+  /// `target_weight_kg = 'Infinity'` straight past it — as does any row
+  /// written by a build that predates the guard. Clamping on read closes all
+  /// three at once; the write-side guard stays because keeping garbage out of
+  /// the database is still worth doing.
+  group('loadProfile clamps non-finite rows', () {
+    test('a non-finite target weight reads back as an unset target', () async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('target_weight_kg', 'Infinity');
+      await db.saveSetting('age', '30');
+
+      final profile = await GoalService.instance.loadProfile();
+      expect(profile.targetWeightKg, 0.0);
+      // An unset target must not read as configured, or the user is shown a
+      // fabricated plan instead of being asked for a real number.
+      expect(profile.isConfigured, isFalse);
+    });
+
+    test('a NaN target weight reads back as an unset target', () async {
+      await DatabaseService.instance.saveSetting('target_weight_kg', 'NaN');
+
+      final profile = await GoalService.instance.loadProfile();
+      expect(profile.targetWeightKg, 0.0);
+    });
+
+    test('a negative target weight reads back as an unset target', () async {
+      await DatabaseService.instance.saveSetting('target_weight_kg', '-72');
+
+      final profile = await GoalService.instance.loadProfile();
+      expect(profile.targetWeightKg, 0.0);
+    });
+
+    test('a non-finite height reads back as the default height', () async {
+      await DatabaseService.instance.saveSetting('height_cm', 'Infinity');
+
+      final profile = await GoalService.instance.loadProfile();
+      expect(profile.heightCm, 175.0);
+    });
+
+    test('a zero or negative height reads back as the default height',
+        () async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('height_cm', '0');
+      expect((await GoalService.instance.loadProfile()).heightCm, 175.0);
+
+      await db.saveSetting('height_cm', '-175');
+      expect((await GoalService.instance.loadProfile()).heightCm, 175.0);
+    });
+
+    test('a negative age reads back as unset', () async {
+      await DatabaseService.instance.saveSetting('age', '-30');
+
+      final profile = await GoalService.instance.loadProfile();
+      expect(profile.age, 0);
+      expect(profile.isConfigured, isFalse);
+    });
+
+    test('snapshot survives a poisoned row instead of throwing', () async {
+      // Verbatim reproduction of the crash: `NutritionPlanner.build` calls
+      // `.round()` on a target derived from Infinity, and Dart throws
+      // `Unsupported operation: Infinity or NaN toInt`. That took BODY, FOOD,
+      // TODAY and Settings itself down, because all four call snapshot().
+      final db = DatabaseService.instance;
+      await db.saveSetting('target_weight_kg', 'Infinity');
+      await db.saveSetting('height_cm', 'Infinity');
+      await db.saveSetting('age', '30');
+      await db.insertBodyLog(BodyEntry(
+        id: 'poisoned',
+        dateStr: '2026-09-10',
+        weightKg: 80.0,
+      ).toMap());
+
+      final snap = await GoalService.instance.snapshot();
+      expect(snap.currentWeightKg, 80.0);
+      expect(snap.bmi, isNotNull);
+      expect(snap.bmi!.isFinite, isTrue);
+      // Target is unset once clamped, so no plan is invented from it.
+      expect(snap.nutrition, isNull);
+    });
+  });
 }

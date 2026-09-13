@@ -76,16 +76,36 @@ class GoalService {
   Future<GoalProfile> loadProfile() async {
     final db = DatabaseService.instance;
 
-    final height = double.tryParse(
-          await db.getSetting('height_cm', defaultValue: '175.0'),
-        ) ??
-        175.0;
-    final targetWeight = double.tryParse(
-          await db.getSetting('target_weight_kg', defaultValue: '0'),
-        ) ??
-        0.0;
-    final age =
+    // Clamped on read, not only on write. Settings' write-side guard cannot
+    // see either realistic vector for a poisoned row:
+    // `BackupService.importFromJson` validates the app tag and schema version
+    // and then writes `user_settings` rows verbatim, so a hand-edited or
+    // older-build backup restores `target_weight_kg = 'Infinity'` straight
+    // past it — as does any row a build predating that guard already wrote.
+    // `double.tryParse` accepts 'Infinity' and 'NaN', and a non-finite value
+    // reaching `NutritionPlanner.build` throws `Unsupported operation:
+    // Infinity or NaN toInt`. Every caller of `snapshot()` — BODY, FOOD,
+    // TODAY and Settings — then fails to load rather than merely showing a
+    // silly number. Clamping here closes the UI, import and legacy-row paths
+    // at once, including the value Settings echoes back into its own field.
+    final height = _finiteOr(
+      double.tryParse(await db.getSetting('height_cm', defaultValue: '175.0')),
+      fallback: 175.0,
+      floor: 0.0,
+      floorExclusive: true,
+    );
+    final targetWeight = _finiteOr(
+      double.tryParse(
+        await db.getSetting('target_weight_kg', defaultValue: '0'),
+      ),
+      fallback: 0.0,
+      floor: 0.0,
+    );
+    // `int.tryParse` cannot produce a non-finite value, but it happily parses
+    // a negative one, and a negative age drags the BMR equation with it.
+    final rawAge =
         int.tryParse(await db.getSetting('age', defaultValue: '0')) ?? 0;
+    final age = rawAge > 0 ? rawAge : 0;
     final sexKey = await db.getSetting('sex', defaultValue: 'male');
     final activityKey =
         await db.getSetting('activity_level', defaultValue: 'moderate');
@@ -108,6 +128,23 @@ class GoalService {
       // any calorie number would be invented rather than calculated.
       isConfigured: age > 0 && targetWeight > 0,
     );
+  }
+
+  /// [value] when it is a usable number, [fallback] otherwise.
+  ///
+  /// "Usable" is non-null, finite, and at or above [floor] — strictly above it
+  /// when [floorExclusive], which is how height rejects a stored `0` that
+  /// would divide BMI by zero while target weight keeps `0` as its legitimate
+  /// "not set yet" value.
+  static double _finiteOr(
+    double? value, {
+    required double fallback,
+    required double floor,
+    bool floorExclusive = false,
+  }) {
+    if (value == null || !value.isFinite) return fallback;
+    if (floorExclusive ? value <= floor : value < floor) return fallback;
+    return value;
   }
 
   Future<GoalSnapshot> snapshot() async {

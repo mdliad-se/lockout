@@ -1009,4 +1009,56 @@ void main() {
       expect(find.byType(Sparkline), findsOneWidget);
     });
   });
+
+  /// A poisoned `user_settings` row is reachable without Settings ever being
+  /// used: `BackupService.importFromJson` writes restored rows verbatim, and
+  /// any build that predates the Settings write-side guard could have written
+  /// one itself. BODY must survive it.
+  group('BodyTab with a poisoned goal row', () {
+    testWidgets('a non-finite target weight still renders the screen',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('target_weight_kg', 'Infinity');
+      await db.saveSetting('age', '30');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(const MaterialApp(home: BodyTab()));
+      await settle(tester);
+
+      // Before the read-side clamp `GoalService.snapshot()` threw
+      // `Unsupported operation: Infinity or NaN toInt` out of
+      // `NutritionPlanner.build`, `_loadData` aborted, and BODY rendered its
+      // loading state forever — no TARGET tile at all, not even a wrong one.
+      expect(tester.takeException(), isNull);
+      expect(find.text('Infinity kg'), findsNothing);
+
+      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
+      expect(hero.title, '80.0 KG');
+
+      final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
+      final byLabel = {for (final t in tiles) t.label: t.value};
+      expect(byLabel['TARGET'], '--');
+    });
+
+    testWidgets('a non-finite height still renders a finite BMI',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('height_cm', 'Infinity');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(const MaterialApp(home: BodyTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+
+      final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
+      final byLabel = {for (final t in tiles) t.label: t.value};
+      // 175cm default, 80kg -> 26.1. A non-finite height gave '0.0' or NaN.
+      expect(byLabel['BMI'], '26.1');
+    });
+  });
 }
