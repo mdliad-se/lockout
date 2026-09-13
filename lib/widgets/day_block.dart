@@ -123,7 +123,13 @@ class SectionHeading extends StatelessWidget {
   final String amount;
   final VoidCallback? onAdd;
 
-  const SectionHeading({
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  SectionHeading({
     super.key,
     required this.title,
     this.amount = '',
@@ -184,7 +190,13 @@ class SubItemRow extends StatelessWidget {
   final String amt;
   final VoidCallback? onRemove;
 
-  const SubItemRow({
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  SubItemRow({
     super.key,
     required this.name,
     required this.amt,
@@ -231,7 +243,13 @@ class AddLink extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const AddLink({super.key, required this.label, required this.onTap});
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  AddLink({super.key, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

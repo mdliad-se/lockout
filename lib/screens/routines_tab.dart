@@ -122,7 +122,7 @@ class RoutinesTabState extends State<RoutinesTab> {
     final saved = await showJinatraSheet<bool>(
       context: context,
       title: 'CREATE NEW ROUTINE',
-      builder: (ctx) => const _CreateRoutineForm(),
+      builder: (ctx) => _CreateRoutineForm(),
     );
     if (saved == true && mounted) await reload();
   }
@@ -827,7 +827,13 @@ class RoutinesTabState extends State<RoutinesTab> {
 // controller is gone but something in the tree still points at it.
 
 class _CreateRoutineForm extends StatefulWidget {
-  const _CreateRoutineForm();
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  _CreateRoutineForm();
 
   @override
   State<_CreateRoutineForm> createState() => _CreateRoutineFormState();

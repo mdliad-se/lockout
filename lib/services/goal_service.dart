@@ -87,7 +87,10 @@ class GoalService {
     // Infinity or NaN toInt`. Every caller of `snapshot()` — BODY, FOOD,
     // TODAY and Settings — then fails to load rather than merely showing a
     // silly number. Clamping here closes the UI, import and legacy-row paths
-    // at once, including the value Settings echoes back into its own field.
+    // for every caller that reads the profile through this method — which is
+    // the condition, not a given: Settings parsed `height_cm` a second time
+    // itself and kept the crash until it was changed to echo `heightCm` back
+    // into its own field. Read the row here, not again at the call site.
     final height = _finiteOr(
       double.tryParse(await db.getSetting('height_cm', defaultValue: '175.0')),
       fallback: 175.0,

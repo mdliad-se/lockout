@@ -11,7 +11,13 @@ class JinatraButton extends StatefulWidget {
   final bool isSignal;
   final IconData? icon;
 
-  const JinatraButton({
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  JinatraButton({
     super.key,
     required this.label,
     required this.onPressed,

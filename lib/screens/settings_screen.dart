@@ -67,7 +67,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final db = DatabaseService.instance;
-    final h = await db.getSetting('height_cm', defaultValue: '175.0');
     final c = await db.getSetting(
       'calorie_target',
       defaultValue: '${DatabaseService.defaultCalorieTarget}',
@@ -86,7 +85,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final goal = await GoalService.instance.loadProfile();
     final snap = await GoalService.instance.snapshot();
 
-    final cm = double.tryParse(h) ?? 175.0;
+    // Height comes from the profile, not a second raw read of the same row:
+    // `GoalService.loadProfile` is where `height_cm` is clamped, and
+    // `Units.cmToFeetInches` does `totalInches ~/ 12.0`, which throws
+    // `Unsupported operation: Infinity or NaN toInt` on a non-finite value.
+    // Parsing the row again here reintroduced exactly that throw — inside
+    // `_loadSettings`, ahead of its `setState`, so a backup carrying
+    // `height_cm = 'Infinity'` (import writes `user_settings` verbatim) left
+    // Settings with every field empty and no plan, and took the reschedule,
+    // the `onSettingsUpdated` callback and the "Import complete" toast in
+    // `_restoreBackup` down with it.
+    final cm = goal.heightCm;
     final split = Units.cmToFeetInches(cm);
 
     if (!mounted) return;
@@ -401,14 +410,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // NOT const: `SectionHeading.build` reads `JinatraTokens.ink`, and a
-          // const widget is canonicalised to one instance — `updateChild`
-          // then sees an identical child and skips the rebuild, so the
-          // heading keeps the old palette's near-black ink on the new
-          // palette's near-black canvas. Settings lives in an `IndexedStack`
-          // and never unmounts, so the stale colour survives for the process
-          // lifetime. Same hazard `main.dart` documents for `MainScreen`.
-          // ignore: prefer_const_constructors
           SectionHeading(title: 'APPEARANCE'),
           const SizedBox(height: 4),
           Text(
@@ -561,8 +562,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // NOT const — reads a palette colour at build time; see APPEARANCE.
-          // ignore: prefer_const_constructors
           SectionHeading(title: 'PROFILE & PREFERENCES'),
           const SizedBox(height: 14),
 
@@ -672,8 +671,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // NOT const — reads a palette colour at build time; see APPEARANCE.
-          // ignore: prefer_const_constructors
           SectionHeading(title: 'GOAL & CALORIE TARGET'),
           const SizedBox(height: 4),
           Text(
@@ -933,8 +930,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // NOT const — reads a palette colour at build time; see APPEARANCE.
-          // ignore: prefer_const_constructors
           SectionHeading(title: 'REMINDERS & ACCOUNTABILITY'),
           const SizedBox(height: 4),
           Text(
@@ -985,8 +980,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // NOT const — reads a palette colour at build time; see APPEARANCE.
-          // ignore: prefer_const_constructors
           SectionHeading(title: 'DATA BACKUP'),
           const SizedBox(height: 8),
           Text(
@@ -1018,8 +1011,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // NOT const — reads a palette colour at build time; see APPEARANCE.
-          // ignore: prefer_const_constructors
           SectionHeading(title: 'ABOUT LOCKOUT'),
           const SizedBox(height: 8),
           Text(

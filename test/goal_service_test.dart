@@ -149,6 +149,16 @@ void main() {
       expect(profile.heightCm, 175.0);
     });
 
+    test('a NaN height reads back as the default height', () async {
+      // Distinct from the Infinity case, and not implied by it: a guard
+      // written as `cm != 0` or `cm > 0` lets one of the two through while
+      // the other is caught, so both vectors need their own row.
+      await DatabaseService.instance.saveSetting('height_cm', 'NaN');
+
+      final profile = await GoalService.instance.loadProfile();
+      expect(profile.heightCm, 175.0);
+    });
+
     test('a zero or negative height reads back as the default height',
         () async {
       final db = DatabaseService.instance;

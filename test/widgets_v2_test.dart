@@ -31,7 +31,7 @@ void main() {
         ),
         child: Directionality(
           textDirection: TextDirection.ltr,
-          child: const SheetScaffold(
+          child: SheetScaffold(
             title: 'TEST SHEET',
             child: Text('Content'),
           ),
@@ -103,7 +103,7 @@ void main() {
 
   testWidgets('StatTile shows label and value', (tester) async {
     await tester.pumpWidget(_host(
-      const StatTile(label: 'BMI', value: '23.4'),
+      StatTile(label: 'BMI', value: '23.4'),
     ));
     expect(find.text('BMI'), findsOneWidget);
     expect(find.text('23.4'), findsOneWidget);

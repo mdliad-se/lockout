@@ -24,7 +24,13 @@ class ActionGrid extends StatelessWidget {
   final List<ActionItem> items;
   final int columns;
 
-  const ActionGrid({super.key, required this.items, this.columns = 4});
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  ActionGrid({super.key, required this.items, this.columns = 4});
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +51,13 @@ class ActionGrid extends StatelessWidget {
 class ActionTile extends StatefulWidget {
   final ActionItem item;
 
-  const ActionTile({super.key, required this.item});
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  ActionTile({super.key, required this.item});
 
   @override
   State<ActionTile> createState() => _ActionTileState();

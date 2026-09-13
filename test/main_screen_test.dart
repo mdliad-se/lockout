@@ -54,7 +54,7 @@ void main() {
   testWidgets(
       'every visible tab (food enabled) resolves to a screen instead of '
       'throwing StateError', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: MainScreen()));
+    await tester.pumpWidget(MaterialApp(home: MainScreen()));
     await _settle(tester);
 
     for (final tab in BottomNav.visibleTabs(foodTabEnabled: true)) {
@@ -75,7 +75,7 @@ void main() {
     await DatabaseService.instance
         .saveSetting('food_tab_enabled', 'false');
 
-    await tester.pumpWidget(const MaterialApp(home: MainScreen()));
+    await tester.pumpWidget(MaterialApp(home: MainScreen()));
     await _settle(tester);
 
     final tabs = BottomNav.visibleTabs(foodTabEnabled: false);
@@ -107,7 +107,7 @@ void main() {
 
     await tester.binding.setSurfaceSize(const Size(390, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(const MaterialApp(home: MainScreen()));
+    await tester.pumpWidget(MaterialApp(home: MainScreen()));
     await _settle(tester);
 
     await tester.tap(_navLabel('BODY'));

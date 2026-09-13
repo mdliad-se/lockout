@@ -60,7 +60,13 @@ class HomeHub extends StatelessWidget {
   /// to act on or change.
   final bool foodTabEnabled;
 
-  const HomeHub({
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  HomeHub({
     super.key,
     required this.eyebrow,
     required this.title,

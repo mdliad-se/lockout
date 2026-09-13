@@ -45,12 +45,18 @@ Future<PickedExercise?> showExercisePicker(BuildContext context) {
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
     ),
-    builder: (_) => const _ExercisePickerSheet(),
+    builder: (_) => _ExercisePickerSheet(),
   );
 }
 
 class _ExercisePickerSheet extends StatefulWidget {
-  const _ExercisePickerSheet();
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  _ExercisePickerSheet();
 
   @override
   State<_ExercisePickerSheet> createState() => _ExercisePickerSheetState();
@@ -249,7 +255,13 @@ class _ExerciseRow extends StatelessWidget {
   final LibraryExercise exercise;
   final VoidCallback onTap;
 
-  const _ExerciseRow({required this.exercise, required this.onTap});
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  _ExerciseRow({required this.exercise, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

@@ -31,9 +31,10 @@ class LockoutApp extends StatelessWidget {
       // MainScreen must NOT be const here: a const widget is canonicalised to
       // a single instance, so Flutter sees an identical child and skips
       // rebuilding the subtree — leaving the AppBar and BottomNav painted in
-      // the old palette while the body repaints. No key either: a changing key
-      // would remount the tabs and discard an in-progress live session.
-      // ignore: prefer_const_constructors
+      // the old palette while the body repaints. Its constructor is non-const
+      // so this cannot be written, rather than relying on a comment. No key
+      // either: a changing key would remount the tabs and discard an
+      // in-progress live session.
       builder: (_, _, _) => MaterialApp(
         title: 'LOCKOUT',
         debugShowCheckedModeBanner: false,

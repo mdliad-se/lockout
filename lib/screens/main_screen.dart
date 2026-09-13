@@ -10,7 +10,13 @@ import 'log_tab.dart';
 import 'settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  // NOT const: the AppBar and BottomNav under it resolve palette colours, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  MainScreen({super.key});
 
   @override
   State<MainScreen> createState() => _MainScreenState();

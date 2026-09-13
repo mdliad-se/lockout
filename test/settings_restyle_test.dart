@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/settings_screen.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/goal_service.dart';
@@ -137,6 +138,35 @@ void main() {
     await settle(tester);
   }
 
+  /// Seeds a profile complete enough for `GoalService.snapshot()` to return a
+  /// plan, so Settings renders its calculated-plan block. The four-week
+  /// timeframe against a 30kg cut is deliberate: it trips
+  /// `NutritionPlanner`'s rate cap, so the warning container renders too.
+  /// Both subtrees are invisible in the default state.
+  Future<void> seedCalculablePlan({String heightCm = '175.0'}) async {
+    final db = DatabaseService.instance;
+    await db.saveSetting('height_cm', heightCm);
+    await db.saveSetting('age', '30');
+    await db.saveSetting('target_weight_kg', '70');
+    await db.saveSetting('goal_weeks', '4');
+    await db.insertBodyLog(BodyEntry(
+      id: 'seed-plan',
+      dateStr: '2026-09-10',
+      weightKg: 100.0,
+    ).toMap());
+  }
+
+  /// The text sitting in the field labelled [label].
+  String fieldText(WidgetTester tester, String label) {
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.widgetWithText(JinatraInput, label),
+        matching: find.byType(TextField),
+      ),
+    );
+    return field.controller!.text;
+  }
+
   group('theme switch repaint', () {
     /// The colour a [SectionHeading] actually painted its title in.
     Color headingColour(WidgetTester tester, String title) {
@@ -222,12 +252,65 @@ void main() {
       expect(profile.heightCm.isFinite, isTrue);
       expect(profile.heightCm, greaterThan(0));
     });
+
+    testWidgets('a NaN height never reaches the database', (tester) async {
+      // Not implied by the Infinity case above: a guard written as
+      // `cm != 0 ? cm : 175.0` passes that test (`Infinity != 0`) and lets
+      // NaN straight through to `toStringAsFixed`, which writes the literal
+      // string 'NaN'.
+      final stored = await saveHeight(tester, 'NaN');
+
+      final parsed = double.tryParse(stored);
+      expect(parsed, isNotNull);
+      expect(parsed!.isFinite, isTrue);
+      expect(parsed, greaterThan(0));
+
+      final profile = await GoalService.instance.loadProfile();
+      expect(profile.heightCm.isFinite, isTrue);
+      expect(profile.heightCm, greaterThan(0));
+    });
+  });
+
+  group('settings load survives a poisoned height row', () {
+    /// `BackupService.importFromJson` writes `user_settings` rows verbatim,
+    /// so a hand-edited or older-build backup restores `height_cm =
+    /// 'Infinity'` untouched, as does any row a build predating the
+    /// write-side guard already wrote. Settings used to parse that row itself
+    /// rather than through `GoalService`'s clamp, and
+    /// `Units.cmToFeetInches` throws `Unsupported operation: Infinity or NaN
+    /// toInt` on it — inside `_loadSettings`, before its `setState`. The
+    /// screen then rendered with every field empty and no plan, silently, and
+    /// the same throw inside `_restoreBackup` swallowed the reschedule, the
+    /// `onSettingsUpdated` callback and the "Import complete" toast.
+    for (final poison in ['Infinity', 'NaN']) {
+      testWidgets('a stored height of $poison loads as the default',
+          (tester) async {
+        await seedCalculablePlan(heightCm: poison);
+        await pumpSettings(tester);
+
+        expect(fieldText(tester, 'HEIGHT (CM)'), '175');
+        // The rest of the load must have completed, not been abandoned
+        // half way: these are the fields and the block that came up empty.
+        expect(fieldText(tester, 'AGE'), '30');
+        expect(fieldText(tester, 'TARGET WEIGHT (KG)'), '70.0');
+        expect(find.text('DAILY TARGET'), findsOneWidget);
+      });
+    }
   });
 
   group('theme swatch chrome', () {
     testWidgets('shadow offsets stay on the 3/6/10 token scale',
         (tester) async {
+      // Two shadow-bearing subtrees never render in the default state: the
+      // calculated-plan block with its warning, and the reminder-time row.
+      // Seeding both is what makes this sweep cover the whole screen.
+      await seedCalculablePlan();
+      await DatabaseService.instance.saveSetting('reminders_enabled', 'true');
       await pumpSettings(tester);
+
+      expect(find.text('DAILY TARGET'), findsOneWidget);
+      expect(find.textContaining('Target eased to a safe rate'), findsOneWidget);
+      expect(find.text('REMINDER TIME'), findsOneWidget);
 
       final offsets = tester
           .widgetList<Container>(find.byType(Container))
@@ -237,6 +320,10 @@ void main() {
           .map((s) => s.offset.dx)
           .toSet();
 
+      // Without this the assertion below is vacuous the day a refactor moves
+      // these boxes from `Container` to `DecoratedBox` or a painter: an empty
+      // set is a subset of anything.
+      expect(offsets, isNotEmpty);
       expect(
         offsets.difference({
           JinatraTokens.shadowSm,
