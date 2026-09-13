@@ -379,7 +379,7 @@ class TodayTabState extends State<TodayTab> {
         backgroundColor: JinatraTokens.sweetCream,
         shape: RoundedRectangleBorder(
           side: BorderSide(color: JinatraTokens.ink, width: 3),
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
         ),
         title: Text('DISCARD SESSION?', style: JinatraTokens.sectionHeader(fontSize: 16)),
         content: Text(

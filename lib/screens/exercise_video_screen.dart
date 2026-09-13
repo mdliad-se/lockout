@@ -118,7 +118,13 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
               ),
             ),
           Expanded(
-            child: _failed ? _buildOfflineNotice() : WebViewWidget(controller: _controller),
+            child: _failed
+                ? _buildOfflineNotice()
+                : ClipRRect(
+                    borderRadius:
+                        BorderRadius.circular(JinatraTokens.radiusCard),
+                    child: WebViewWidget(controller: _controller),
+                  ),
           ),
         ],
       ),
@@ -149,10 +155,10 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
               onTap: _retry,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                decoration: BoxDecoration(
-                  color: JinatraTokens.deepTeal,
-                  border: Border.all(color: JinatraTokens.ink, width: 3),
-                  boxShadow: [JinatraTokens.hardShadow(offset: 3)],
+                decoration: JinatraTokens.cardDecoration(
+                  background: JinatraTokens.deepTeal,
+                  shadowOffset: JinatraTokens.shadowSm,
+                  radius: JinatraTokens.radiusPill,
                 ),
                 child: Text(
                   'RETRY',

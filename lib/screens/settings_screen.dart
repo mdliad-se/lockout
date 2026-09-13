@@ -7,6 +7,8 @@ import '../services/nutrition_planner.dart';
 import '../services/units.dart';
 import '../theme/app_palette.dart';
 import '../theme/jinatra_tokens.dart';
+import '../widgets/calm_row.dart';
+import '../widgets/day_block.dart';
 import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import '../widgets/jinatra_input.dart';
@@ -124,7 +126,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await db.saveSetting('age', _ageCtrl.text.trim());
     await db.saveSetting('sex', _sex.name);
     await db.saveSetting('activity_level', _activity.name);
-    await db.saveSetting('target_weight_kg', _targetWeightCtrl.text.trim());
+    await db.saveSetting(
+      'target_weight_kg',
+      _sanitisedTargetWeightKg(_targetWeightCtrl.text),
+    );
     await db.saveSetting('goal_weeks', _weeksCtrl.text.trim());
     await db.saveSetting('training_days_per_week', _daysPerWeek.toString());
 
@@ -145,6 +150,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } else {
       _toast('Target set to ${plan.targetKcal} kcal/day.');
     }
+  }
+
+  /// The target weight as it may be persisted.
+  ///
+  /// `double.tryParse` accepts 'Infinity', '-Infinity' and 'NaN', so saving
+  /// the field's raw text let a non-finite value reach `target_weight_kg`.
+  /// `GoalService.loadProfile` parses it back unchanged, which made the BODY
+  /// screen's TARGET tile render 'Infinity kg' and poisoned every calculation
+  /// downstream of the goal profile. Anything that is not a finite,
+  /// non-negative number is stored as '0' — exactly where unparseable text
+  /// already lands on read, and the value that leaves `isConfigured` false so
+  /// the user is asked for a real target rather than shown a fabricated plan.
+  static String _sanitisedTargetWeightKg(String raw) {
+    final text = raw.trim();
+    final parsed = double.tryParse(text);
+    if (parsed == null || !parsed.isFinite || parsed < 0) return '0';
+    return text;
   }
 
   /// Height in cm from whichever unit the user is currently editing.
@@ -263,7 +285,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: JinatraTokens.sweetCream,
         shape: RoundedRectangleBorder(
           side: BorderSide(color: JinatraTokens.ink, width: 3),
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
         ),
         title: Text('REPLACE ALL DATA?',
             style: JinatraTokens.sectionHeader(fontSize: 16)),
@@ -365,7 +387,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('APPEARANCE', style: JinatraTokens.monoData(fontSize: 14)),
+          const SectionHeading(title: 'APPEARANCE'),
           const SizedBox(height: 4),
           Text(
             'Eight neubrutalist palettes. Applies instantly.',
@@ -419,6 +441,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: p.canvas,
+          borderRadius: BorderRadius.circular(JinatraTokens.radiusTile),
           border: Border.all(
             color: selected ? JinatraTokens.signal : JinatraTokens.ink,
             width: selected ? 4 : 2,
@@ -434,15 +457,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
                 color: p.surface,
+                borderRadius: BorderRadius.circular(JinatraTokens.radiusTile),
                 border: Border.all(color: p.ink, width: 2),
               ),
               child: Row(
                 children: [
-                  Expanded(flex: 3, child: Container(color: p.primary)),
+                  Expanded(flex: 3, child: _swatchChip(p.primary)),
                   const SizedBox(width: 4),
-                  Expanded(child: Container(color: p.accent)),
+                  Expanded(child: _swatchChip(p.accent)),
                   const SizedBox(width: 4),
-                  Expanded(child: Container(color: p.surfaceAlt)),
+                  Expanded(child: _swatchChip(p.surfaceAlt)),
                 ],
               ),
             ),
@@ -459,8 +483,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (selected) Icon(Icons.check, size: 13, color: p.ink),
               ],
             ),
+            const SizedBox(height: 7),
+            // The palette's authored eight-accent ramp, so the user can see
+            // what a theme will hand to training days and charts before
+            // choosing it. Bordered in this palette's own ink rather than the
+            // live theme's, because every other colour in the swatch previews
+            // `p` - the running theme's ink disappears against a swatch whose
+            // canvas is the opposite brightness. Wrapped rather than laid out
+            // in a Row so eight dots cannot overflow a narrow phone's
+            // half-width swatch.
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                for (final accent in p.accents)
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: p.ink, width: 1),
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// One colour bar inside a theme swatch's miniature card.
+  Widget _swatchChip(Color color) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(JinatraTokens.radiusPill),
       ),
     );
   }
@@ -471,8 +530,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('PROFILE & PREFERENCES',
-              style: JinatraTokens.monoData(fontSize: 14)),
+          const SectionHeading(title: 'PROFILE & PREFERENCES'),
           const SizedBox(height: 14),
 
           Text('HEIGHT UNIT', style: JinatraTokens.monoData(fontSize: 12)),
@@ -545,19 +603,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('ENABLE NUTRITION TAB',
-                  style: JinatraTokens.monoData(fontSize: 13)),
-              Switch(
-                value: _foodTabEnabled,
-                activeThumbColor: JinatraTokens.deepTeal,
-                onChanged: (val) => setState(() => _foodTabEnabled = val),
-              ),
-            ],
+          _switchRow(
+            label: 'ENABLE NUTRITION TAB',
+            value: _foodTabEnabled,
+            onChanged: (val) => setState(() => _foodTabEnabled = val),
           ),
-          const SizedBox(height: 14),
           JinatraButton(
             label: 'SAVE SETTINGS',
             onPressed: () async {
@@ -589,8 +639,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('GOAL & CALORIE TARGET',
-              style: JinatraTokens.monoData(fontSize: 14)),
+          const SectionHeading(title: 'GOAL & CALORIE TARGET'),
           const SizedBox(height: 4),
           Text(
             'Your daily calories are calculated from these, not guessed. BMR '
@@ -662,6 +711,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 decoration: BoxDecoration(
                   color:
                       selected ? JinatraTokens.mistTeal : JinatraTokens.paper,
+                  borderRadius:
+                      BorderRadius.circular(JinatraTokens.radiusTile),
                   border: Border.all(
                     color:
                         selected ? JinatraTokens.deepTeal : JinatraTokens.ink,
@@ -726,6 +777,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           horizontal: 12, vertical: 11),
                       decoration: BoxDecoration(
                         color: JinatraTokens.paper,
+                        borderRadius:
+                            BorderRadius.circular(JinatraTokens.radiusTile),
                         border: Border.all(
                             color: JinatraTokens.ink,
                             width: JinatraTokens.borderControl),
@@ -768,12 +821,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: JinatraTokens.deepTeal,
-                border: Border.all(
-                    color: JinatraTokens.ink,
-                    width: JinatraTokens.borderControl),
-                boxShadow: [JinatraTokens.hardShadow(offset: 3)],
+              decoration: JinatraTokens.cardDecoration(
+                background: JinatraTokens.deepTeal,
+                shadowOffset: JinatraTokens.shadowSm,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -787,10 +837,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: JinatraTokens.signal,
-                          border:
-                              Border.all(color: JinatraTokens.ink, width: 2),
+                        decoration: JinatraTokens.cardDecoration(
+                          background: JinatraTokens.signal,
+                          borderWidth: JinatraTokens.borderDivider,
+                          hasShadow: false,
+                          radius: JinatraTokens.radiusTile,
                         ),
                         child: Text(plan.directionLabel,
                             style: JinatraTokens.monoData(
@@ -822,9 +873,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: JinatraTokens.signal,
-                  border: Border.all(color: JinatraTokens.ink, width: 2),
+                decoration: JinatraTokens.cardDecoration(
+                  background: JinatraTokens.signal,
+                  borderWidth: JinatraTokens.borderDivider,
+                  hasShadow: false,
+                  radius: JinatraTokens.radiusTile,
                 ),
                 child: Text(
                   plan.warning!,
@@ -845,8 +898,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('REMINDERS & ACCOUNTABILITY',
-              style: JinatraTokens.monoData(fontSize: 14)),
+          const SectionHeading(title: 'REMINDERS & ACCOUNTABILITY'),
           const SizedBox(height: 4),
           Text(
             'Scheduled by your device from local data. Nothing is sent anywhere.',
@@ -857,62 +909,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 10),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text('DAILY TRAINING NUDGE',
-                    style: JinatraTokens.monoData(fontSize: 13)),
-              ),
-              Switch(
-                value: _remindersEnabled,
-                activeThumbColor: JinatraTokens.deepTeal,
-                onChanged: _toggleReminders,
-              ),
-            ],
+          _switchRow(
+            label: 'DAILY TRAINING NUDGE',
+            value: _remindersEnabled,
+            onChanged: _toggleReminders,
           ),
 
           if (_remindersEnabled) ...[
-            GestureDetector(
+            CalmRow(
+              icon: Icons.schedule,
+              title: 'REMINDER TIME',
+              value: _reminderTime.format(context),
               onTap: _pickReminderTime,
-              child: Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  color: JinatraTokens.mistTeal,
-                  border: Border.all(color: JinatraTokens.ink, width: 2),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('REMINDER TIME',
-                        style: JinatraTokens.monoData(fontSize: 12)),
-                    Text(
-                      _reminderTime.format(context),
-                      style: JinatraTokens.monoData(
-                          fontSize: 15, fontWeight: FontWeight.w900),
-                    ),
-                  ],
-                ),
-              ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text('STREAK WARNING AT 21:00',
-                      style: JinatraTokens.monoData(fontSize: 13)),
-                ),
-                Switch(
-                  value: _streakAlertsEnabled,
-                  activeThumbColor: JinatraTokens.deepTeal,
-                  onChanged: _toggleStreakAlerts,
-                ),
-              ],
+            _switchRow(
+              label: 'STREAK WARNING AT 21:00',
+              value: _streakAlertsEnabled,
+              onChanged: _toggleStreakAlerts,
             ),
-            const SizedBox(height: 6),
             JinatraButton(
               label: 'SEND TEST NOTIFICATION',
               background: JinatraTokens.paper,
@@ -934,7 +948,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('DATA BACKUP', style: JinatraTokens.monoData(fontSize: 14)),
+          const SectionHeading(title: 'DATA BACKUP'),
           const SizedBox(height: 8),
           Text(
             'Export writes every routine, workout, set, meal, body entry and '
@@ -965,7 +979,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('ABOUT LOCKOUT', style: JinatraTokens.monoData(fontSize: 14)),
+          const SectionHeading(title: 'ABOUT LOCKOUT'),
           const SizedBox(height: 8),
           Text(
             'LOCKOUT v1.1.0\nPublished by Jinatra Ltd. under GPL-3.0-or-later.\n'
@@ -974,6 +988,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'account.\nThe network is used for one thing — streaming exercise '
             'form videos from YouTube when you tap WATCH.',
             style: JinatraTokens.bodyText(fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A settings row that owns an inline switch.
+  ///
+  /// The switch stays exactly where it was; only the chrome changes. The row
+  /// takes the same rounded bordered frame a [CalmRow] draws, so a toggle and
+  /// a navigable row read as the same kind of thing in a settings group.
+  Widget _switchRow({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(left: 12, right: 4),
+      decoration: JinatraTokens.cardDecoration(
+        shadowOffset: JinatraTokens.shadowSm,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label, style: JinatraTokens.monoData(fontSize: 13)),
+          ),
+          Switch(
+            value: value,
+            activeThumbColor: JinatraTokens.deepTeal,
+            onChanged: onChanged,
           ),
         ],
       ),
@@ -989,9 +1034,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-        decoration: BoxDecoration(
-          color: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
-          border: Border.all(color: JinatraTokens.ink, width: 3),
+        decoration: JinatraTokens.cardDecoration(
+          background: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
+          hasShadow: false,
+          radius: JinatraTokens.radiusPill,
         ),
         child: Center(
           child: Text(
