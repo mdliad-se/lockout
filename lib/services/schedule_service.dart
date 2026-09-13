@@ -99,14 +99,16 @@ class ScheduleService {
     final start = DateTime.tryParse(routine.createdAt);
     if (start == null) return days.first;
 
-    final elapsed = _midnight(date).difference(_midnight(start)).inDays;
+    // A calendar difference, never `_midnight(date).difference(...).inDays`:
+    // across a spring-forward 191 wall-clock hours is 8 calendar days but
+    // floors to 7, which would advance the cycle to the wrong day and leave
+    // it a slot behind for the rest of the routine's life.
+    final elapsed = calendarDay(date) - calendarDay(start);
     if (elapsed < 0) return null;
 
     final sorted = [...days]..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
     return sorted[elapsed % sorted.length];
   }
-
-  static DateTime _midnight(DateTime d) => DateTime(d.year, d.month, d.day);
 
   /// Calendar-day ordinal for [d], derived from its year/month/day fields
   /// alone (Howard Hinnant's `days_from_civil`) rather than from wall-clock
@@ -128,6 +130,19 @@ class ScheduleService {
     return era * 146097 + doe - 719468;
   }
 
+  /// How a `DateTime` is reduced to a calendar-day ordinal.
+  ///
+  /// Always [dayNumber] in production, and the only reason it is a mutable
+  /// field rather than a direct call is that the hazard [dayNumber] exists
+  /// to defeat cannot be reproduced on a host whose timezone has no DST
+  /// transition: there, every pair of local midnights makes a calendar
+  /// difference and `Duration.inDays` agree, so no real `DateTime` can
+  /// demonstrate which of the two a day-difference below was computed
+  /// with. Substituting a deliberately skewed calendar can. Tests that
+  /// replace it must restore it in a `tearDown`.
+  @visibleForTesting
+  static int Function(DateTime) calendarDay = dayNumber;
+
   /// Consecutive-day training streak ending today or yesterday.
   ///
   /// Rule: the newest logged date must be *today or yesterday* — a gap of
@@ -137,25 +152,33 @@ class ScheduleService {
   /// having a session yet does not itself break anything. Multiple
   /// sessions on the same calendar day collapse to a single day via the
   /// `toSet()` below, so training twice in one day does not advance the
-  /// count by two.
+  /// count by two. Dates *ahead* of today — clock skew, or a backup
+  /// restored from a device in a later timezone — are dropped before
+  /// anything is counted: a session that has not happened cannot hold a
+  /// dead streak open, nor sit inside a live one and inflate it.
+  ///
+  /// Every comparison is between [calendarDay] ordinals rather than
+  /// `Duration`s, because two local midnights are not reliably 24h apart
+  /// across a DST transition — see [dayNumber].
   static int currentStreakDays(List<String> workoutDates) {
     if (workoutDates.isEmpty) return 0;
 
+    final todayNumber = calendarDay(DateTime.now());
     final days = workoutDates
         .map(DateTime.tryParse)
         .whereType<DateTime>()
-        .map(_midnight)
+        .map(calendarDay)
+        .where((n) => n <= todayNumber)
         .toSet()
         .toList()
       ..sort((a, b) => b.compareTo(a));
 
-    final today = _midnight(DateTime.now());
-    final gapToNewest = dayNumber(today) - dayNumber(days.first);
-    if (gapToNewest > 1) return 0;
+    if (days.isEmpty) return 0;
+    if (todayNumber - days.first > 1) return 0;
 
     var streak = 1;
     for (var i = 0; i < days.length - 1; i++) {
-      if (dayNumber(days[i]) - dayNumber(days[i + 1]) == 1) {
+      if (days[i] - days[i + 1] == 1) {
         streak++;
       } else {
         break;

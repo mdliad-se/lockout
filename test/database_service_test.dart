@@ -224,4 +224,94 @@ void main() {
       expect(rows, isEmpty);
     });
   });
+
+  // `deleteSessionLog` and `restoreSessionLog` each write two tables, and
+  // `set_logs.session_id` carries no FK/`ON DELETE CASCADE` — so only a
+  // transaction stops a failure on the second statement from leaving a
+  // header without its sets, or sets without their header (invisible to
+  // every query, yet faithfully exported into every future backup).
+  //
+  // Sequential `db.delete`/`db.insert` calls pass every other test in this
+  // repo, because nothing else ever makes the child half fail. These
+  // install a trigger that makes it fail on demand, which is the only way
+  // to observe the difference.
+  group('DatabaseService session writes are atomic', () {
+    /// Makes every [event] on `set_logs` abort, and removes the trigger
+    /// again afterwards — the shared test database file outlives this suite.
+    Future<void> failSetLogsOn(String event) async {
+      final database = await DatabaseService.instance.database;
+      addTearDown(() async {
+        final db = await DatabaseService.instance.database;
+        await db.execute('DROP TRIGGER IF EXISTS test_fail_set_logs');
+      });
+      await database.execute('DROP TRIGGER IF EXISTS test_fail_set_logs');
+      await database.execute(
+        'CREATE TRIGGER test_fail_set_logs BEFORE $event ON set_logs '
+        "BEGIN SELECT RAISE(ABORT, 'rejected by test trigger'); END;",
+      );
+    }
+
+    Map<String, dynamic> sessionRow() => SessionLog(
+          id: 'tx-1',
+          dayName: 'MON - Legs',
+          dateStr: '2026-09-10',
+          durationSeconds: 1800,
+          totalVolumeKg: 1000,
+          status: 'completed',
+          totalSets: 2,
+        ).toMap();
+
+    List<Map<String, dynamic>> setRows() => [
+          SetLog(
+            id: 'tx-1-a',
+            sessionExerciseId: '',
+            sessionId: 'tx-1',
+            exerciseName: 'Squat',
+            setIndex: 0,
+            weightKg: 100,
+            reps: 5,
+            isCompleted: true,
+          ).toMap(),
+          SetLog(
+            id: 'tx-1-b',
+            sessionExerciseId: '',
+            sessionId: 'tx-1',
+            exerciseName: 'Squat',
+            setIndex: 1,
+            weightKg: 100,
+            reps: 4,
+            isCompleted: true,
+          ).toMap(),
+        ];
+
+    test('a failed set delete rolls the session header back in', () async {
+      final db = DatabaseService.instance;
+      await db.insertSessionLog(sessionRow());
+      await db.insertSetLogs(setRows());
+
+      await failSetLogsOn('DELETE');
+
+      await expectLater(db.deleteSessionLog('tx-1'), throwsA(anything));
+
+      expect(await db.getSessionLogs(), hasLength(1),
+          reason: 'the header must not be gone while its sets survive');
+      expect(await db.getSetLogsForSession('tx-1'), hasLength(2),
+          reason: 'both set rows are untouched');
+    });
+
+    test('a failed set insert rolls the restored header back out', () async {
+      final db = DatabaseService.instance;
+      await failSetLogsOn('INSERT');
+
+      await expectLater(
+        db.restoreSessionLog(sessionRow(), setRows()),
+        throwsA(anything),
+      );
+
+      expect(await db.getSessionLogs(), isEmpty,
+          reason: 'a header with no sets is indistinguishable from a '
+              'legitimately detail-free entry, so it must not be left behind');
+      expect(await db.getSetLogsForSession('tx-1'), isEmpty);
+    });
+  });
 }

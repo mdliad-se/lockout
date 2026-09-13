@@ -21,6 +21,7 @@ SessionLog _log({
   double totalVolumeKg = 2295.0,
   int totalSets = 22,
   double kcal = 0.0,
+  String status = 'completed',
 }) =>
     SessionLog(
       id: id,
@@ -28,7 +29,7 @@ SessionLog _log({
       dateStr: dateStr,
       durationSeconds: durationSeconds,
       totalVolumeKg: totalVolumeKg,
-      status: 'completed',
+      status: status,
       totalSets: totalSets,
       kcalBurned: kcal,
     );
@@ -99,9 +100,16 @@ void main() {
         'streak hero and stat tiles report workouts and total burned',
         (tester) async {
       final db = DatabaseService.instance;
-      final today = ScheduleService.dateKey(DateTime.now());
+      // Calendar arithmetic, not `now.subtract(Duration(days: 1))`: a
+      // fixed 24h step lands on the day before yesterday when it straddles
+      // a spring-forward, which would break this streak assertion for a
+      // reason that has nothing to do with LOG.
+      final now = DateTime.now();
+      final today = ScheduleService.dateKey(
+        DateTime(now.year, now.month, now.day),
+      );
       final yesterday = ScheduleService.dateKey(
-        DateTime.now().subtract(const Duration(days: 1)),
+        DateTime(now.year, now.month, now.day - 1),
       );
 
       await _insertSession(
@@ -136,6 +144,52 @@ void main() {
 
       final tiles = tester.widgetList<StatTile>(find.byType(StatTile)).toList();
       expect(tiles[1].value, '--');
+    });
+
+    // `getSessionLogs()` scopes to `status = 'completed'` so the archive
+    // list, the hero's WORKOUTS count, the WORKOUTS tile and the TOTAL
+    // BURNED tile — and `currentStreakDays`, fed by the identically-scoped
+    // `getWorkoutDates()` — can never disagree about what counts as a
+    // logged workout. Nothing in the app writes a non-completed session
+    // today, so only a row inserted directly, as a backup from another
+    // build would be, can exercise that guarantee.
+    testWidgets('a non-completed session is absent from the archive and '
+        'from every aggregate', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertSession(
+        db,
+        _log(
+          id: 's1',
+          dayName: 'MON - Legs',
+          dateStr: '2026-09-07',
+          kcal: 100.0,
+          totalVolumeKg: 1000,
+        ),
+      );
+      await _insertSession(
+        db,
+        _log(
+          id: 's2',
+          dayName: 'BAILED SESSION',
+          dateStr: '2026-09-08',
+          kcal: 500.0,
+          totalVolumeKg: 4000,
+          status: 'skipped',
+        ),
+      );
+
+      await pumpLog(tester);
+
+      expect(find.text('BAILED SESSION'), findsNothing);
+      expect(find.text('MON - Legs'), findsOneWidget);
+
+      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
+      expect(hero.subtitle, '1 WORKOUTS - 1000 KG TOTAL');
+
+      final tiles = tester.widgetList<StatTile>(find.byType(StatTile)).toList();
+      expect(tiles[0].value, '1');
+      expect(tiles[1].value, '~100 kcal',
+          reason: "the skipped session's 500 kcal must not be summed in");
     });
 
     testWidgets(

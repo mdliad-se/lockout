@@ -372,11 +372,19 @@ class DatabaseService {
   /// back to SQLite's rowid order, which a delete-then-undo (LOG's Ruling F
   /// delete, Task 11) reassigns on restore — the exact defect
   /// `getBodyLogs()`/`getFoodLogsForDate()` were fixed for.
+  ///
+  /// The scope has a consequence worth stating: a session row with any
+  /// other status never reaches LOG, so it can never be deleted from the
+  /// UI either. Nothing this app writes can produce one — `today_tab.dart`
+  /// is the only insert site and hardcodes `'completed'` — but a backup
+  /// imported from a build that does would carry such rows forever,
+  /// reachable only by restoring a corrected backup.
   Future<List<Map<String, dynamic>>> getSessionLogs() async {
     final db = await instance.database;
     return await db.query(
       'session_logs',
-      where: "status = 'completed'",
+      where: 'status = ?',
+      whereArgs: ['completed'],
       orderBy: 'date_str DESC, id DESC',
     );
   }

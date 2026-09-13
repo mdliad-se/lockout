@@ -56,31 +56,35 @@ void main() {
   });
 
   group('ScheduleService - streak', () {
-    String key(DateTime d) => ScheduleService.dateKey(d);
+    // Fixtures are built with calendar arithmetic — `DateTime(y, m, d - n)`,
+    // which the constructor normalises across month and year boundaries —
+    // rather than `now.subtract(Duration(days: n))`. Subtracting a fixed 24h
+    // is the exact idiom these tests exist to guard against: on a
+    // DST-observing host at 00:30 the morning after a spring-forward,
+    // `now.subtract(const Duration(days: 1))` lands on the day *before*
+    // yesterday, quietly turning "a streak ending yesterday" into a
+    // gap-of-two case and failing in CI for a reason that has nothing to do
+    // with the streak rule.
+    String daysAgo(int n) {
+      final now = DateTime.now();
+      return ScheduleService.dateKey(
+        DateTime(now.year, now.month, now.day - n),
+      );
+    }
 
     test('consecutive days ending today count', () {
-      final now = DateTime.now();
-      final dates = [
-        key(now),
-        key(now.subtract(const Duration(days: 1))),
-        key(now.subtract(const Duration(days: 2))),
-      ];
-      expect(ScheduleService.currentStreakDays(dates), 3);
+      expect(
+        ScheduleService.currentStreakDays([daysAgo(0), daysAgo(1), daysAgo(2)]),
+        3,
+      );
     });
 
     test('a streak ending yesterday is still live', () {
-      final now = DateTime.now();
-      final dates = [
-        key(now.subtract(const Duration(days: 1))),
-        key(now.subtract(const Duration(days: 2))),
-      ];
-      expect(ScheduleService.currentStreakDays(dates), 2);
+      expect(ScheduleService.currentStreakDays([daysAgo(1), daysAgo(2)]), 2);
     });
 
     test('a gap of two days breaks the streak', () {
-      final now = DateTime.now();
-      final dates = [key(now.subtract(const Duration(days: 3)))];
-      expect(ScheduleService.currentStreakDays(dates), 0);
+      expect(ScheduleService.currentStreakDays([daysAgo(3)]), 0);
     });
 
     // A gap of 3 (above) also trips a mutated `> 2` bound, so it does not
@@ -88,38 +92,120 @@ void main() {
     // yesterday case) only breaks the streak under the real `> 1` bound.
     test('a gap of exactly two days (day before yesterday) also breaks '
         'the streak', () {
-      final now = DateTime.now();
-      final dates = [key(now.subtract(const Duration(days: 2)))];
-      expect(ScheduleService.currentStreakDays(dates), 0);
+      expect(ScheduleService.currentStreakDays([daysAgo(2)]), 0);
     });
 
     test('no history means no streak', () {
       expect(ScheduleService.currentStreakDays([]), 0);
     });
-  });
 
-  // `dayNumber` must derive purely from calendar fields, not wall-clock
-  // subtraction, so it is exact across a real DST transition on any host
-  // — including this one (UTC+6, no DST transitions of its own), which is
-  // exactly why these use fixed, explicitly-timed `DateTime`s spanning
-  // real 2026 US transition dates rather than `DateTime.now()`.
-  group('ScheduleService - dayNumber (DST safety)', () {
-    test('a spring-forward 23h gap still counts as one calendar day', () {
-      // 2026-03-08 -> 2026-03-09 is the US spring-forward date: on a
-      // DST-observing host these two local instants are only 23h apart,
-      // which `Duration.inDays` would floor to 0.
-      final before = DateTime(2026, 3, 8, 1, 0);
-      final after = DateTime(2026, 3, 9, 0, 0);
-      expect(ScheduleService.dayNumber(after) - ScheduleService.dayNumber(before), 1);
+    // A date ahead of today is not a workout that happened: it comes from
+    // clock skew, or from a backup restored from a device in a later
+    // timezone. Left in, it makes the newest-date gap negative, which sails
+    // past the `> 1` break test and reports a live streak off a session
+    // nobody has done.
+    test('a future-dated session cannot prop up a dead streak', () {
+      expect(ScheduleService.currentStreakDays([daysAgo(-1)]), 0);
     });
 
-    test('a fall-back 47h gap still counts as exactly two calendar days', () {
-      // 2026-11-01 -> 2026-11-03 straddles the US fall-back date: on a
-      // DST-observing host these two local instants are 47h apart, which
-      // `Duration.inDays` would floor to 1, masking a genuine 2-day gap.
-      final before = DateTime(2026, 11, 1, 1, 0);
-      final after = DateTime(2026, 11, 3, 0, 0);
-      expect(ScheduleService.dayNumber(after) - ScheduleService.dayNumber(before), 2);
+    test('a future-dated session neither extends nor breaks a live run', () {
+      expect(
+        ScheduleService.currentStreakDays([daysAgo(-1), daysAgo(0), daysAgo(1)]),
+        2,
+      );
+    });
+  });
+
+  // `dayNumber` derives a day ordinal from calendar fields alone (Howard
+  // Hinnant's days_from_civil) and never from wall-clock subtraction,
+  // because two local midnights are not reliably 24h apart: across a
+  // spring-forward they are 23h apart, which `Duration.inDays` floors to 0,
+  // and across a fall-back a genuine two-day gap is 47h, which floors to 1.
+  group('ScheduleService - dayNumber', () {
+    test('adjacent calendar dates are one ordinal apart whatever the time '
+        'of day', () {
+      expect(
+        ScheduleService.dayNumber(DateTime(2026, 3, 9, 0, 0)) -
+            ScheduleService.dayNumber(DateTime(2026, 3, 8, 23, 59)),
+        1,
+      );
+    });
+
+    test('ordinals run continuously across a month boundary', () {
+      expect(
+        ScheduleService.dayNumber(DateTime(2027, 3, 1)) -
+            ScheduleService.dayNumber(DateTime(2027, 2, 28)),
+        1,
+      );
+    });
+
+    test('a leap day is a day like any other', () {
+      // 2028 is a leap year, so 02-28 -> 03-01 spans two days.
+      expect(
+        ScheduleService.dayNumber(DateTime(2028, 3, 1)) -
+            ScheduleService.dayNumber(DateTime(2028, 2, 28)),
+        2,
+      );
+    });
+  });
+
+  // The DST hazard above cannot be reproduced here: this host runs at UTC+6
+  // and observes no transition, so every real `DateTime` pair available to a
+  // test makes calendar arithmetic and `Duration.inDays` agree. A test
+  // written from real dates can only assert what both already do, and passes
+  // just as happily against the broken arithmetic — there is no coverage to
+  // be had that way.
+  //
+  // So these swap the calendar itself for a deliberately skewed one through
+  // `ScheduleService.calendarDay`. A skew changes an answer only if the
+  // production code actually consults the calendar, so reverting either
+  // call site in `currentStreakDays` to `Duration.inDays` fails them.
+  group('ScheduleService - streak reads the calendar, not the clock', () {
+    tearDown(() => ScheduleService.calendarDay = ScheduleService.dayNumber);
+
+    String key(DateTime d) => ScheduleService.dateKey(d);
+
+    DateTime daysAgo(int n) {
+      final now = DateTime.now();
+      return DateTime(now.year, now.month, now.day - n);
+    }
+
+    /// Installs a calendar that agrees with the real one everywhere except
+    /// [date], which it places [by] extra days into the past — the stand-in
+    /// for a transition this machine's timezone cannot produce.
+    void skew(DateTime date, int by) {
+      final target = ScheduleService.dayNumber(date);
+      ScheduleService.calendarDay = (d) {
+        final n = ScheduleService.dayNumber(d);
+        return n == target ? n - by : n;
+      };
+    }
+
+    test('the run between two logged days is a calendar difference', () {
+      // The clock says these two dates are adjacent; the calendar says they
+      // are four days apart, so the run is one day, not two.
+      skew(daysAgo(1), 3);
+      expect(
+        ScheduleService.currentStreakDays([key(daysAgo(0)), key(daysAgo(1))]),
+        1,
+      );
+    });
+
+    test('the "today or yesterday" bound is measured the same way', () {
+      // One logged day, adjacent to today by the clock but four calendar
+      // days back: too old to keep the streak alive.
+      skew(daysAgo(1), 3);
+      expect(ScheduleService.currentStreakDays([key(daysAgo(1))]), 0);
+    });
+
+    test('a calendar that pulls two dates together keeps the run alive', () {
+      // The mirror case, and the one a spring-forward actually produces: a
+      // gap measured in hours over-counts what is really one calendar day.
+      skew(daysAgo(3), -2);
+      expect(
+        ScheduleService.currentStreakDays([key(daysAgo(0)), key(daysAgo(3))]),
+        2,
+      );
     });
   });
 
