@@ -67,7 +67,7 @@ void main() {
       // Deliberately no exercises inserted for 'd1'.
       await db.setActiveRoutine('r1');
 
-      await tester.pumpWidget(const MaterialApp(home: TodayTab()));
+      await tester.pumpWidget(MaterialApp(home: TodayTab()));
       await settle(tester);
 
       expect(find.text('START SESSION'), findsNothing);
@@ -84,7 +84,7 @@ void main() {
         'false hides the CALORIES row and the LOG FOOD quick action, and '
         'the null onNavigate does not crash when a tile is tapped',
         (tester) async {
-      await tester.pumpWidget(const MaterialApp(
+      await tester.pumpWidget(MaterialApp(
         home: TodayTab(foodTabEnabled: false),
       ));
       await settle(tester);
@@ -132,7 +132,7 @@ void main() {
       // No bodyweight logged and no target weight configured, so
       // EnergyEstimator.estimate() cannot produce a figure.
 
-      await tester.pumpWidget(const MaterialApp(home: TodayTab()));
+      await tester.pumpWidget(MaterialApp(home: TodayTab()));
       await settle(tester);
 
       expect(find.text('NO SESSION YET'), findsOneWidget);
@@ -184,7 +184,7 @@ void main() {
         kcalBurned: 300.0,
       ).toMap());
 
-      await tester.pumpWidget(const MaterialApp(home: TodayTab()));
+      await tester.pumpWidget(MaterialApp(home: TodayTab()));
       await settle(tester);
 
       // A single weigh-in: a value, but no delta yet.

@@ -13,7 +13,11 @@ import '../widgets/stat_tile.dart';
 import '../widgets/undo_banner.dart';
 
 class FoodTab extends StatefulWidget {
-  const FoodTab({super.key});
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
+  // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
+  // rebuild would strand it in the old palette for the process lifetime.
+  // ignore: prefer_const_constructors_in_immutables
+  FoodTab({super.key});
 
   @override
   State<FoodTab> createState() => FoodTabState();

@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -254,10 +258,13 @@ void main() {
     });
 
     testWidgets('a NaN height never reaches the database', (tester) async {
-      // Not implied by the Infinity case above: a guard written as
-      // `cm != 0 ? cm : 175.0` passes that test (`Infinity != 0`) and lets
-      // NaN straight through to `toStringAsFixed`, which writes the literal
-      // string 'NaN'.
+      // Contract documentation rather than mutation coverage, and labelled
+      // as such: NaN fails every comparison, so any guard that catches
+      // Infinity catches NaN too — `_usableHeightCm` written as
+      // `cm != double.infinity && cm > 0` leaves the whole suite green.
+      // Kept because `double.tryParse('NaN')` succeeds and both values reach
+      // this unformatted field by the same route (a paste, or a letters
+      // keyboard), so the write side should name what it refuses.
       final stored = await saveHeight(tester, 'NaN');
 
       final parsed = double.tryParse(stored);
@@ -298,12 +305,121 @@ void main() {
     }
   });
 
+  group('a restore that cannot be read back still finishes', () {
+    /// The two channels `NotificationService.rescheduleAll` touches. Both
+    /// must be mocked: an unmocked platform channel under `flutter test`
+    /// never answers at all, so the `await` inside `init()` hangs forever
+    /// and nothing after it in `_import` runs. Mocking them also makes the
+    /// reschedule observable — nothing registers a
+    /// `FlutterLocalNotificationsPlatform` in a test, so
+    /// `registerWith()` here stands in for the plugin registrant.
+    const notifications =
+        MethodChannel('dexterous.com/flutter/local_notifications');
+    const timezone = MethodChannel('flutter_timezone');
+
+    testWidgets(
+        'a backup carrying a non-numeric weight_kg still reschedules, still '
+        'calls back and still tells the user the import applied',
+        (tester) async {
+      // `BackupService` coerces rows to `Map<String, dynamic>` without
+      // per-column validation, so a hand-edited backup puts the string
+      // 'heavy' into `body_logs.weight_kg` — a REAL-affinity column SQLite
+      // keeps as TEXT. `_loadSettings` reads it straight back through
+      // `GoalService.snapshot()`, whose `bodyRows.first['weight_kg'] as num`
+      // throws `TypeError`. Unguarded, that throw lands on the `await` that
+      // sits ahead of `rescheduleAll()`, `onSettingsUpdated()` and the
+      // "Import complete" toast: the import applies, the OS keeps the
+      // pre-restore reminder schedule forever and the user is told nothing.
+      final raw = jsonEncode({
+        'app': 'lockout',
+        'schemaVersion': 2,
+        'data': {
+          'body_logs': [
+            {
+              'id': '1',
+              'date_str': '2026-01-01',
+              'weight_kg': 'heavy',
+              'waist_cm': 0.0,
+            },
+          ],
+          'user_settings': [
+            {'key': 'reminders_enabled', 'value': 'true'},
+            {'key': 'reminder_hour', 'value': '7'},
+            {'key': 'reminder_minute', 'value': '30'},
+          ],
+        },
+      });
+
+      // The restore applies the backup's theme, and the backup carries none,
+      // so `AppPalette` lands on the fallback. Put it back for whatever runs
+      // next: `setUpAll` chose Paper Press once, for the whole file.
+      addTearDown(() => AppPalette.apply(AppPalette.paperPress));
+
+      final realPicker = FilePickerPlatform.instance;
+      FilePickerPlatform.instance = _StubFilePicker(raw);
+      addTearDown(() => FilePickerPlatform.instance = realPicker);
+
+      AndroidFlutterLocalNotificationsPlugin.registerWith();
+      final notificationCalls = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        notifications,
+        (call) async {
+          notificationCalls.add(call.method);
+          // The Android impl declares initialize as Future<bool>; returning
+          // null there throws a TypeError before anything is scheduled.
+          return call.method == 'initialize' ? true : null;
+        },
+      );
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(notifications, null));
+      tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(timezone, (call) async => 'UTC');
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(timezone, null));
+
+      var callbacks = 0;
+      tester.view.physicalSize = const Size(800, 6000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(MaterialApp(
+        home: SettingsScreen(onSettingsUpdated: () => callbacks++),
+      ));
+      await settle(tester);
+
+      await tester.tap(find.text('IMPORT BACKUP JSON'));
+      await settle(tester);
+      await tester.tap(find.text('CHOOSE FILE'));
+      await settle(tester);
+
+      // The rows did land — this is a completed import, not a rejected one.
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect(rows.single['weight_kg'], 'heavy');
+
+      await settle(tester);
+      expect(tester.takeException(), isNull);
+      expect(notificationCalls, contains('zonedSchedule'),
+          reason: 'the imported reminder settings must reach the OS');
+      expect(callbacks, 1, reason: 'onSettingsUpdated must still fire');
+      expect(find.textContaining('Import complete'), findsOneWidget);
+      // And the failed read-back is reported rather than swallowed.
+      expect(find.textContaining('could not be read'), findsOneWidget);
+
+      // Flush the toast's auto-dismiss Timer before teardown.
+      await tester.pump(const Duration(seconds: 6));
+    });
+  });
+
   group('theme swatch chrome', () {
     testWidgets('shadow offsets stay on the 3/6/10 token scale',
         (tester) async {
       // Two shadow-bearing subtrees never render in the default state: the
-      // calculated-plan block with its warning, and the reminder-time row.
-      // Seeding both is what makes this sweep cover the whole screen.
+      // calculated-plan block and the reminder-time row. Seeding both is what
+      // makes this sweep cover the whole screen. The warning container the
+      // seed also trips is built `hasShadow: false`, so it adds nothing to
+      // `offsets` — its assertion below is a render guard on the seed, not
+      // part of the shadow sweep.
       await seedCalculablePlan();
       await DatabaseService.instance.saveSetting('reminders_enabled', 'true');
       await pumpSettings(tester);
@@ -334,4 +450,60 @@ void main() {
       );
     });
   });
+}
+
+/// A picked file whose bytes the test supplies. `PlatformFile` is
+/// `abstract base`, so a subclass outside its own library must be `final`.
+final class _StubBackupFile extends PlatformFile {
+  _StubBackupFile(String json) : _bytes = Uint8List.fromList(utf8.encode(json));
+
+  final Uint8List _bytes;
+
+  @override
+  String get name => 'lockout-backup.json';
+
+  @override
+  Uri get uri => Uri.parse('file:///lockout-backup.json');
+
+  // `Never` is a subtype of `XFile`, so this satisfies the override without
+  // importing cross_file. `pickAndImport` reads bytes, never the XFile.
+  @override
+  Never get xFile => throw UnimplementedError();
+
+  @override
+  int? lengthSync() => _bytes.length;
+
+  @override
+  Future<int> length() async => _bytes.length;
+
+  @override
+  Future<Uint8List> readAsBytes() async => _bytes;
+
+  @override
+  Stream<Uint8List> readAsByteStream() => Stream<Uint8List>.value(_bytes);
+}
+
+/// Stands in for the OS file picker, which cannot open under `flutter test`.
+/// Extending `FilePickerPlatform` passes its own token, so no mock mixin is
+/// needed; the test restores the real instance in a tear-down.
+class _StubFilePicker extends FilePickerPlatform {
+  _StubFilePicker(this.json);
+
+  final String json;
+
+  @override
+  Future<PlatformFile?> pickFile({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    int compressionQuality = 0,
+    AndroidOptions androidOptions = const AndroidOptions(),
+    DarwinOptions darwinOptions = const DarwinOptions(),
+    WindowsOptions windowsOptions = const WindowsOptions(),
+    LinuxOptions linuxOptions = const LinuxOptions(),
+    WebOptions webOptions = const WebOptions(),
+  }) async =>
+      _StubBackupFile(json);
 }

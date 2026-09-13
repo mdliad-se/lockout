@@ -11,11 +11,7 @@ class SheetScaffold extends StatelessWidget {
   final Widget child;
   final Widget? footer;
 
-  // NOT const: `build` resolves a palette colour, so a const call site
-  // would canonicalise this widget and `Element.updateChild` would skip
-  // its rebuild on a theme switch, stranding it in the old palette. A
-  // non-const constructor makes that unrepresentable rather than asking
-  // every call site to remember.
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   SheetScaffold({
     super.key,

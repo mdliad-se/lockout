@@ -25,7 +25,11 @@ typedef RefreshAfter = Future<void> Function(Future<bool?> Function() action);
 String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
 
 class RoutinesTab extends StatefulWidget {
-  const RoutinesTab({super.key});
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
+  // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
+  // rebuild would strand it in the old palette for the process lifetime.
+  // ignore: prefer_const_constructors_in_immutables
+  RoutinesTab({super.key});
 
   @override
   State<RoutinesTab> createState() => RoutinesTabState();
@@ -827,11 +831,7 @@ class RoutinesTabState extends State<RoutinesTab> {
 // controller is gone but something in the tree still points at it.
 
 class _CreateRoutineForm extends StatefulWidget {
-  // NOT const: `build` resolves a palette colour, so a const call site
-  // would canonicalise this widget and `Element.updateChild` would skip
-  // its rebuild on a theme switch, stranding it in the old palette. A
-  // non-const constructor makes that unrepresentable rather than asking
-  // every call site to remember.
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   _CreateRoutineForm();
 

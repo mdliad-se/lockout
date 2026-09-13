@@ -21,7 +21,11 @@ String sessionArchiveLine(SessionLog log) => [
     ].join('  -  ');
 
 class LogTab extends StatefulWidget {
-  const LogTab({super.key});
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
+  // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
+  // rebuild would strand it in the old palette for the process lifetime.
+  // ignore: prefer_const_constructors_in_immutables
+  LogTab({super.key});
 
   @override
   State<LogTab> createState() => LogTabState();

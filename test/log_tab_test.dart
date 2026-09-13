@@ -76,7 +76,7 @@ void main() {
   Future<void> pumpLog(WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(const MaterialApp(home: LogTab()));
+    await tester.pumpWidget(MaterialApp(home: LogTab()));
     await settle(tester);
   }
 

@@ -78,7 +78,7 @@ void main() {
       targetRepsMax: 12,
     ).toMap());
 
-    await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+    await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
     await settle(tester);
 
     // Open the day-detail sheet.
@@ -112,7 +112,7 @@ void main() {
   testWidgets('EDIT DAY saves and pops the day-detail sheet', (tester) async {
     final day = await seedRoutineWithDay();
 
-    await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+    await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
     await settle(tester);
 
     await tester.tap(find.text('Push Day'));
@@ -136,7 +136,7 @@ void main() {
       (tester) async {
     await seedRoutineWithDay();
 
-    await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+    await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
     await settle(tester);
 
     await tester.tap(find.text('+ NEW'));
@@ -183,7 +183,7 @@ void main() {
   // and then lets the sheet actually close.
   group('typing into a form then closing the sheet does not throw', () {
     testWidgets('create-routine form: type, then SAVE ROUTINE', (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
       await settle(tester);
 
       await tester.tap(find.text('+ NEW'));
@@ -206,7 +206,7 @@ void main() {
         (tester) async {
       await seedRoutineWithDay();
 
-      await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
       await settle(tester);
 
       await tester.tap(find.text('+ ADD DAY'));
@@ -227,7 +227,7 @@ void main() {
         (tester) async {
       await seedRoutineWithDay();
 
-      await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
       await settle(tester);
 
       await tester.tap(find.text('Push Day'));
@@ -259,7 +259,7 @@ void main() {
         targetRepsMax: 12,
       ).toMap());
 
-      await tester.pumpWidget(const MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
       await settle(tester);
 
       await tester.tap(find.text('Push Day'));

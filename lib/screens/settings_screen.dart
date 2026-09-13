@@ -16,7 +16,9 @@ import '../widgets/jinatra_input.dart';
 class SettingsScreen extends StatefulWidget {
   final VoidCallback onSettingsUpdated;
 
-  const SettingsScreen({super.key, required this.onSettingsUpdated});
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  SettingsScreen({super.key, required this.onSettingsUpdated});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -354,12 +356,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await db.getSetting('theme_key', defaultValue: AppPalette.fallback.key);
     AppPalette.applyKey(restoredTheme);
     if (!mounted) return;
-    await _loadSettings();
+
+    // A backup is untrusted input: `BackupService` writes rows verbatim, so a
+    // hand-edited file can put a non-numeric `weight_kg` into a REAL-affinity
+    // column, which `GoalService.snapshot()` reads back as
+    // `bodyRows.first['weight_kg'] as num` and throws `TypeError` on — inside
+    // this very `await`. Unguarded, that took the reschedule, the callback
+    // and the toast with it: the import had already applied, but the OS kept
+    // the pre-restore reminder schedule and the user was told nothing.
+    // Re-reading settings is best-effort; everything after it is not.
+    var reloaded = true;
+    try {
+      await _loadSettings();
+    } catch (_) {
+      reloaded = false;
+    }
     await NotificationService.instance.rescheduleAll();
     widget.onSettingsUpdated();
 
     if (!mounted) return;
-    _toast('Import complete. ${result.rowsRestored} rows restored.');
+    _toast(
+      reloaded
+          ? 'Import complete. ${result.rowsRestored} rows restored.'
+          : 'Import complete. ${result.rowsRestored} rows restored, but some '
+              'of them could not be read back. Check the backup file.',
+      warn: !reloaded,
+    );
   }
 
   // --- BUILD ---

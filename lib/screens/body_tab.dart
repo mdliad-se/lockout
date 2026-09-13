@@ -17,7 +17,11 @@ import '../widgets/stat_tile.dart';
 import '../widgets/undo_banner.dart';
 
 class BodyTab extends StatefulWidget {
-  const BodyTab({super.key});
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
+  // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
+  // rebuild would strand it in the old palette for the process lifetime.
+  // ignore: prefer_const_constructors_in_immutables
+  BodyTab({super.key});
 
   @override
   State<BodyTab> createState() => BodyTabState();
@@ -655,11 +659,7 @@ class BodyTabState extends State<BodyTab> {
 // avoided the reset bug but never disposed them at all (a leak); this fixes
 // that too.
 class _MeasurementForm extends StatefulWidget {
-  // NOT const: `build` resolves a palette colour, so a const call site
-  // would canonicalise this widget and `Element.updateChild` would skip
-  // its rebuild on a theme switch, stranding it in the old palette. A
-  // non-const constructor makes that unrepresentable rather than asking
-  // every call site to remember.
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   _MeasurementForm();
 

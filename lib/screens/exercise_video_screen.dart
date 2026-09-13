@@ -12,7 +12,9 @@ class ExerciseVideoScreen extends StatefulWidget {
   final String exerciseName;
   final String videoUrl;
 
-  const ExerciseVideoScreen({
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  ExerciseVideoScreen({
     super.key,
     required this.exerciseName,
     this.videoUrl = '',

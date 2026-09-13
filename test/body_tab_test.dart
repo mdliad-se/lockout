@@ -109,7 +109,7 @@ void main() {
   Future<void> pumpBody(WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(const MaterialApp(home: BodyTab()));
+    await tester.pumpWidget(MaterialApp(home: BodyTab()));
   }
 
   group('BodyTab', () {
@@ -944,7 +944,7 @@ void main() {
             body: Center(
               child: TextButton(
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const BodyTab()),
+                  MaterialPageRoute(builder: (_) => BodyTab()),
                 ),
                 child: const Text('OPEN BODY'),
               ),
@@ -1001,7 +1001,7 @@ void main() {
 
       await tester.binding.setSurfaceSize(const Size(390, 844));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(const MaterialApp(home: BodyTab()));
+      await tester.pumpWidget(MaterialApp(home: BodyTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull);
@@ -1024,7 +1024,7 @@ void main() {
 
       await tester.binding.setSurfaceSize(const Size(800, 2000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(const MaterialApp(home: BodyTab()));
+      await tester.pumpWidget(MaterialApp(home: BodyTab()));
       await settle(tester);
 
       // Before the read-side clamp `GoalService.snapshot()` threw
@@ -1050,7 +1050,7 @@ void main() {
 
       await tester.binding.setSurfaceSize(const Size(800, 2000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(const MaterialApp(home: BodyTab()));
+      await tester.pumpWidget(MaterialApp(home: BodyTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull);

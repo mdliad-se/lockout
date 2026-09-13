@@ -60,7 +60,11 @@ class TodayTab extends StatefulWidget {
   /// not offer a tap target that silently does nothing.
   final bool foodTabEnabled;
 
-  const TodayTab({
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
+  // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
+  // rebuild would strand it in the old palette for the process lifetime.
+  // ignore: prefer_const_constructors_in_immutables
+  TodayTab({
     super.key,
     this.onNavigate,
     this.foodTabEnabled = true,

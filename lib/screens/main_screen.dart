@@ -10,11 +10,9 @@ import 'log_tab.dart';
 import 'settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
-  // NOT const: the AppBar and BottomNav under it resolve palette colours, so a const call site
-  // would canonicalise this widget and `Element.updateChild` would skip
-  // its rebuild on a theme switch, stranding it in the old palette. A
-  // non-const constructor makes that unrepresentable rather than asking
-  // every call site to remember.
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. Here the
+  // palette is read by the AppBar and BottomNav this screen builds, not by
+  // the screen itself; canonicalising it strands them just the same.
   // ignore: prefer_const_constructors_in_immutables
   MainScreen({super.key});
 

@@ -218,7 +218,7 @@ void main() {
   group('FoodTab', () {
     testWidgets('empty state: shows guidance when nothing is logged today',
         (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       expect(find.textContaining('NO FOOD LOGGED TODAY'), findsOneWidget);
@@ -241,7 +241,7 @@ void main() {
         kcal: 800,
       ).toMap());
 
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       final hero = tester.widget<ProgressHero>(find.byType(ProgressHero));
@@ -268,7 +268,7 @@ void main() {
         kcal: 2500,
       ).toMap());
 
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       final hero = tester.widget<ProgressHero>(find.byType(ProgressHero));
@@ -289,7 +289,7 @@ void main() {
         kcal: 300,
       ).toMap());
 
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       expect(find.text('OTHER'), findsOneWidget);
@@ -312,14 +312,14 @@ void main() {
         fatG: 0.0,
       ).toMap());
 
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       expect(find.text('0.4 g'), findsOneWidget);
     });
 
     testWidgets('the LOG FOOD button label has no doubled plus', (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       expect(find.text('LOG FOOD'), findsOneWidget);
@@ -346,7 +346,7 @@ void main() {
         fatG: 14.0,
       ).toMap());
 
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       expect(find.text('Paratha'), findsOneWidget);
@@ -416,7 +416,7 @@ void main() {
         kcal: 300,
       ).toMap());
 
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       final rowFinder = find.descendant(
@@ -479,7 +479,7 @@ void main() {
         kcal: 374,
       ).toMap());
 
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       await tester.tap(find.byIcon(Icons.close));
@@ -513,7 +513,7 @@ void main() {
     /// screen's only other path (an existing dish) goes through one more
     /// sheet this suite has no reason to also drive.
     Future<void> openLogForm(WidgetTester tester, String customName) async {
-      await tester.pumpWidget(const MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
       await tester.tap(find.text('LOG FOOD'));
