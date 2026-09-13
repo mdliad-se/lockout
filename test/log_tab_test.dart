@@ -153,8 +153,12 @@ void main() {
     // logged workout. Nothing in the app writes a non-completed session
     // today, so only a row inserted directly, as a backup from another
     // build would be, can exercise that guarantee.
-    testWidgets('a non-completed session is absent from the archive and '
-        'from every aggregate', (tester) async {
+    //
+    // The archive half and the aggregate half are separate tests because
+    // `expect` throws: bundled, a regression confined to the aggregates
+    // would never be reached, and the first failing assertion would be the
+    // only one the evidence covers.
+    Future<void> seedOneCompletedOneSkipped(WidgetTester tester) async {
       final db = DatabaseService.instance;
       await _insertSession(
         db,
@@ -177,17 +181,27 @@ void main() {
           status: 'skipped',
         ),
       );
-
       await pumpLog(tester);
+    }
+
+    testWidgets('a non-completed session is absent from the archive list',
+        (tester) async {
+      await seedOneCompletedOneSkipped(tester);
 
       expect(find.text('BAILED SESSION'), findsNothing);
       expect(find.text('MON - Legs'), findsOneWidget);
+    });
+
+    testWidgets('a non-completed session is absent from every aggregate',
+        (tester) async {
+      await seedOneCompletedOneSkipped(tester);
 
       final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.subtitle, '1 WORKOUTS - 1000 KG TOTAL');
+      expect(hero.subtitle, '1 WORKOUTS - 1000 KG TOTAL',
+          reason: "the skipped session's volume must not be summed in");
 
       final tiles = tester.widgetList<StatTile>(find.byType(StatTile)).toList();
-      expect(tiles[0].value, '1');
+      expect(tiles[0].value, '1', reason: 'it is not a workout to count');
       expect(tiles[1].value, '~100 kcal',
           reason: "the skipped session's 500 kcal must not be summed in");
     });

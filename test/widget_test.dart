@@ -147,6 +147,18 @@ void main() {
         2,
       );
     });
+
+    // The tests above prove `dayNumber` is exact; the ones below prove the
+    // streak consults `calendarDay`. Neither says the field production runs
+    // on holds `dayNumber` — swap its initialiser for the wall-clock
+    // subtraction it exists to defeat and all of them still pass, because
+    // this host's timezone makes the two agree on every real date. This is
+    // the assertion that joins the two halves. Static tear-offs are
+    // canonicalised in Dart, so `dayNumber` is identical to itself and
+    // `same` is a sound identity check.
+    test('the calendar production uses is the ordinal one', () {
+      expect(ScheduleService.calendarDay, same(ScheduleService.dayNumber));
+    });
   });
 
   // The DST hazard above cannot be reproduced here: this host runs at UTC+6
@@ -156,10 +168,19 @@ void main() {
   // just as happily against the broken arithmetic — there is no coverage to
   // be had that way.
   //
-  // So these swap the calendar itself for a deliberately skewed one through
-  // `ScheduleService.calendarDay`. A skew changes an answer only if the
-  // production code actually consults the calendar, so reverting either
-  // call site in `currentStreakDays` to `Duration.inDays` fails them.
+  // So these swap the calendar itself for one that disagrees with the clock
+  // through `ScheduleService.calendarDay`, and read a streak back out. The
+  // disagreement changes an answer only if the production code actually
+  // consults the calendar, so reverting either call site in
+  // `currentStreakDays` to `Duration.inDays` fails them.
+  //
+  // Each substitute steps once at a cutoff date and is the real ordinal
+  // everywhere else, so dates never come back out of sequence: what is
+  // modelled stays a shifted calendar rather than an incoherent one. The two
+  // directions mirror the two real transitions — a widened step is the
+  // fall-back case (a genuine two-day gap the clock reads as one), a
+  // collapsed step the spring-forward case (two dates the clock cannot tell
+  // apart).
   group('ScheduleService - streak reads the calendar, not the clock', () {
     tearDown(() => ScheduleService.calendarDay = ScheduleService.dayNumber);
 
@@ -170,21 +191,22 @@ void main() {
       return DateTime(now.year, now.month, now.day - n);
     }
 
-    /// Installs a calendar that agrees with the real one everywhere except
-    /// [date], which it places [by] extra days into the past — the stand-in
-    /// for a transition this machine's timezone cannot produce.
-    void skew(DateTime date, int by) {
-      final target = ScheduleService.dayNumber(date);
+    /// Installs a calendar that matches the real one before [from] and adds
+    /// [by] to every ordinal on or after it: the one step across [from]
+    /// measures `1 + by` days, every other step still measures one, and the
+    /// order of dates is preserved.
+    void stepAt(DateTime from, int by) {
+      final cutoff = ScheduleService.dayNumber(from);
       ScheduleService.calendarDay = (d) {
         final n = ScheduleService.dayNumber(d);
-        return n == target ? n - by : n;
+        return n >= cutoff ? n + by : n;
       };
     }
 
     test('the run between two logged days is a calendar difference', () {
-      // The clock says these two dates are adjacent; the calendar says they
-      // are four days apart, so the run is one day, not two.
-      skew(daysAgo(1), 3);
+      // The clock says these two dates are adjacent; the calendar puts three
+      // extra days between them, so the run is one day, not two.
+      stepAt(daysAgo(0), 3);
       expect(
         ScheduleService.currentStreakDays([key(daysAgo(0)), key(daysAgo(1))]),
         1,
@@ -194,16 +216,16 @@ void main() {
     test('the "today or yesterday" bound is measured the same way', () {
       // One logged day, adjacent to today by the clock but four calendar
       // days back: too old to keep the streak alive.
-      skew(daysAgo(1), 3);
+      stepAt(daysAgo(0), 3);
       expect(ScheduleService.currentStreakDays([key(daysAgo(1))]), 0);
     });
 
     test('a calendar that pulls two dates together keeps the run alive', () {
-      // The mirror case, and the one a spring-forward actually produces: a
-      // gap measured in hours over-counts what is really one calendar day.
-      skew(daysAgo(3), -2);
+      // The mirror case: the clock counts two days between these sessions,
+      // the calendar counts one, so the run is unbroken.
+      stepAt(daysAgo(1), -1);
       expect(
-        ScheduleService.currentStreakDays([key(daysAgo(0)), key(daysAgo(3))]),
+        ScheduleService.currentStreakDays([key(daysAgo(0)), key(daysAgo(2))]),
         2,
       );
     });

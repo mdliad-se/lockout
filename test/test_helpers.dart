@@ -25,6 +25,19 @@ Future<void> settle(WidgetTester tester, {int maxPumps = 20}) async {
 /// a fresh install.
 Future<void> wipeDatabaseAndReseed(DatabaseService db) async {
   final database = await db.database;
+  // `database_service_test.dart` installs an aborting trigger on `set_logs`
+  // to make a half-written session write observable. It drops it in a
+  // teardown and now runs against an in-memory database, so it can no longer
+  // leave that DDL in the shared database file — but a checkout from before
+  // the in-memory move, killed between `CREATE TRIGGER` and its teardown
+  // (Ctrl-C, a harness timeout), can still be carrying one. There it aborts
+  // the `set_logs` delete below and takes ~30 tests across several suites
+  // down with a signature that points nowhere near the cause, and nothing
+  // else ever removes it. Dropping it here clears it from the shared file
+  // the first time any suite that both routes through this helper and uses
+  // that file runs — `goal_service_test.dart` does, on every run — so a
+  // poisoned checkout needs no manual SQL to recover. A no-op otherwise.
+  await database.execute('DROP TRIGGER IF EXISTS test_fail_set_logs');
   for (final table in DatabaseService.backupTables) {
     await database.delete(table);
   }

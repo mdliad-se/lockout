@@ -10,9 +10,26 @@ import 'test_helpers.dart';
 /// make, exercised against a real sqflite database rather than asserted by
 /// reading the SQL.
 void main() {
+  // This suite installs an aborting trigger on `set_logs` (see the atomicity
+  // group below). `CREATE TRIGGER` is DDL: on the shared on-disk test
+  // database it would survive process exit and poison every later run — the
+  // `addTearDown` that drops it covers a failing assertion but not a Ctrl-C,
+  // a harness timeout kill or a crash in between. Pointing this suite at an
+  // in-memory database means a leaked trigger dies with the process. The
+  // second belt, for a checkout already poisoned by a pre-in-memory run that
+  // never reached its teardown, is the `DROP TRIGGER IF EXISTS` in
+  // `wipeDatabaseAndReseed` — which this file's `setUp` calls, and which
+  // clears the shared file for the suites still using it.
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+    DatabaseService.testDatabasePath = inMemoryDatabasePath;
+  });
+
+  // Leaving a global seam set at end-of-suite is the same class of defect as
+  // leaving the trigger behind.
+  tearDownAll(() {
+    DatabaseService.testDatabasePath = null;
   });
 
   setUp(() async {
@@ -237,7 +254,8 @@ void main() {
   // to observe the difference.
   group('DatabaseService session writes are atomic', () {
     /// Makes every [event] on `set_logs` abort, and removes the trigger
-    /// again afterwards — the shared test database file outlives this suite.
+    /// again afterwards. The drop is belt one of three; see the note on
+    /// `setUpAll` for why one is not enough.
     Future<void> failSetLogsOn(String event) async {
       final database = await DatabaseService.instance.database;
       addTearDown(() async {

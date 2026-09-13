@@ -138,8 +138,25 @@ class ScheduleService {
   /// transition: there, every pair of local midnights makes a calendar
   /// difference and `Duration.inDays` agree, so no real `DateTime` can
   /// demonstrate which of the two a day-difference below was computed
-  /// with. Substituting a deliberately skewed calendar can. Tests that
-  /// replace it must restore it in a `tearDown`.
+  /// with. Substituting a calendar that disagrees with the clock can.
+  ///
+  /// That convenience is not free, and it is a heavier seam than
+  /// `DatabaseService.testDatabasePath` despite the surface similarity:
+  /// that one is null in production and read exactly once, when the
+  /// database is opened, whereas this is a live function pointer behind
+  /// every date calculation in this class. A test that replaces it and does
+  /// not put it back silently corrupts both the streak and the rotating
+  /// schedule for everything that runs after it — within its own file only,
+  /// since each test file is its own isolate and no substitution can reach
+  /// another suite, but that is the whole of the exposure and it is real.
+  /// Tests that replace it must restore it in a `tearDown`.
+  ///
+  /// [currentStreakDays] alone did not need a mutable field: an optional
+  /// `{int Function(DateTime) calendar = dayNumber}` would do, since both
+  /// production call sites pass their dates positionally. The field exists
+  /// because the other consumer, [_matchByRotation], is reached through
+  /// [resolveFor], so parameterising it would mean threading a calendar
+  /// through the public resolution API for the sake of a test.
   @visibleForTesting
   static int Function(DateTime) calendarDay = dayNumber;
 
