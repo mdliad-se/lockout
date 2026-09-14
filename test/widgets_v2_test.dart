@@ -125,9 +125,30 @@ void main() {
       matching: find.byType(GestureDetector),
     );
     expect(detector, findsOneWidget);
+    expect(tester.getSize(detector).height, greaterThanOrEqualTo(40));
+
+    // The label is centred in that box, not parked at its top. Height alone
+    // cannot see the difference: drop the centring and a 10px line paints at
+    // the top of a 40dp box, still 40dp tall and now visibly misaligned.
+    expect(tester.getCenter(detector).dy,
+        moreOrLessEquals(tester.getCenter(find.text('+ ADD WARM-UP')).dy,
+            epsilon: 0.5));
+  });
+
+  // The width leg needs its own case: every real label is ~135dp wide, so a
+  // long one satisfies `>= 40` whatever the constraint says and would pass
+  // against `minWidth: 0`.
+  testWidgets('AddLink holds the 40dp floor on both axes for a short label',
+      (tester) async {
+    await tester.pumpWidget(_host(AddLink(label: '+', onTap: () {})));
+
+    final detector = find.ancestor(
+      of: find.text('+'),
+      matching: find.byType(GestureDetector),
+    );
     final size = tester.getSize(detector);
-    expect(size.height, greaterThanOrEqualTo(40));
     expect(size.width, greaterThanOrEqualTo(40));
+    expect(size.height, greaterThanOrEqualTo(40));
   });
 
   testWidgets('showJinatraSheet presents a titled sheet and returns a value',

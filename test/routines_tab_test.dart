@@ -7,6 +7,7 @@ import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/routines_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/theme/app_palette.dart';
+import 'package:lockout/widgets/day_block.dart';
 import 'package:lockout/widgets/jinatra_input.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
 
@@ -204,7 +205,12 @@ void main() {
       expect(find.text('+ ADD WARM-UP'), findsOneWidget);
       expect(find.text('+ ADD EXERCISE'), findsOneWidget);
       expect(find.text('+ ADD FINISHER'), findsOneWidget);
-      expect(find.byIcon(Icons.add), findsNothing);
+      expect(
+          find.descendant(
+            of: find.byType(SectionHeading),
+            matching: find.byIcon(Icons.add),
+          ),
+          findsNothing);
     });
 
     testWidgets('the warm-up link survives the first warm-up', (tester) async {
@@ -224,7 +230,71 @@ void main() {
       expect(find.text('Band pull-aparts'), findsOneWidget);
       expect(find.text('WARM-UP'), findsOneWidget);
       expect(find.text('+ ADD WARM-UP'), findsOneWidget);
-      expect(find.byIcon(Icons.add), findsNothing);
+      expect(
+          find.descendant(
+            of: find.byType(SectionHeading),
+            matching: find.byIcon(Icons.add),
+          ),
+          findsNothing);
+    });
+
+    testWidgets('the exercise link survives the first exercise',
+        (tester) async {
+      final day = await seedRoutineWithDay();
+      await DatabaseService.instance.insertExercise(ExerciseDef(
+        id: 'e1',
+        dayId: day.id,
+        name: 'Bench Press',
+        targetSets: 4,
+        targetRepsMin: 8,
+        targetRepsMax: 12,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bench Press'), findsOneWidget);
+      expect(find.text('EXERCISES'), findsOneWidget);
+      expect(find.text('+ ADD EXERCISE'), findsOneWidget);
+    });
+
+    // All three sections now live in one `else` spread hanging off
+    // `if (day.isRestDay)` (routines_tab.dart:362). A bad edit that hoists
+    // that spread out of the branch would offer warm-ups and exercises on a
+    // rest day, and nothing else in the suite reaches this path.
+    testWidgets('a rest day offers no sections and no add links',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.insertRoutine(Routine(
+        id: 'r1',
+        name: 'Push Pull Legs',
+        schedulingMode: SchedulingMode.weekday,
+        createdAt: '2026-01-01T00:00:00.000',
+      ).toMap());
+      await db.insertDay(TrainingDay(
+        id: 'd1',
+        routineId: 'r1',
+        name: 'Rest Day',
+        tag: 'SUN',
+        orderIndex: 0,
+        isRestDay: true,
+      ).toMap());
+      await db.setActiveRoutine('r1');
+
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+      await tester.tap(find.text('Rest Day'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Recovery is part of the plan.'), findsOneWidget);
+      expect(find.text('WARM-UP'), findsNothing);
+      expect(find.text('EXERCISES'), findsNothing);
+      expect(find.text('CONDITIONING FINISHER'), findsNothing);
+      expect(find.text('+ ADD WARM-UP'), findsNothing);
+      expect(find.text('+ ADD EXERCISE'), findsNothing);
+      expect(find.text('+ ADD FINISHER'), findsNothing);
     });
 
     testWidgets('the finisher link survives the first finisher',
@@ -245,7 +315,12 @@ void main() {
       expect(find.text('Farmer carry'), findsOneWidget);
       expect(find.text('CONDITIONING FINISHER'), findsOneWidget);
       expect(find.text('+ ADD FINISHER'), findsOneWidget);
-      expect(find.byIcon(Icons.add), findsNothing);
+      expect(
+          find.descendant(
+            of: find.byType(SectionHeading),
+            matching: find.byIcon(Icons.add),
+          ),
+          findsNothing);
     });
   });
 

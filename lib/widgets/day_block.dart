@@ -220,8 +220,10 @@ class SubItemRow extends StatelessWidget {
   }
 }
 
-/// Low-emphasis "add the first one" affordance, used where a whole empty
-/// bordered block used to sit.
+/// The single add affordance for a day-sheet section, shown whether or not
+/// the section already has rows. It used to be an empty-state-only control
+/// that a heading `+` replaced on first use; all three sections now keep it
+/// in both states so the button the user just pressed is still there.
 class AddLink extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
@@ -235,12 +237,18 @@ class AddLink extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      // A `ConstrainedBox` rather than padding: `HitTestBehavior.opaque` does
-      // not enlarge the box it sits on, and 10px mono padded to the repo's
-      // 40dp bar (log_tab.dart, meal_section.dart, undo_banner.dart) would
-      // depend on the font's line height to clear the floor. A minimum
-      // height states it instead. The row shrink-wraps the label, so the
-      // visible text is unchanged.
+      // A `ConstrainedBox` rather than padding, for the repo's 40dp tap
+      // target: `HitTestBehavior.opaque` does not enlarge the box it sits
+      // on, and padding a 10px mono line to the floor leaves the result
+      // depending on the font's line height. A minimum states it instead.
+      // log_tab.dart:334 clears the same floor for the same 10px text with
+      // `vertical: 14` padding and its own test holds it there, so both
+      // idioms work — that one and meal_section.dart / undo_banner.dart are
+      // candidates to migrate to this stated-minimum form later.
+      // The `Row` does two jobs: `mainAxisSize.min` shrink-wraps the label
+      // so the visible text is unchanged, and its default cross-axis
+      // centring puts the glyphs in the middle of the 40dp box. Without it
+      // a bare `Text` paints at the top and leaves a 26dp gap beneath.
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 40, minWidth: 40),
         child: Row(
