@@ -829,7 +829,14 @@ class _CreateRoutineForm extends StatefulWidget {
 class _CreateRoutineFormState extends State<_CreateRoutineForm> {
   final _nameCtrl = TextEditingController();
   var _mode = SchedulingMode.weekday;
-  var _template = RoutineTemplate.all.first;
+
+  // Deliberately null, not `RoutineTemplate.all.first`. That first entry is
+  // `blank`, so a pre-selected default meant the fastest path through this
+  // form — type a name, hit SAVE — produced a routine with no days, while
+  // the empty state behind the sheet promises every day arrives already
+  // filled in. Nothing is ticked until the user picks, and SAVE waits.
+  RoutineTemplate? _template;
+  var _showTemplateError = false;
 
   @override
   void dispose() {
@@ -881,11 +888,27 @@ class _CreateRoutineFormState extends State<_CreateRoutineForm> {
         ),
         const SizedBox(height: 18),
         Text('START FROM', style: JinatraTokens.monoData(fontSize: 12)),
+        const SizedBox(height: 4),
+        Text(
+          _showTemplateError
+              ? 'Pick a starter split, or Blank Routine to add your own days.'
+              : 'A starter split arrives with warm-ups, numbered exercises '
+                  'and a finisher already filled in.',
+          style: JinatraTokens.bodyText(
+            fontSize: 12,
+            color: _showTemplateError
+                ? JinatraTokens.signal
+                : JinatraTokens.ink.withValues(alpha: 0.7),
+          ),
+        ),
         const SizedBox(height: 8),
         ...RoutineTemplate.all.map((t) {
-          final selected = t.key == _template.key;
+          final selected = t.key == _template?.key;
           return GestureDetector(
-            onTap: () => setState(() => _template = t),
+            onTap: () => setState(() {
+              _template = t;
+              _showTemplateError = false;
+            }),
             child: Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
@@ -937,16 +960,20 @@ class _CreateRoutineFormState extends State<_CreateRoutineForm> {
         JinatraButton(
           label: 'SAVE ROUTINE',
           onPressed: () async {
+            final template = _template;
+            if (template == null) {
+              setState(() => _showTemplateError = true);
+              return;
+            }
             final typed = _nameCtrl.text.trim();
-            final name = typed.isNotEmpty
-                ? typed
-                : (_template.key == 'blank' ? '' : _template.name);
+            final name =
+                typed.isNotEmpty ? typed : (template.key == 'blank' ? '' : template.name);
             if (name.isEmpty) return;
 
             await RoutineFactory.createFromTemplate(
               name: name,
               mode: _mode,
-              template: _template,
+              template: template,
             );
             if (!context.mounted) return;
             Navigator.pop(context, true);

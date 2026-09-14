@@ -324,6 +324,82 @@ void main() {
     });
   });
 
+  // Reported from the device: a routine created through + NEW arrived with
+  // every day EMPTY. Nothing was broken — `Blank Routine` was the
+  // pre-selected default (`RoutineTemplate.all.first`), so typing a name and
+  // hitting SAVE produced an empty routine, while the empty-state copy right
+  // behind the sheet promises that "Every day arrives with a warm-up,
+  // numbered exercises and a conditioning finisher already filled in".
+  // START FROM now starts unticked and SAVE waits for a real choice.
+  group('START FROM has no pre-selected default', () {
+    Future<void> openCreateForm(WidgetTester tester) async {
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+      await tester.tap(find.text('+ NEW'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.widgetWithText(TextField, 'e.g. Push / Pull / Legs'),
+          'My Custom Split');
+      await tester.pump();
+    }
+
+    Future<void> saveRoutine(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('SAVE ROUTINE'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SAVE ROUTINE'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('saving without a choice creates nothing and says so',
+        (tester) async {
+      await openCreateForm(tester);
+      await saveRoutine(tester);
+
+      expect(await DatabaseService.instance.getRoutines(), isEmpty);
+      expect(find.textContaining('Pick a starter split'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('picking a starter split fills every day it creates',
+        (tester) async {
+      await openCreateForm(tester);
+      await tester.ensureVisible(find.text('Push / Pull / Legs'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Push / Pull / Legs'));
+      await tester.pumpAndSettle();
+      await saveRoutine(tester);
+
+      final db = DatabaseService.instance;
+      final routines = await db.getRoutines();
+      expect(routines, hasLength(1));
+      expect(routines.single['name'], 'My Custom Split');
+
+      final days = await db.getDaysForRoutine(routines.single['id'] as String);
+      expect(days, hasLength(3));
+      for (final day in days) {
+        final id = day['id'] as String;
+        expect(await db.getExercisesForDay(id), isNotEmpty,
+            reason: 'day ${day['name']} arrived with no exercises');
+      }
+    });
+
+    testWidgets('picking Blank Routine still creates an empty routine',
+        (tester) async {
+      await openCreateForm(tester);
+      await tester.ensureVisible(find.text('Blank Routine'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Blank Routine'));
+      await tester.pumpAndSettle();
+      await saveRoutine(tester);
+
+      final db = DatabaseService.instance;
+      final routines = await db.getRoutines();
+      expect(routines, hasLength(1));
+      expect(await db.getDaysForRoutine(routines.single['id'] as String),
+          isEmpty);
+    });
+  });
+
   group('typing into a form then closing the sheet does not throw', () {
     testWidgets('create-routine form: type, then SAVE ROUTINE', (tester) async {
       await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
