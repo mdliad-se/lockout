@@ -42,6 +42,8 @@ Future<PickedExercise?> showExercisePicker(BuildContext context) {
     context: context,
     isScrollControlled: true,
     backgroundColor: JinatraTokens.sweetCream,
+    // Keeps a full-height picker off the status bar; see sheet_scaffold.dart.
+    useSafeArea: true,
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
     ),

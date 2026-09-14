@@ -151,6 +151,41 @@ void main() {
     expect(size.height, greaterThanOrEqualTo(40));
   });
 
+  // Reported on an Android 16 device: a tall sheet drew its title UNDER the
+  // status bar, so "CREATE NEW ROUTINE" overlapped the clock and the battery
+  // icon. `showModalBottomSheet` with `isScrollControlled: true` is allowed
+  // the full screen height, and `SheetScaffold`'s own `SafeArea` passes
+  // `top: false` — correct for the scaffold, which must not pad a short
+  // sheet, but it leaves nothing keeping a tall one off the system bars.
+  testWidgets('a tall sheet stays clear of the status bar', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(640, 1000);
+    tester.view.padding = const FakeViewPadding(top: 48);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (ctx) => GestureDetector(
+            onTap: () => showJinatraSheet<void>(
+              context: ctx,
+              title: 'Create New Routine',
+              builder: (_) => const SizedBox(height: 1200, child: Text('tall')),
+            ),
+            child: const Text('OPEN'),
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('OPEN'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SheetScaffold), findsOneWidget);
+    expect(tester.getTopLeft(find.byType(SheetScaffold)).dy,
+        greaterThanOrEqualTo(48.0));
+  });
+
   testWidgets('showJinatraSheet presents a titled sheet and returns a value',
       (tester) async {
     String? result;

@@ -90,6 +90,11 @@ Future<T?> showJinatraSheet<T>({
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
+    // `isScrollControlled` lets a sheet take the whole screen height, and a
+    // tall one drew its title under the status bar. `useSafeArea` keeps the
+    // sheet off the top, left and right system intrusions while leaving the
+    // bottom alone, so `SheetScaffold`'s own keyboard inset still applies.
+    useSafeArea: true,
     builder: (ctx) => SheetScaffold(title: title, child: builder(ctx)),
   );
 }
