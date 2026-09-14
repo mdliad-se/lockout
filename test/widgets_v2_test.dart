@@ -5,6 +5,7 @@ import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/theme/jinatra_tokens.dart';
 import 'package:lockout/widgets/action_grid.dart';
 import 'package:lockout/widgets/calm_row.dart';
+import 'package:lockout/widgets/day_block.dart';
 import 'package:lockout/widgets/hero_card.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
 import 'package:lockout/widgets/stat_tile.dart';
@@ -107,6 +108,26 @@ void main() {
     ));
     expect(find.text('BMI'), findsOneWidget);
     expect(find.text('23.4'), findsOneWidget);
+  });
+
+  // The day sheet's Add affordance was the one place this repo's own 40dp
+  // tap-target bar (log_tab.dart:325, meal_section.dart:110,
+  // undo_banner.dart:217) was never applied: `AddLink` padded to roughly
+  // 23dp tall around 10px mono text, and `HitTestBehavior.opaque` does not
+  // enlarge the box it is applied to. `tester.tap` hits a widget's centre
+  // regardless of size, so the flow tests in routines_tab_test.dart cannot
+  // catch a shrunk hit target — this measures the tappable box instead.
+  testWidgets('AddLink has at least a 40dp tall tappable bar', (tester) async {
+    await tester.pumpWidget(_host(AddLink(label: '+ ADD WARM-UP', onTap: () {})));
+
+    final detector = find.ancestor(
+      of: find.text('+ ADD WARM-UP'),
+      matching: find.byType(GestureDetector),
+    );
+    expect(detector, findsOneWidget);
+    final size = tester.getSize(detector);
+    expect(size.height, greaterThanOrEqualTo(40));
+    expect(size.width, greaterThanOrEqualTo(40));
   });
 
   testWidgets('showJinatraSheet presents a titled sheet and returns a value',

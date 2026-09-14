@@ -378,79 +378,65 @@ class RoutinesTabState extends State<RoutinesTab> {
             ),
           )
         else ...[
+          // Every section is built the same way: heading, rows, labelled
+          // add link. The heading never carries its own `+` and the link is
+          // never swapped out once the section fills up, so the control the
+          // user just pressed is still where they left it.
           // --- Warm-up ---
-          if (warmups.isEmpty)
-            AddLink(
-              label: '+ ADD WARM-UP',
-              onTap: () => refreshAfter(() => _openSubItemSheet(
-                  dayId: day.id, isWarmup: true, index: 0)),
-            )
-          else ...[
-            SectionHeading(
-              title: 'Warm-Up',
-              amount: '~6-8 min',
-              onAdd: () => refreshAfter(() => _openSubItemSheet(
-                  dayId: day.id, isWarmup: true, index: warmups.length)),
-            ),
-            ...warmups.asMap().entries.map((e) => SubItemRow(
-                  name: e.value.name,
-                  amt: e.value.amt,
-                  onRemove: () async {
-                    await DatabaseService.instance.deleteWarmup(e.value.id);
-                    if (!mounted) return;
-                    await _loadAllRoutinesData();
-                    if (sheetCtx.mounted) setSheet(() {});
-                  },
-                )),
-            const SizedBox(height: 6),
-          ],
+          SectionHeading(
+            title: 'Warm-Up',
+            amount: warmups.isEmpty ? '' : '~6-8 min',
+          ),
+          ...warmups.asMap().entries.map((e) => SubItemRow(
+                name: e.value.name,
+                amt: e.value.amt,
+                onRemove: () async {
+                  await DatabaseService.instance.deleteWarmup(e.value.id);
+                  if (!mounted) return;
+                  await _loadAllRoutinesData();
+                  if (sheetCtx.mounted) setSheet(() {});
+                },
+              )),
+          AddLink(
+            label: '+ ADD WARM-UP',
+            onTap: () => refreshAfter(() => _openSubItemSheet(
+                dayId: day.id, isWarmup: true, index: warmups.length)),
+          ),
 
           // --- Exercises ---
           SectionHeading(
             title: 'Exercises',
             amount: exercises.isEmpty ? '' : '${exercises.length}',
           ),
-          if (exercises.isEmpty)
-            AddLink(
-              label: '+ ADD EXERCISE',
-              onTap: () => refreshAfter(() => _addExerciseToDay(day.id)),
-            )
-          else ...[
-            ...exercises.asMap().entries.map(
-                  (e) => _buildExerciseRow(
-                      e.key + 1, e.value, accent, onAccent, refreshAfter),
-                ),
-            AddLink(
-              label: '+ ADD EXERCISE',
-              onTap: () => refreshAfter(() => _addExerciseToDay(day.id)),
-            ),
-          ],
+          ...exercises.asMap().entries.map(
+                (e) => _buildExerciseRow(
+                    e.key + 1, e.value, accent, onAccent, refreshAfter),
+              ),
+          AddLink(
+            label: '+ ADD EXERCISE',
+            onTap: () => refreshAfter(() => _addExerciseToDay(day.id)),
+          ),
 
           // --- Finisher ---
-          if (finishers.isEmpty)
-            AddLink(
-              label: '+ ADD FINISHER',
-              onTap: () => refreshAfter(() => _openSubItemSheet(
-                  dayId: day.id, isWarmup: false, index: 0)),
-            )
-          else ...[
-            SectionHeading(
-              title: 'Conditioning Finisher',
-              amount: 'x3 rounds',
-              onAdd: () => refreshAfter(() => _openSubItemSheet(
-                  dayId: day.id, isWarmup: false, index: finishers.length)),
-            ),
-            ...finishers.asMap().entries.map((e) => SubItemRow(
-                  name: e.value.name,
-                  amt: e.value.amt,
-                  onRemove: () async {
-                    await DatabaseService.instance.deleteFinisher(e.value.id);
-                    if (!mounted) return;
-                    await _loadAllRoutinesData();
-                    if (sheetCtx.mounted) setSheet(() {});
-                  },
-                )),
-          ],
+          SectionHeading(
+            title: 'Conditioning Finisher',
+            amount: finishers.isEmpty ? '' : 'x3 rounds',
+          ),
+          ...finishers.asMap().entries.map((e) => SubItemRow(
+                name: e.value.name,
+                amt: e.value.amt,
+                onRemove: () async {
+                  await DatabaseService.instance.deleteFinisher(e.value.id);
+                  if (!mounted) return;
+                  await _loadAllRoutinesData();
+                  if (sheetCtx.mounted) setSheet(() {});
+                },
+              )),
+          AddLink(
+            label: '+ ADD FINISHER',
+            onTap: () => refreshAfter(() => _openSubItemSheet(
+                dayId: day.id, isWarmup: false, index: finishers.length)),
+          ),
         ],
 
         // --- Day actions ---

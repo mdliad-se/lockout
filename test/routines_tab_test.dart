@@ -182,6 +182,73 @@ void main() {
   // then closes it, matching the reviewer's reproduction; none of the three
   // tests above would have caught it, since none of them types into a field
   // and then lets the sheet actually close.
+  // Post-PR finding: the day sheet gave the same action two presentations.
+  // Warm-Up and Finisher showed a labelled `AddLink` while empty and swapped
+  // it for a small heading `+` once populated — so the control the user had
+  // just pressed vanished on first use — while Exercises kept its link in
+  // both states. These three lock the one affordance the sections now share:
+  // heading always, labelled link always, no heading `+` anywhere.
+  group('the day sheet offers one add affordance per section', () {
+    testWidgets('an empty day shows all three headings and all three links',
+        (tester) async {
+      await seedRoutineWithDay();
+
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('WARM-UP'), findsOneWidget);
+      expect(find.text('EXERCISES'), findsOneWidget);
+      expect(find.text('CONDITIONING FINISHER'), findsOneWidget);
+      expect(find.text('+ ADD WARM-UP'), findsOneWidget);
+      expect(find.text('+ ADD EXERCISE'), findsOneWidget);
+      expect(find.text('+ ADD FINISHER'), findsOneWidget);
+      expect(find.byIcon(Icons.add), findsNothing);
+    });
+
+    testWidgets('the warm-up link survives the first warm-up', (tester) async {
+      final day = await seedRoutineWithDay();
+      await DatabaseService.instance.insertWarmup(WarmupItem(
+        id: 'w1',
+        dayId: day.id,
+        name: 'Band pull-aparts',
+        amt: 'x15',
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Band pull-aparts'), findsOneWidget);
+      expect(find.text('WARM-UP'), findsOneWidget);
+      expect(find.text('+ ADD WARM-UP'), findsOneWidget);
+      expect(find.byIcon(Icons.add), findsNothing);
+    });
+
+    testWidgets('the finisher link survives the first finisher',
+        (tester) async {
+      final day = await seedRoutineWithDay();
+      await DatabaseService.instance.insertFinisher(FinisherItem(
+        id: 'f1',
+        dayId: day.id,
+        name: 'Farmer carry',
+        amt: '3 rounds',
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Farmer carry'), findsOneWidget);
+      expect(find.text('CONDITIONING FINISHER'), findsOneWidget);
+      expect(find.text('+ ADD FINISHER'), findsOneWidget);
+      expect(find.byIcon(Icons.add), findsNothing);
+    });
+  });
+
   group('typing into a form then closing the sheet does not throw', () {
     testWidgets('create-routine form: type, then SAVE ROUTINE', (tester) async {
       await tester.pumpWidget(MaterialApp(home: RoutinesTab()));

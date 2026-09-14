@@ -121,7 +121,6 @@ class DayColours {
 class SectionHeading extends StatelessWidget {
   final String title;
   final String amount;
-  final VoidCallback? onAdd;
 
   // NOT const: `build` resolves a palette colour, so a const call site
   // would canonicalise this widget and `Element.updateChild` would skip
@@ -133,7 +132,6 @@ class SectionHeading extends StatelessWidget {
     super.key,
     required this.title,
     this.amount = '',
-    this.onAdd,
   });
 
   @override
@@ -163,17 +161,6 @@ class SectionHeading extends StatelessWidget {
               style: JinatraTokens.monoData(
                 fontSize: 9,
                 color: JinatraTokens.ink.withValues(alpha: 0.55),
-              ),
-            ),
-          ],
-          if (onAdd != null) ...[
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: onAdd,
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                child: Icon(Icons.add, size: 16, color: JinatraTokens.ink),
               ),
             ),
           ],
@@ -248,14 +235,28 @@ class AddLink extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8, left: 2, top: 2),
-        child: Text(
-          label,
-          style: JinatraTokens.monoData(
-            fontSize: 10,
-            color: JinatraTokens.deepTeal,
-          ),
+      // A `ConstrainedBox` rather than padding: `HitTestBehavior.opaque` does
+      // not enlarge the box it sits on, and 10px mono padded to the repo's
+      // 40dp bar (log_tab.dart, meal_section.dart, undo_banner.dart) would
+      // depend on the font's line height to clear the floor. A minimum
+      // height states it instead. The row shrink-wraps the label, so the
+      // visible text is unchanged.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 40, minWidth: 40),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 2),
+              child: Text(
+                label,
+                style: JinatraTokens.monoData(
+                  fontSize: 10,
+                  color: JinatraTokens.deepTeal,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
