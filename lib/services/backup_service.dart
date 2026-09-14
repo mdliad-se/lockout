@@ -15,14 +15,44 @@ class ImportResult {
   final String message;
   final int rowsRestored;
 
-  const ImportResult._(this.ok, this.message, this.rowsRestored);
+  /// How many individual cells the import could not read as a number and
+  /// wrote as `0` instead.
+  ///
+  /// A restore that rewrites the user's data is still a successful restore —
+  /// that is the whole point of [BackupService._coerceRow] — but it is not
+  /// the same event as a clean one, and reporting the two identically means
+  /// a hand-edit typo is never discovered. The count rides along with the
+  /// result so the caller can say so without re-deriving it.
+  final int coercedValues;
 
-  const ImportResult.success(int rows)
-      : this._(true, 'Restored $rows rows.', rows);
+  const ImportResult._(
+    this.ok,
+    this.message,
+    this.rowsRestored, [
+    this.coercedValues = 0,
+  ]);
+
+  ImportResult.success(int rows, {int coerced = 0})
+      : this._(
+          true,
+          'Restored $rows rows.${coercionNote(coerced)}',
+          rows,
+          coerced,
+        );
 
   const ImportResult.cancelled() : this._(false, 'Import cancelled.', 0);
 
   const ImportResult.failure(String message) : this._(false, message, 0);
+
+  /// The sentence describing [coerced] rewritten cells, or `''` when there
+  /// were none. Lives here so [message] and the Settings toast cannot drift
+  /// into describing the same number two different ways.
+  static String coercionNote(int coerced) {
+    if (coerced <= 0) return '';
+    final one = coerced == 1;
+    return ' $coerced ${one ? 'value' : 'values'} could not be read and '
+        '${one ? 'was' : 'were'} set to 0.';
+  }
 }
 
 /// Whole-database JSON backup and restore. Everything stays on-device unless
@@ -116,26 +146,41 @@ class BackupService {
   /// is `NOT NULL`, and several carry no default, so a dropped key would
   /// abort the whole restore over one bad cell. Columns the schema declares
   /// as TEXT are left exactly as they are.
-  static Map<String, dynamic> _coerceRow(
+  ///
+  /// Every cell it could not read is counted on the way past, because a
+  /// value replaced by `0` is data the user typed and no longer has. This
+  /// pass is the only place that knows which cells those were: by the time
+  /// the rows reach the database they are indistinguishable from a genuine
+  /// zero, so a count taken later could not be taken at all.
+  static ({Map<String, dynamic> row, int coerced}) _coerceRow(
     Map<String, dynamic> row,
     Map<String, String> columnTypes,
   ) {
     final out = <String, dynamic>{};
+    var coerced = 0;
     row.forEach((key, value) {
       final type = columnTypes[key];
-      if (type == 'REAL') {
-        out[key] = NumericGuard.read(value) ?? 0.0;
-      } else if (type == 'INTEGER') {
-        out[key] = (NumericGuard.read(value) ?? 0.0).round();
+      if (type == 'REAL' || type == 'INTEGER') {
+        final read = NumericGuard.read(value);
+        if (read == null) coerced++;
+        final number = read ?? 0.0;
+        out[key] = type == 'REAL' ? number : number.round();
       } else {
         out[key] = value;
       }
     });
-    return out;
+    return (row: out, coerced: coerced);
   }
 
   /// Validates and applies a backup document. Exposed separately from the file
-  /// picker so it can be unit tested without touching the filesystem.
+  /// picker so a test can drive it with a string rather than a picked file.
+  ///
+  /// It is not free of I/O: validating a row needs the schema's column types,
+  /// so it opens the database. Every fault it can name — bad JSON, wrong app
+  /// tag, a future schema, a malformed table, a failed restore — comes back as
+  /// a failure [ImportResult], but a database that will not open at all is
+  /// outside that structure and **throws**. Callers driving this from the UI
+  /// need a `try`/`catch` as well as a look at [ImportResult.ok].
   Future<ImportResult> importFromJson(String raw) async {
     Map<String, dynamic> decoded;
     try {
@@ -170,6 +215,7 @@ class BackupService {
     // Coerce and count before writing anything.
     final tables = <String, List<Map<String, dynamic>>>{};
     var total = 0;
+    var coerced = 0;
     for (final table in DatabaseService.backupTables) {
       final rows = rawData[table];
       if (rows == null) continue;
@@ -182,7 +228,9 @@ class BackupService {
         if (row is! Map) {
           return ImportResult.failure('Table "$table" has a malformed row.');
         }
-        typed.add(_coerceRow(Map<String, dynamic>.from(row), types));
+        final result = _coerceRow(Map<String, dynamic>.from(row), types);
+        typed.add(result.row);
+        coerced += result.coerced;
       }
       tables[table] = typed;
       total += typed.length;
@@ -198,6 +246,6 @@ class BackupService {
       return ImportResult.failure('Restore failed, database unchanged: $e');
     }
 
-    return ImportResult.success(total);
+    return ImportResult.success(total, coerced: coerced);
   }
 }

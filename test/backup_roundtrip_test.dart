@@ -528,6 +528,131 @@ void main() {
     });
   });
 
+  // Coercing silently is only half a fix. The restore now succeeds where it
+  // used to leave three tabs on a spinner, but it also rewrites the user's
+  // data on its way in — `weight_kg: "heavy"` becomes `0.0` — and the
+  // "Import complete. N rows restored." toast said nothing about it. The
+  // warning that was meant to cover this case cannot: it hangs off a
+  // try/catch around `_loadSettings()`, and the coercion means that read
+  // back no longer throws. So the count has to travel with the result.
+  group('the import reports how many cells it could not read', () {
+    Future<ImportResult> importBody(Object? weight, {Object? waist = 0.0}) {
+      return BackupService.instance.importFromJson(jsonEncode({
+        'app': 'lockout',
+        'schemaVersion': 2,
+        'data': {
+          'body_logs': [
+            {
+              'id': 'b1',
+              'date_str': '2026-09-10',
+              'weight_kg': weight,
+              'waist_cm': waist,
+            }
+          ],
+        },
+      }));
+    }
+
+    test('an unreadable cell is counted and named in the message', () async {
+      final result = await importBody('heavy');
+
+      expect(result.ok, isTrue, reason: result.message);
+      expect(result.rowsRestored, 1, reason: 'the row must still land');
+      expect(result.coercedValues, 1);
+      expect(result.message, contains('could not be read'));
+      expect(result.message, contains('1 value'));
+    });
+
+    test('a clean import reports nothing to warn about', () async {
+      final result = await importBody(81.25, waist: 84.0);
+
+      expect(result.ok, isTrue, reason: result.message);
+      expect(result.coercedValues, 0);
+      expect(result.message, isNot(contains('could not be read')));
+    });
+
+    test('numeric text spells a number, so it is not a coercion', () async {
+      // '72.5' keeps its value, so nothing was lost and nothing is reported.
+      final result = await importBody('72.5');
+      expect(result.coercedValues, 0);
+      expect(result.message, isNot(contains('could not be read')));
+    });
+
+    test('every unreadable cell counts, across rows and tables', () async {
+      final result = await BackupService.instance.importFromJson(jsonEncode({
+        'app': 'lockout',
+        'schemaVersion': 2,
+        'data': {
+          'body_logs': [
+            // Two bad cells in one row, one good.
+            {
+              'id': 'b1',
+              'date_str': '2026-09-10',
+              'weight_kg': 'heavy',
+              'waist_cm': null,
+            },
+            // One bad cell in the next row.
+            {
+              'id': 'b2',
+              'date_str': '2026-09-11',
+              'weight_kg': ['not', 'a', 'number'],
+              'waist_cm': 84.0,
+            },
+          ],
+          'food_logs': [
+            // And one in a different table, in an INTEGER column.
+            {
+              'id': 'f1',
+              'date_str': '2026-09-10',
+              'meal_slot': 'LUNCH',
+              'name': 'Rice',
+              'kcal': 'lots',
+              'protein_g': 8.0,
+              'carb_g': 80.0,
+              'fat_g': 1.0,
+            }
+          ],
+        },
+      }));
+
+      expect(result.ok, isTrue, reason: result.message);
+      expect(result.rowsRestored, 3);
+      expect(result.coercedValues, 4);
+      expect(result.message, contains('4 values'));
+    });
+
+    test('a non-finite number is unreadable too, not a value that survives',
+        () async {
+      // `Infinity` is a number a hand-edited file can carry as text, and it
+      // is exactly the one `double.toInt()` throws on later.
+      final result = await importBody('Infinity');
+      expect(result.coercedValues, 1);
+      expect((await DatabaseService.instance.getBodyLogs())
+          .single['weight_kg'], 0.0);
+    });
+
+    test('an unreadable cell in a TEXT column is not a coercion', () async {
+      // Only REAL and INTEGER columns are rewritten, so only they can be
+      // counted; a number in a TEXT column is stored as it was.
+      final result = await BackupService.instance.importFromJson(jsonEncode({
+        'app': 'lockout',
+        'schemaVersion': 2,
+        'data': {
+          'body_logs': [
+            {
+              'id': 'b1',
+              'date_str': 12345,
+              'weight_kg': 70.0,
+              'waist_cm': 84.0,
+            }
+          ],
+        },
+      }));
+      expect(result.coercedValues, 0);
+      expect(result.message, isNot(contains('could not be read')));
+    });
+  });
+
   // The import guard above stops new poison arriving. A database written by
   // a build that shipped before it can still be holding some, and there is
   // no migration that can tell a poisoned REAL column from a good one

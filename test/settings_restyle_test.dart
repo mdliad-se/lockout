@@ -317,52 +317,15 @@ void main() {
         MethodChannel('dexterous.com/flutter/local_notifications');
     const timezone = MethodChannel('flutter_timezone');
 
-    testWidgets(
-        'a backup carrying a non-numeric weight_kg still reschedules, still '
-        'calls back and still tells the user the import applied',
-        (tester) async {
-      // A hand-edited backup puts the string 'heavy' into
-      // `body_logs.weight_kg` — a REAL-affinity column SQLite will happily
-      // keep as TEXT. `_loadSettings` reads it back through
-      // `GoalService.snapshot()`, whose `bodyRows.first['weight_kg'] as num`
-      // threw a `TypeError` on the `await` that sits ahead of
-      // `rescheduleAll()`, `onSettingsUpdated()` and the "Import complete"
-      // toast: the import applied, the OS kept the pre-restore reminder
-      // schedule forever and the user was told nothing.
-      //
-      // The try/catch that first covered this only protected Settings; the
-      // other four `snapshot()` callers were still exposed. The coercion now
-      // happens a layer down, inside `BackupService.importFromJson`, so the
-      // bad value never reaches the column at all and every caller is
-      // covered at once. This test still drives the whole import tail — the
-      // reschedule, the callback and the toast are what it was written to
-      // pin — but the expected outcome is now a clean read-back rather than
-      // a reported failure. Settings' try/catch stays as a belt for any
-      // future read-back failure; nothing arriving through an import can
-      // trip it any more.
-      final raw = jsonEncode({
-        'app': 'lockout',
-        'schemaVersion': 2,
-        'data': {
-          'body_logs': [
-            {
-              'id': '1',
-              'date_str': '2026-01-01',
-              'weight_kg': 'heavy',
-              'waist_cm': 0.0,
-            },
-          ],
-          'user_settings': [
-            {'key': 'reminders_enabled', 'value': 'true'},
-            {'key': 'reminder_hour', 'value': '7'},
-            {'key': 'reminder_minute', 'value': '30'},
-          ],
-        },
-      });
-
-      // The restore applies the backup's theme, and the backup carries none,
-      // so `AppPalette` lands on the fallback. Put it back for whatever runs
-      // next: `setUpAll` chose Paper Press once, for the whole file.
+    /// Drives the whole import tail through the UI — picker, restore,
+    /// reschedule, callback, toast — over [raw], and hands back the three
+    /// things the tail is pinned on.
+    Future<({List<String> notificationCalls, int callbacks, SnackBar toast})>
+        runImport(WidgetTester tester, String raw) async {
+      // The restore applies the backup's theme, and these backups carry
+      // none, so `AppPalette` lands on the fallback. Put it back for
+      // whatever runs next: `setUpAll` chose Paper Press once, for the
+      // whole file.
       addTearDown(() => AppPalette.apply(AppPalette.paperPress));
 
       final realPicker = FilePickerPlatform.instance;
@@ -403,22 +366,102 @@ void main() {
       await tester.tap(find.text('CHOOSE FILE'));
       await settle(tester);
 
+      // Flush the toast's auto-dismiss Timer before teardown.
+      addTearDown(() => tester.pump(const Duration(seconds: 6)));
+
+      return (
+        notificationCalls: notificationCalls,
+        callbacks: callbacks,
+        toast: tester.widget<SnackBar>(find.byType(SnackBar)),
+      );
+    }
+
+    String backupJson(Object? weightKg) => jsonEncode({
+          'app': 'lockout',
+          'schemaVersion': 2,
+          'data': {
+            'body_logs': [
+              {
+                'id': '1',
+                'date_str': '2026-01-01',
+                'weight_kg': weightKg,
+                'waist_cm': 0.0,
+              },
+            ],
+            'user_settings': [
+              {'key': 'reminders_enabled', 'value': 'true'},
+              {'key': 'reminder_hour', 'value': '7'},
+              {'key': 'reminder_minute', 'value': '30'},
+            ],
+          },
+        });
+
+    testWidgets(
+        'a backup carrying a non-numeric weight_kg still reschedules, still '
+        'calls back and still tells the user the import applied',
+        (tester) async {
+      // A hand-edited backup puts the string 'heavy' into
+      // `body_logs.weight_kg` — a REAL-affinity column SQLite will happily
+      // keep as TEXT. `_loadSettings` reads it back through
+      // `GoalService.snapshot()`, whose `bodyRows.first['weight_kg'] as num`
+      // threw a `TypeError` on the `await` that sits ahead of
+      // `rescheduleAll()`, `onSettingsUpdated()` and the "Import complete"
+      // toast: the import applied, the OS kept the pre-restore reminder
+      // schedule forever and the user was told nothing.
+      //
+      // The try/catch that first covered this only protected Settings; the
+      // other four `snapshot()` callers were still exposed. The coercion now
+      // happens a layer down, inside `BackupService.importFromJson`, so the
+      // bad value never reaches the column at all and every caller is
+      // covered at once. This test still drives the whole import tail — the
+      // reschedule, the callback and the toast are what it was written to
+      // pin — but the expected outcome is now a clean read-back rather than
+      // a reported failure. Settings' try/catch stays as a belt for any
+      // future read-back failure; nothing arriving through an import can
+      // trip it any more.
+      final imported = await runImport(tester, backupJson('heavy'));
+
       // The rows did land — this is a completed import, not a rejected one
       // — and the poisoned cell is a number by the time it is stored.
       final rows = await DatabaseService.instance.getBodyLogs();
       expect(rows.single['weight_kg'], isA<num>());
 
-      await settle(tester);
       expect(tester.takeException(), isNull);
-      expect(notificationCalls, contains('zonedSchedule'),
+      expect(imported.notificationCalls, contains('zonedSchedule'),
           reason: 'the imported reminder settings must reach the OS');
-      expect(callbacks, 1, reason: 'onSettingsUpdated must still fire');
+      expect(imported.callbacks, 1,
+          reason: 'onSettingsUpdated must still fire');
+      expect(find.textContaining('Import complete'), findsOneWidget);
+    });
+
+    testWidgets(
+        'the user is told how many cells the import had to rewrite, and told '
+        'it in the warning styling', (tester) async {
+      // Availability was the point of coercing a layer down, and that part
+      // is right. What it cost is diagnosability: the import quietly
+      // rewrote a cell the user had typed and then reported plain success.
+      // The warning that was supposed to cover this hangs off the
+      // try/catch around `_loadSettings()`, which the coercion means can no
+      // longer fire — so the count has to come up with the result instead.
+      final imported = await runImport(tester, backupJson('heavy'));
+
+      expect(find.textContaining('Import complete'), findsOneWidget);
+      expect(find.textContaining('could not be read'), findsOneWidget,
+          reason: 'a rewritten cell must not be reported as a clean import');
+      expect(find.textContaining('1 value'), findsOneWidget);
+      expect(imported.toast.backgroundColor, JinatraTokens.signal,
+          reason: 'it must look different from a clean import, not just '
+              'read differently');
+    });
+
+    testWidgets('a clean backup gets no warning and no count', (tester) async {
+      final imported = await runImport(tester, backupJson(81.25));
+
+      expect(tester.takeException(), isNull);
       expect(find.textContaining('Import complete'), findsOneWidget);
       expect(find.textContaining('could not be read'), findsNothing,
-          reason: 'there is nothing left for the read-back to choke on');
-
-      // Flush the toast's auto-dismiss Timer before teardown.
-      await tester.pump(const Duration(seconds: 6));
+          reason: 'nothing was rewritten, so there is nothing to warn about');
+      expect(imported.toast.backgroundColor, JinatraTokens.deepTeal);
     });
   });
 

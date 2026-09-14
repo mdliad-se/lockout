@@ -379,12 +379,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     widget.onSettingsUpdated();
 
     if (!mounted) return;
+    // Two different things can be worth warning about, and they are
+    // independent. `reloaded` is the belt above failing — rare, and now
+    // unreachable from an import. `coercedValues` is the common one: the
+    // restore succeeded by rewriting cells it could not read as `0`, and
+    // saying only "Import complete" there reports a silent edit of the
+    // user's own data as an unqualified success.
+    final rewritten = result.coercedValues > 0;
     _toast(
       reloaded
           ? 'Import complete. ${result.rowsRestored} rows restored.'
+              '${ImportResult.coercionNote(result.coercedValues)}'
           : 'Import complete. ${result.rowsRestored} rows restored, but some '
               'of them could not be read back. Check the backup file.',
-      warn: !reloaded,
+      warn: !reloaded || rewritten,
     );
   }
 
