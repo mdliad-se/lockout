@@ -164,31 +164,38 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
             ),
         ],
       ),
-      body: Column(
-        children: [
-          if (_progress < 100 && !_failed && _target != null)
-            Container(
-              height: 6,
-              width: double.infinity,
-              color: JinatraTokens.mistTeal,
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: _progress / 100,
-                child: Container(color: JinatraTokens.signal),
+      // Same edge-to-edge gap as settings_screen.dart: an `AppBar` but no
+      // `bottomNavigationBar`, so without this the webview's last rows —
+      // where the player paints its own controls — sit under the navigation
+      // bar. A `SafeArea` rather than padding because nothing here scrolls.
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            if (_progress < 100 && !_failed && _target != null)
+              Container(
+                height: 6,
+                width: double.infinity,
+                color: JinatraTokens.mistTeal,
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: _progress / 100,
+                  child: Container(color: JinatraTokens.signal),
+                ),
               ),
+            Expanded(
+              child: _target == null
+                  ? _buildUnusableLinkNotice()
+                  : _failed
+                      ? _buildOfflineNotice()
+                      : ClipRRect(
+                          borderRadius:
+                              BorderRadius.circular(JinatraTokens.radiusCard),
+                          child: WebViewWidget(controller: _controller),
+                        ),
             ),
-          Expanded(
-            child: _target == null
-                ? _buildUnusableLinkNotice()
-                : _failed
-                    ? _buildOfflineNotice()
-                    : ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(JinatraTokens.radiusCard),
-                        child: WebViewWidget(controller: _controller),
-                      ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

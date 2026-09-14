@@ -127,6 +127,42 @@ void main() {
     });
   });
 
+  // The whole-branch reviewer measured this on an edge-to-edge API 36
+  // window: SettingsScreen has an AppBar but no bottomNavigationBar, so its
+  // scroll view runs to the physical bottom of the screen and 16dp of
+  // padding cannot clear a 48dp navigation bar. The last card's text ended
+  // 13dp inside the bar. The tab screens escape this because BottomNav
+  // carries its own SafeArea; a pushed route has nothing.
+  testWidgets('the last settings card scrolls clear of the navigation bar',
+      (tester) async {
+    tester.view.physicalSize = const Size(640, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.padding = const FakeViewPadding(bottom: 48);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 48);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(home: SettingsScreen(onSettingsUpdated: () {})),
+    );
+    await settle(tester);
+
+    // Scroll to the very end: the last line of the last card must then sit
+    // above the navigation bar rather than under it.
+    final scroller = find.descendant(
+      of: find.byType(AbsorbPointer),
+      matching: find.byType(SingleChildScrollView),
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.drag(scroller, const Offset(0, -800));
+      await tester.pumpAndSettle();
+    }
+
+    final about = find.textContaining('Published by Jinatra Ltd.');
+    expect(about, findsOneWidget);
+
+    expect(tester.getBottomLeft(about).dy, lessThanOrEqualTo(1000.0 - 48.0));
+  });
+
   /// Settings is one long scroll. A surface tall enough to hold every card
   /// keeps the field, swatch or button a test drives on screen, so the test
   /// exercises the screen rather than the scroll physics.

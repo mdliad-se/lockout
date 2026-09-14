@@ -416,7 +416,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: AbsorbPointer(
         absorbing: _busy,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
+          // Padding rather than a `SafeArea`: this route has an `AppBar` but
+          // no `bottomNavigationBar`, so on an edge-to-edge window the list
+          // runs to the physical bottom of the screen and 16dp cannot clear
+          // a 48dp navigation bar — the last card ended 13dp inside it. The
+          // tab screens escape this only because `BottomNav` carries its own
+          // `SafeArea`. Padding keeps content scrolling UNDER the bar, which
+          // a `SafeArea` would stop, while still letting the user scroll the
+          // last line clear of it.
+          padding: EdgeInsets.all(16.0).copyWith(
+            bottom: 16.0 + MediaQuery.viewPaddingOf(context).bottom,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
