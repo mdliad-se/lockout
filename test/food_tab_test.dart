@@ -495,6 +495,43 @@ void main() {
       final rows = await db.getFoodLogsForDate(today);
       expect(rows, isEmpty, reason: 'expiry must not undo the delete');
     });
+
+    // The same restore vector LOG's poisoned-volume test documents, on the
+    // column FOOD cannot render without: a backup restored by a build older
+    // than `BackupService`'s import coercion leaves the literal text in
+    // `kcal`, where INTEGER affinity keeps it. `_loadData()` hydrates every
+    // row through `FoodEntry.fromMap`, so a bare cast threw before
+    // `setState(_isLoading = false)` and stranded the tab on its spinner —
+    // with no route off it. A raw insert is the only way to build the row:
+    // every typed path coerces on the way in.
+    testWidgets('an entry whose kcal is text still renders the day',
+        (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      final database = await db.database;
+      await database.insert('food_logs', {
+        'id': 'f1',
+        'date_str': today,
+        'meal_slot': 'Breakfast',
+        'name': 'Oats',
+        'kcal': 'loads',
+        'protein_g': 10.0,
+        'carb_g': 20.0,
+        'fat_g': 5.0,
+      });
+
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Oats'), findsOneWidget,
+          reason: 'one unreadable column must cost the user a number, not '
+              'the whole tab');
+      final hero = tester.widget<ProgressHero>(find.byType(ProgressHero));
+      expect(hero.progress, 0.0,
+          reason: 'an unreadable calorie count contributes nothing, the '
+              'same honest zero BODY shows for a poisoned weight');
+    });
   });
 
   // These model the shape of `routines_tab_test.dart`'s sheet regression

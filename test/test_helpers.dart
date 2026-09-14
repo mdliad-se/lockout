@@ -53,3 +53,74 @@ Future<void> wipeDatabaseAndReseed(DatabaseService db) async {
   await db.saveSetting('height_unit', 'cm');
   await db.saveSetting('active_routine_id', '');
 }
+
+/// [source] with every comment blanked out, character for character, so an
+/// offset into the result still maps to the same line of the original.
+///
+/// A line-by-line filter cannot do this job: it misses the `double\n
+/// .tryParse(` shape `dart format` produces from a long enough expression,
+/// and it flags `/* prose */` it has no way to recognise as a comment.
+///
+/// String literals are skipped rather than blanked, so text *about* the
+/// hazard in a message still reads as text; interpolation holding its own
+/// quotes (`'${map['k']}'`) would end the skip early, which errs toward
+/// scanning more of the file as code rather than less.
+String blankComments(String source) {
+  final out = source.split('');
+  var i = 0;
+
+  void blank(int at) {
+    if (source[at] != '\n') out[at] = ' ';
+  }
+
+  while (i < source.length) {
+    if (source.startsWith('//', i)) {
+      while (i < source.length && source[i] != '\n') {
+        blank(i++);
+      }
+    } else if (source.startsWith('/*', i)) {
+      // Dart's block comments nest.
+      var depth = 0;
+      while (i < source.length) {
+        if (source.startsWith('/*', i)) {
+          depth++;
+          blank(i++);
+          blank(i++);
+        } else if (source.startsWith('*/', i)) {
+          depth--;
+          blank(i++);
+          blank(i++);
+          if (depth == 0) break;
+        } else {
+          blank(i++);
+        }
+      }
+    } else if (source[i] == "'" || source[i] == '"') {
+      i = _endOfStringLiteral(source, i);
+    } else {
+      i++;
+    }
+  }
+  return out.join();
+}
+
+/// The offset just past the literal opening at [start].
+int _endOfStringLiteral(String source, int start) {
+  final quote = source[start];
+  final isRaw = start > 0 && (source[start - 1] == 'r' || source[start - 1] == 'R');
+  final tripled = quote + quote + quote;
+  final delimiter = source.startsWith(tripled, start) ? tripled : quote;
+  var i = start + delimiter.length;
+  while (i < source.length) {
+    if (!isRaw && source[i] == r'\') {
+      i += 2;
+      continue;
+    }
+    if (source.startsWith(delimiter, i)) return i + delimiter.length;
+    // An unterminated single-quoted literal ends at the newline; bail there
+    // rather than swallowing the rest of the file.
+    if (delimiter.length == 1 && source[i] == '\n') return i;
+    i++;
+  }
+  return source.length;
+}

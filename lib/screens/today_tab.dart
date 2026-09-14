@@ -140,7 +140,7 @@ class TodayTabState extends State<TodayTab> {
     final foodRows = await db.getFoodLogsForDate(today);
     final eaten = foodRows.fold<int>(
       0,
-      (sum, row) => sum + ((NumericGuard.read(row['kcal']) ?? 0.0).toInt()),
+      (sum, row) => sum + (NumericGuard.readInt(row['kcal']) ?? 0),
     );
 
     // snapshot() already fetches body logs for currentWeightKg and resolves

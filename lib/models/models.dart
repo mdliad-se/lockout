@@ -95,7 +95,7 @@ class TrainingDay {
       routineId: map['routine_id'],
       name: map['name'],
       tag: map['tag'],
-      orderIndex: map['order_index'],
+      orderIndex: NumericGuard.readInt(map['order_index']) ?? 0,
       focus: map['focus'] ?? '',
       note: map['note'] ?? '',
       isRestDay: map['is_rest_day'] == 1,
@@ -162,7 +162,7 @@ class WarmupItem {
       dayId: map['day_id'],
       name: map['name'],
       amt: map['amt'],
-      orderIndex: map['order_index'] ?? 0,
+      orderIndex: NumericGuard.readInt(map['order_index']) ?? 0,
     );
   }
 }
@@ -252,15 +252,15 @@ class ExerciseDef {
       id: map['id'],
       dayId: map['day_id'],
       name: map['name'],
-      targetSets: map['target_sets'],
-      targetRepsMin: map['target_reps_min'],
-      targetRepsMax: map['target_reps_max'],
+      targetSets: NumericGuard.readInt(map['target_sets']) ?? 0,
+      targetRepsMin: NumericGuard.readInt(map['target_reps_min']) ?? 0,
+      targetRepsMax: NumericGuard.readInt(map['target_reps_max']) ?? 0,
       targetWeightKg: NumericGuard.read(map['target_weight_kg']) ?? 0.0,
-      restDefaultS: map['rest_default_s'] ?? 60,
+      restDefaultS: NumericGuard.readInt(map['rest_default_s']) ?? 60,
       note: map['note'] ?? '',
       videoUrl: map['video_url'] ?? '',
       muscleGroup: map['muscle_group'] ?? '',
-      orderIndex: map['order_index'] ?? 0,
+      orderIndex: NumericGuard.readInt(map['order_index']) ?? 0,
     );
   }
 }
@@ -297,7 +297,7 @@ class FinisherItem {
       dayId: map['day_id'],
       name: map['name'],
       amt: map['amt'],
-      orderIndex: map['order_index'] ?? 0,
+      orderIndex: NumericGuard.readInt(map['order_index']) ?? 0,
     );
   }
 }
@@ -347,21 +347,22 @@ class SetLog {
     };
   }
 
-  /// Reads `weight_kg` through `NumericGuard`, for the reason
-  /// `BodyEntry.fromMap` documents: SQLite affinity is advisory, and a
-  /// backup restored by a build older than `BackupService`'s import
-  /// coercion can leave text in a REAL column. LOG hydrates a session's
-  /// whole set list through this factory when a card is expanded, so a cast
-  /// would throw out of a tap handler.
+  /// Reads `weight_kg` — and `set_index` and `reps` beside it — through
+  /// `NumericGuard`, for the reason `BodyEntry.fromMap` documents: SQLite
+  /// affinity is advisory, and a backup restored by a build older than
+  /// `BackupService`'s import coercion can leave text in a REAL or an
+  /// INTEGER column alike. LOG hydrates a session's whole set list through
+  /// this factory when a card is expanded, so a cast would throw out of a
+  /// tap handler.
   factory SetLog.fromMap(Map<String, dynamic> map) {
     return SetLog(
       id: map['id'],
       sessionExerciseId: map['session_exercise_id'] ?? '',
       sessionId: map['session_id'] ?? '',
       exerciseName: map['exercise_name'] ?? '',
-      setIndex: map['set_index'],
+      setIndex: NumericGuard.readInt(map['set_index']) ?? 0,
       weightKg: NumericGuard.read(map['weight_kg']) ?? 0.0,
-      reps: map['reps'],
+      reps: NumericGuard.readInt(map['reps']) ?? 0,
       isCompleted: map['is_completed'] == 1,
     );
   }
@@ -438,17 +439,21 @@ class SessionLog {
   /// from taking the tab down — the guard never ran. Zero renders as an
   /// obviously-wrong `0 kg` entry the user can delete, which beats a screen
   /// they cannot reach.
+  ///
+  /// `duration_seconds` and `total_sets` are read the same way: INTEGER
+  /// affinity is advisory too, and a bare assignment of text to an `int`
+  /// field throws from the same line of the same loop.
   factory SessionLog.fromMap(Map<String, dynamic> map) {
     return SessionLog(
       id: map['id'],
       dayName: map['day_name'],
       dateStr: map['date_str'],
-      durationSeconds: map['duration_seconds'],
+      durationSeconds: NumericGuard.readInt(map['duration_seconds']) ?? 0,
       totalVolumeKg: NumericGuard.read(map['total_volume_kg']) ?? 0.0,
       status: map['status'],
       routineId: map['routine_id'] ?? '',
       dayId: map['day_id'] ?? '',
-      totalSets: map['total_sets'] ?? 0,
+      totalSets: NumericGuard.readInt(map['total_sets']) ?? 0,
       kcalBurned: NumericGuard.read(map['kcal_burned']) ?? 0.0,
     );
   }
@@ -489,13 +494,19 @@ class FoodEntry {
     };
   }
 
+  /// Tolerant on every numeric column, `kcal` included: `FoodTab._loadData`
+  /// maps the day's rows through this factory inside its `setState`, so a
+  /// bare `map['kcal']` assignment on text left by a restore threw before
+  /// the spinner could clear and stranded FOOD with no route off it. Zero
+  /// is an obviously-wrong entry the user can delete; an unreachable tab is
+  /// not.
   factory FoodEntry.fromMap(Map<String, dynamic> map) {
     return FoodEntry(
       id: map['id'],
       dateStr: map['date_str'],
       mealSlot: map['meal_slot'],
       name: map['name'],
-      kcal: map['kcal'],
+      kcal: NumericGuard.readInt(map['kcal']) ?? 0,
       proteinG: NumericGuard.read(map['protein_g']) ?? 0.0,
       carbG: NumericGuard.read(map['carb_g']) ?? 0.0,
       fatG: NumericGuard.read(map['fat_g']) ?? 0.0,

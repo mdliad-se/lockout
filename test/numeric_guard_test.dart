@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lockout/services/numeric_guard.dart';
 
+import 'test_helpers.dart';
+
 /// The shared guard four write sites and three read sites now route through.
 ///
 /// Settings' target weight, Settings' height, BODY's weight and BODY's waist
@@ -113,6 +115,46 @@ void main() {
     });
   });
 
+  // The INTEGER-column counterpart to [read]. Every reason `read` exists
+  // applies unchanged to the integer columns: SQLite's INTEGER affinity is
+  // just as advisory as REAL's, `BackupService._coerceRow` coerces both, and
+  // a database written before that coercion existed can hold text in either.
+  // A bare `map['reps']` assignment throws `type 'String' is not a subtype
+  // of type 'int'` — the same TypeError, out of the same factories, that
+  // routing the doubles through `read` was meant to end.
+  group('readInt', () {
+    test('an int column reads back as itself', () {
+      expect(NumericGuard.readInt(400), 400);
+      expect(NumericGuard.readInt(0), 0);
+      expect(NumericGuard.readInt(-3), -3);
+    });
+
+    // Same rounding rule as `BackupService._coerceRow`, so a value read
+    // straight off disk and the same value taken through an import land on
+    // the same integer rather than differing by one.
+    test('a fractional value rounds, the way the import coercion does', () {
+      expect(NumericGuard.readInt(2.4), 2);
+      expect(NumericGuard.readInt(2.6), 3);
+      expect(NumericGuard.readInt(-2.6), -3);
+    });
+
+    test('numeric text is read, not cast', () {
+      expect(NumericGuard.readInt('400'), 400);
+      expect(NumericGuard.readInt('400.7'), 401);
+    });
+
+    test('anything with no numeric meaning is null, never a throw', () {
+      expect(NumericGuard.readInt('loads'), isNull);
+      expect(NumericGuard.readInt(null), isNull);
+      expect(NumericGuard.readInt(<int>[1]), isNull);
+      expect(NumericGuard.readInt(double.nan), isNull);
+      // `toInt()` on either infinity throws `Unsupported operation`; the
+      // finite check in `read` is what keeps that out of `round()`.
+      expect(NumericGuard.readInt(double.infinity), isNull);
+      expect(NumericGuard.readInt('Infinity'), isNull);
+    });
+  });
+
   // Structural, in the same spirit as the v2 style sweep's source checks:
   // the value of one shared guard is that nothing re-derives it. A new
   // `double.tryParse` is how this whole family of defects got in, one field
@@ -166,75 +208,4 @@ final value = double
               'finite/floor rule stays in one place');
     });
   });
-}
-
-/// [source] with every comment blanked out, character for character, so an
-/// offset into the result still maps to the same line of the original.
-///
-/// A line-by-line filter cannot do this job: it misses the `double\n
-/// .tryParse(` shape `dart format` produces from a long enough expression,
-/// and it flags `/* prose */` it has no way to recognise as a comment.
-///
-/// String literals are skipped rather than blanked, so text *about* the
-/// hazard in a message still reads as text; interpolation holding its own
-/// quotes (`'${map['k']}'`) would end the skip early, which errs toward
-/// scanning more of the file as code rather than less.
-String blankComments(String source) {
-  final out = source.split('');
-  var i = 0;
-
-  void blank(int at) {
-    if (source[at] != '\n') out[at] = ' ';
-  }
-
-  while (i < source.length) {
-    if (source.startsWith('//', i)) {
-      while (i < source.length && source[i] != '\n') {
-        blank(i++);
-      }
-    } else if (source.startsWith('/*', i)) {
-      // Dart's block comments nest.
-      var depth = 0;
-      while (i < source.length) {
-        if (source.startsWith('/*', i)) {
-          depth++;
-          blank(i++);
-          blank(i++);
-        } else if (source.startsWith('*/', i)) {
-          depth--;
-          blank(i++);
-          blank(i++);
-          if (depth == 0) break;
-        } else {
-          blank(i++);
-        }
-      }
-    } else if (source[i] == "'" || source[i] == '"') {
-      i = _endOfStringLiteral(source, i);
-    } else {
-      i++;
-    }
-  }
-  return out.join();
-}
-
-/// The offset just past the literal opening at [start].
-int _endOfStringLiteral(String source, int start) {
-  final quote = source[start];
-  final isRaw = start > 0 && (source[start - 1] == 'r' || source[start - 1] == 'R');
-  final tripled = quote + quote + quote;
-  final delimiter = source.startsWith(tripled, start) ? tripled : quote;
-  var i = start + delimiter.length;
-  while (i < source.length) {
-    if (!isRaw && source[i] == r'\') {
-      i += 2;
-      continue;
-    }
-    if (source.startsWith(delimiter, i)) return i + delimiter.length;
-    // An unterminated single-quoted literal ends at the newline; bail there
-    // rather than swallowing the rest of the file.
-    if (delimiter.length == 1 && source[i] == '\n') return i;
-    i++;
-  }
-  return source.length;
 }

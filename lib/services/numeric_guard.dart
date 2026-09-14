@@ -70,4 +70,17 @@ class NumericGuard {
     if (value is String) return parse(value);
     return null;
   }
+
+  /// [read] for an INTEGER column: the same tolerant read, rounded to an
+  /// `int`, or `null` when no finite number can be had.
+  ///
+  /// INTEGER affinity is no less advisory than REAL's, so the whole of
+  /// [read]'s reasoning applies unchanged — but a `dynamic` value assigned
+  /// to an `int` field throws `type 'String' is not a subtype of type
+  /// 'int'` rather than merely producing a wrong number, and the model
+  /// factories do that assignment inside the `_loadData()` of every tab.
+  /// Rounding rather than truncating matches `BackupService._coerceRow`, so
+  /// a value read straight off disk and the same value taken through an
+  /// import land on the same integer.
+  static int? readInt(Object? value) => read(value)?.round();
 }

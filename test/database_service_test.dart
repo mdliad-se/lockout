@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -416,17 +415,28 @@ void main() {
     // new caller through `insertSessionWithSets`, not to drop the annotation.
     test('no production code calls them', () {
       final callers = <String>[];
+      var scanned = 0;
       for (final file in Directory('lib')
           .listSync(recursive: true)
           .whereType<File>()
           .where((f) => f.path.endsWith('.dart'))) {
-        final lines = const LineSplitter().convert(file.readAsStringSync());
-        for (var i = 0; i < lines.length; i++) {
-          if (RegExp(r'\.insert(SessionLog|SetLogs)\(').hasMatch(lines[i])) {
-            callers.add('${file.path}:${i + 1}: ${lines[i].trim()}');
-          }
+        scanned++;
+        // Comments discuss both methods by name — including the one this
+        // very annotation was added under — so a raw read would report
+        // prose as a call site.
+        final code = blankComments(file.readAsStringSync());
+        for (final match
+            in RegExp(r'\.insert(SessionLog|SetLogs)\(').allMatches(code)) {
+          final line =
+              '\n'.allMatches(code.substring(0, match.start)).length;
+          callers.add('${file.path}:${line + 1}');
         }
       }
+      // Without this, a mistyped directory makes the loop iterate zero
+      // times and the caller list come back empty — the shape in which this
+      // test passes loudly while checking nothing at all.
+      expect(scanned, greaterThan(0),
+          reason: 'scanned no Dart files: the path is wrong');
       expect(callers, isEmpty,
           reason: 'a session must be written in one transaction, through '
               'insertSessionWithSets');

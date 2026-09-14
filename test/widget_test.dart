@@ -396,5 +396,139 @@ void main() {
       expect(withDuration(45 * 60).durationLabel, '45 min');
       expect(withDuration(95 * 60).durationLabel, '1h 35m');
     });
+
+    // The INTEGER half of the tolerant-read sweep. `BodyEntry.fromMap`
+    // documents the vector: SQLite affinity is advisory, and a backup
+    // restored by a build older than `BackupService`'s import coercion can
+    // leave the literal text a hand-edited JSON file held in any numeric
+    // column. INTEGER columns were left as bare `map['reps']` assignments
+    // when the REAL ones were routed through `NumericGuard`, so they went
+    // on throwing `type 'String' is not a subtype of type 'int'` out of the
+    // very factories FOOD and LOG hydrate their lists through — before the
+    // `setState` that clears the spinner. Zero is the same honest
+    // "unreadable" value the doubles already land on.
+    group('an integer column holding text reads as a default, not a throw',
+        () {
+      Map<String, dynamic> poisoned(Map<String, dynamic> base,
+              Map<String, dynamic> overrides) =>
+          {...base, ...overrides};
+
+      test('SetLog set_index and reps', () {
+        final base = SetLog(
+          id: 's1',
+          sessionExerciseId: 'e1',
+          sessionId: 'sess1',
+          exerciseName: 'Back Squat',
+          setIndex: 1,
+          weightKg: 60,
+          reps: 10,
+        ).toMap();
+
+        final back = SetLog.fromMap(
+            poisoned(base, {'set_index': 'first', 'reps': 'lots'}));
+        expect(back.setIndex, 0);
+        expect(back.reps, 0);
+        expect(back.exerciseName, 'Back Squat',
+            reason: 'one unreadable column must not cost the readable ones');
+        // Numeric text still means the number it spells.
+        expect(SetLog.fromMap(poisoned(base, {'reps': '8'})).reps, 8);
+      });
+
+      test('SessionLog duration_seconds and total_sets', () {
+        final base = SessionLog(
+          id: 'x',
+          dayName: 'Push',
+          dateStr: '2026-09-07',
+          durationSeconds: 1800,
+          totalVolumeKg: 100,
+          status: 'completed',
+          totalSets: 12,
+        ).toMap();
+
+        final back = SessionLog.fromMap(poisoned(
+            base, {'duration_seconds': 'ages', 'total_sets': 'many'}));
+        expect(back.durationSeconds, 0);
+        expect(back.totalSets, 0);
+        expect(back.dayName, 'Push');
+        expect(back.durationLabel, '0 min',
+            reason: 'the label derives from the duration and must not throw '
+                'either');
+      });
+
+      test('FoodEntry kcal', () {
+        final base = FoodEntry(
+          id: 'f1',
+          dateStr: '2026-09-07',
+          mealSlot: 'Breakfast',
+          name: 'Oats',
+          kcal: 400,
+        ).toMap();
+
+        expect(FoodEntry.fromMap(poisoned(base, {'kcal': 'loads'})).kcal, 0);
+        expect(FoodEntry.fromMap(poisoned(base, {'kcal': '400'})).kcal, 400);
+        expect(FoodEntry.fromMap(poisoned(base, {'kcal': 'loads'})).name,
+            'Oats');
+      });
+
+      test('ExerciseDef targets, rest and order', () {
+        final base = ExerciseDef(
+          id: 'e1',
+          dayId: 'd1',
+          name: 'Lat Pulldown',
+          targetSets: 4,
+          targetRepsMin: 10,
+          targetRepsMax: 12,
+          restDefaultS: 90,
+          orderIndex: 2,
+        ).toMap();
+
+        final back = ExerciseDef.fromMap(poisoned(base, {
+          'target_sets': 'four',
+          'target_reps_min': 'ten',
+          'target_reps_max': 'twelve',
+          'rest_default_s': 'a while',
+          'order_index': 'second',
+        }));
+        expect(back.targetSets, 0);
+        expect(back.targetRepsMin, 0);
+        expect(back.targetRepsMax, 0);
+        // The column's own documented default, not zero: an unreadable rest
+        // has a sensible answer, and a zero-second timer has not.
+        expect(back.restDefaultS, 60);
+        expect(back.orderIndex, 0);
+        expect(back.targetLabel, '0x0',
+            reason: 'the label derives from the targets and must not throw');
+      });
+
+      test('TrainingDay, WarmupItem and FinisherItem order_index', () {
+        expect(
+            TrainingDay.fromMap({
+              'id': 'd1',
+              'routine_id': 'r1',
+              'name': 'Push',
+              'tag': 'MON',
+              'order_index': 'first',
+            }).orderIndex,
+            0);
+        expect(
+            WarmupItem.fromMap({
+              'id': 'w1',
+              'day_id': 'd1',
+              'name': 'Bike',
+              'amt': '3 min',
+              'order_index': 'first',
+            }).orderIndex,
+            0);
+        expect(
+            FinisherItem.fromMap({
+              'id': 'x1',
+              'day_id': 'd1',
+              'name': 'Plank',
+              'amt': '60 s',
+              'order_index': 'last',
+            }).orderIndex,
+            0);
+      });
+    });
   });
 }

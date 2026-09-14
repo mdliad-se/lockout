@@ -190,7 +190,6 @@ void main() {
     });
   });
 
-
   group('_isLoading sequencing', () {
     testWidgets(
         'renders real values, not the not-on-record prompts, once both the '

@@ -243,6 +243,38 @@ void main() {
               '"nothing on record" BODY already shows for a poisoned weight');
     });
 
+    // The same row, the same vector, the INTEGER column next door.
+    // `total_volume_kg` being tolerant is no help while `duration_seconds`
+    // is a bare assignment: `SessionLog.fromMap` throws `type 'String' is
+    // not a subtype of type 'int'` on it and `_loadLogs()` never reaches
+    // its `setState`, so the tab sits on its spinner exactly as it did
+    // before the REAL columns were guarded.
+    testWidgets('a session whose duration is text still renders the archive',
+        (tester) async {
+      final database = await DatabaseService.instance.database;
+      await database.insert('session_logs', {
+        'id': 's1',
+        'day_name': 'MON - Legs',
+        'date_str': '2026-09-07',
+        'duration_seconds': 'ages',
+        'total_volume_kg': 1000.0,
+        'status': 'completed',
+        'routine_id': '',
+        'day_id': '',
+        'total_sets': 'many',
+        'kcal_burned': 0.0,
+      });
+
+      await pumpLog(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('MON - Legs'), findsOneWidget,
+          reason: 'an unreadable duration must cost the user a number, not '
+              'the whole tab');
+      expect(find.textContaining('0 min'), findsWidgets,
+          reason: 'an unreadable duration reads as zero');
+    });
+
     testWidgets('a set whose weight is text still renders the detail',
         (tester) async {
       final db = DatabaseService.instance;
