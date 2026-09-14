@@ -358,13 +358,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     AppPalette.applyKey(restoredTheme);
     if (!mounted) return;
 
-    // A backup is untrusted input: `BackupService` writes rows verbatim, so a
-    // hand-edited file can put a non-numeric `weight_kg` into a REAL-affinity
-    // column, which `GoalService.snapshot()` reads back as
-    // `bodyRows.first['weight_kg'] as num` and throws `TypeError` on — inside
-    // this very `await`. Unguarded, that took the reschedule, the callback
-    // and the toast with it: the import had already applied, but the OS kept
-    // the pre-restore reminder schedule and the user was told nothing.
+    // A belt, and deliberately kept as one now that both braces hold:
+    // `BackupService` coerces numeric columns on import, and every read on
+    // the far side of this `await` goes through `NumericGuard` rather than
+    // a cast, so nothing arriving through an import can still throw here.
+    // What that leaves is an unenumerable class — any future failure in
+    // `_loadSettings`, from a schema the running build does not know to a
+    // disk error — and the consequence has not changed: unguarded, the
+    // throw takes the reschedule, the callback and the toast with it, so
+    // the import applies while the OS keeps the pre-restore reminder
+    // schedule and the user is told nothing.
     // Re-reading settings is best-effort; everything after it is not.
     var reloaded = true;
     try {

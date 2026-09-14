@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/energy_estimator.dart';
 import '../services/goal_service.dart';
+import '../services/numeric_guard.dart';
 import '../services/schedule_service.dart';
 import '../theme/jinatra_tokens.dart';
 import '../widgets/action_grid.dart';
@@ -139,7 +140,7 @@ class TodayTabState extends State<TodayTab> {
     final foodRows = await db.getFoodLogsForDate(today);
     final eaten = foodRows.fold<int>(
       0,
-      (sum, row) => sum + ((row['kcal'] as num?)?.toInt() ?? 0),
+      (sum, row) => sum + ((NumericGuard.read(row['kcal']) ?? 0.0).toInt()),
     );
 
     // snapshot() already fetches body logs for currentWeightKg and resolves
@@ -157,7 +158,7 @@ class TodayTabState extends State<TodayTab> {
         ? null
         : sessionRows.fold<double>(
             0.0,
-            (sum, r) => sum + ((r['kcal_burned'] as num?)?.toDouble() ?? 0.0),
+            (sum, r) => sum + (NumericGuard.read(r['kcal_burned']) ?? 0.0),
           );
 
     if (!mounted) return;

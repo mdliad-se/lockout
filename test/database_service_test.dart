@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -375,6 +378,58 @@ void main() {
           reason: 'a header with no sets is indistinguishable from a '
               'legitimately detail-free entry, so it must not be left behind');
       expect(await db.getSetLogsForSession('tx-1'), isEmpty);
+    });
+  });
+
+  // `insertSessionLog` and `insertSetLogs` were superseded by the
+  // transactional `insertSessionWithSets`, and production stopped calling
+  // either one. They stay because five suites seed rows through them, but
+  // "no production caller" held only as long as nobody wrote one: a grep is
+  // not a guard, and the next screen that needs to save a session could
+  // reach for the un-transactional pair and split the write open again.
+  // `@visibleForTesting` turns that mistake into an analyzer complaint at
+  // the call site — the same "make it unrepresentable" move the const
+  // palette widgets got — and these two tests keep the annotation and its
+  // premise from quietly lapsing.
+  group('the non-transactional session writes are test-only', () {
+    final source =
+        File('lib/services/database_service.dart').readAsStringSync();
+
+    test('both declarations carry @visibleForTesting', () {
+      for (final declaration in const [
+        'Future<void> insertSessionLog(',
+        'Future<void> insertSetLogs(',
+      ]) {
+        final at = source.indexOf(declaration);
+        expect(at, isNonNegative,
+            reason: '$declaration is gone; if it was deleted rather than '
+                'renamed, delete this expectation with it');
+        expect(source.substring(0, at).trimRight(),
+            endsWith('@visibleForTesting'),
+            reason: '$declaration must be annotated, so a production call '
+                'site is an analyzer complaint rather than something only a '
+                'grep can catch');
+      }
+    });
+
+    // The annotation's premise. If this ever fails, the fix is to route the
+    // new caller through `insertSessionWithSets`, not to drop the annotation.
+    test('no production code calls them', () {
+      final callers = <String>[];
+      for (final file in Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))) {
+        final lines = const LineSplitter().convert(file.readAsStringSync());
+        for (var i = 0; i < lines.length; i++) {
+          if (RegExp(r'\.insert(SessionLog|SetLogs)\(').hasMatch(lines[i])) {
+            callers.add('${file.path}:${i + 1}: ${lines[i].trim()}');
+          }
+        }
+      }
+      expect(callers, isEmpty,
+          reason: 'a session must be written in one transaction, through '
+              'insertSessionWithSets');
     });
   });
 }

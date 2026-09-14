@@ -255,7 +255,7 @@ class ExerciseDef {
       targetSets: map['target_sets'],
       targetRepsMin: map['target_reps_min'],
       targetRepsMax: map['target_reps_max'],
-      targetWeightKg: (map['target_weight_kg'] as num?)?.toDouble() ?? 0.0,
+      targetWeightKg: NumericGuard.read(map['target_weight_kg']) ?? 0.0,
       restDefaultS: map['rest_default_s'] ?? 60,
       note: map['note'] ?? '',
       videoUrl: map['video_url'] ?? '',
@@ -347,6 +347,12 @@ class SetLog {
     };
   }
 
+  /// Reads `weight_kg` through `NumericGuard`, for the reason
+  /// `BodyEntry.fromMap` documents: SQLite affinity is advisory, and a
+  /// backup restored by a build older than `BackupService`'s import
+  /// coercion can leave text in a REAL column. LOG hydrates a session's
+  /// whole set list through this factory when a card is expanded, so a cast
+  /// would throw out of a tap handler.
   factory SetLog.fromMap(Map<String, dynamic> map) {
     return SetLog(
       id: map['id'],
@@ -354,7 +360,7 @@ class SetLog {
       sessionId: map['session_id'] ?? '',
       exerciseName: map['exercise_name'] ?? '',
       setIndex: map['set_index'],
-      weightKg: (map['weight_kg'] as num).toDouble(),
+      weightKg: NumericGuard.read(map['weight_kg']) ?? 0.0,
       reps: map['reps'],
       isCompleted: map['is_completed'] == 1,
     );
@@ -425,18 +431,25 @@ class SessionLog {
     };
   }
 
+  /// Same tolerant read as [SetLog.fromMap], and the one that mattered
+  /// most: `LogTab._loadLogs()` maps every archived row through this
+  /// factory, so a cast on `total_volume_kg` threw *upstream* of the
+  /// `kgWhole` finite guard that exists on that screen to keep a bad volume
+  /// from taking the tab down — the guard never ran. Zero renders as an
+  /// obviously-wrong `0 kg` entry the user can delete, which beats a screen
+  /// they cannot reach.
   factory SessionLog.fromMap(Map<String, dynamic> map) {
     return SessionLog(
       id: map['id'],
       dayName: map['day_name'],
       dateStr: map['date_str'],
       durationSeconds: map['duration_seconds'],
-      totalVolumeKg: (map['total_volume_kg'] as num).toDouble(),
+      totalVolumeKg: NumericGuard.read(map['total_volume_kg']) ?? 0.0,
       status: map['status'],
       routineId: map['routine_id'] ?? '',
       dayId: map['day_id'] ?? '',
       totalSets: map['total_sets'] ?? 0,
-      kcalBurned: (map['kcal_burned'] as num?)?.toDouble() ?? 0.0,
+      kcalBurned: NumericGuard.read(map['kcal_burned']) ?? 0.0,
     );
   }
 }
@@ -483,9 +496,9 @@ class FoodEntry {
       mealSlot: map['meal_slot'],
       name: map['name'],
       kcal: map['kcal'],
-      proteinG: (map['protein_g'] as num?)?.toDouble() ?? 0.0,
-      carbG: (map['carb_g'] as num?)?.toDouble() ?? 0.0,
-      fatG: (map['fat_g'] as num?)?.toDouble() ?? 0.0,
+      proteinG: NumericGuard.read(map['protein_g']) ?? 0.0,
+      carbG: NumericGuard.read(map['carb_g']) ?? 0.0,
+      fatG: NumericGuard.read(map['fat_g']) ?? 0.0,
     );
   }
 }

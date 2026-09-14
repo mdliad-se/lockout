@@ -92,19 +92,23 @@ class GoalService {
     // the condition, not a given: Settings parsed `height_cm` a second time
     // itself and kept the crash until it was changed to echo `heightCm` back
     // into its own field. Read the row here, not again at the call site.
-    final height = _finiteOr(
-      double.tryParse(await db.getSetting('height_cm', defaultValue: '175.0')),
-      fallback: 175.0,
-      floor: 0.0,
-      floorExclusive: true,
-    );
-    final targetWeight = _finiteOr(
-      double.tryParse(
-        await db.getSetting('target_weight_kg', defaultValue: '0'),
-      ),
-      fallback: 0.0,
-      floor: 0.0,
-    );
+    //
+    // The rule itself lives in `NumericGuard`, not in a private copy here:
+    // a height of 0 divides BMI by zero, so its floor is exclusive, while a
+    // target weight of 0 is the legitimate "not set yet" and keeps an
+    // inclusive one. Those are exactly `NumericGuard.finite`'s `min` and
+    // `minExclusive`, and the fallback is the `??` on the end.
+    final height = NumericGuard.parse(
+          await db.getSetting('height_cm', defaultValue: '175.0'),
+          min: 0.0,
+          minExclusive: true,
+        ) ??
+        175.0;
+    final targetWeight = NumericGuard.parse(
+          await db.getSetting('target_weight_kg', defaultValue: '0'),
+          min: 0.0,
+        ) ??
+        0.0;
     // `int.tryParse` cannot produce a non-finite value, but it happily parses
     // a negative one, and a negative age drags the BMR equation with it.
     final rawAge =
@@ -132,23 +136,6 @@ class GoalService {
       // any calorie number would be invented rather than calculated.
       isConfigured: age > 0 && targetWeight > 0,
     );
-  }
-
-  /// [value] when it is a usable number, [fallback] otherwise.
-  ///
-  /// "Usable" is non-null, finite, and at or above [floor] — strictly above it
-  /// when [floorExclusive], which is how height rejects a stored `0` that
-  /// would divide BMI by zero while target weight keeps `0` as its legitimate
-  /// "not set yet" value.
-  static double _finiteOr(
-    double? value, {
-    required double fallback,
-    required double floor,
-    bool floorExclusive = false,
-  }) {
-    if (value == null || !value.isFinite) return fallback;
-    if (floorExclusive ? value <= floor : value < floor) return fallback;
-    return value;
   }
 
   Future<GoalSnapshot> snapshot() async {

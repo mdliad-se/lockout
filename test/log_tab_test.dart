@@ -206,6 +206,69 @@ void main() {
           reason: "the skipped session's 500 kcal must not be summed in");
     });
 
+    // `BackupService` only started coercing numeric columns on import
+    // during this branch, and SQLite's REAL affinity is advisory: a backup
+    // hand-edited or written by an older build restores the literal text
+    // 'heavy' straight into `total_volume_kg`, where it stays TEXT. LOG
+    // hydrates every row through `SessionLog.fromMap` inside `_loadLogs()`,
+    // so the cast threw before `setState(_isLoading = false)` — and it
+    // threw *upstream* of `kgWhole`'s non-finite fallback, which is on this
+    // screen precisely to keep a bad volume from taking the tab down. The
+    // guard never got the chance to run. A raw insert is the only way to
+    // build the row: every typed path coerces on the way in.
+    testWidgets('a session whose volume is text still renders the archive',
+        (tester) async {
+      final database = await DatabaseService.instance.database;
+      await database.insert('session_logs', {
+        'id': 's1',
+        'day_name': 'MON - Legs',
+        'date_str': '2026-09-07',
+        'duration_seconds': 3060,
+        'total_volume_kg': 'heavy',
+        'status': 'completed',
+        'routine_id': '',
+        'day_id': '',
+        'total_sets': 22,
+        'kcal_burned': 0.0,
+      });
+
+      await pumpLog(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('MON - Legs'), findsOneWidget,
+          reason: 'one unreadable column must cost the user a number, not '
+              'the whole tab');
+      expect(find.text('0 kg'), findsOneWidget,
+          reason: 'an unreadable volume reads as zero, the same honest '
+              '"nothing on record" BODY already shows for a poisoned weight');
+    });
+
+    testWidgets('a set whose weight is text still renders the detail',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertSession(db, _log(id: 's1', dayName: 'MON - Legs'));
+      final database = await db.database;
+      await database.insert('set_logs', {
+        'id': 's1-1',
+        'session_exercise_id': '',
+        'session_id': 's1',
+        'exercise_name': 'Squat',
+        'set_index': 0,
+        'weight_kg': 'heavy',
+        'reps': 5,
+        'is_completed': 1,
+      });
+
+      await pumpLog(tester);
+      await tester.tap(find.text('MON - Legs'));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Squat'), findsOneWidget);
+      // Zero weight already has a rendering on this screen: reps only.
+      expect(find.text('5 reps'), findsOneWidget);
+    });
+
     testWidgets(
         'an archive card is closed by default: header only, no set detail, '
         'no DELETE ENTRY', (tester) async {

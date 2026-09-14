@@ -160,18 +160,6 @@ void main() {
   });
 
   // Finishing a session is the only place set data is ever produced, and it
-  // wrote two tables back to back with nothing joining them. `deleteSessionLog`
-  // and `restoreSessionLog` were both given transactions on the argument that
-  // a header without its sets is indistinguishable from a legitimately
-  // detail-free entry; the create path has the identical exposure and was
-  // left out.
-  //
-  // Sequential writes pass every other test in this suite, because nothing
-  // else makes the second one fail. This installs the same aborting trigger
-  // `database_service_test.dart` uses, drives a real session through the
-  // real screen, and asserts the header does not survive the failure — a
-  // lock on the call site, not just on the DatabaseService method.
-  // Finishing a session is the only place set data is ever produced, and it
   // wrote two tables back to back with nothing joining them: a kill between
   // the header insert and the sets — a low-memory process death right after
   // a workout, when the app is most likely to be backgrounded — left a
@@ -247,6 +235,50 @@ void main() {
       // flaky rather than a real guarantee. The outcome above — real values
       // rendered, never a prompt for data that exists — is what that
       // sequencing exists to guarantee, and is what is verified here.
+    });
+  });
+
+  // TODAY does not hydrate these two rows through a model factory — it folds
+  // the raw maps itself — so the tolerant reads added to `SessionLog.fromMap`
+  // and `FoodEntry.fromMap` do not cover it. Same restore vector, same
+  // `_loadSummary()` shape: the cast threw before `setState`, and the hub sat
+  // on its spinner with no route off it.
+  group('a poisoned row does not strand the hub', () {
+    testWidgets('text in kcal and kcal_burned counts as zero, not a throw',
+        (tester) async {
+      final db = DatabaseService.instance;
+      final database = await db.database;
+      // Raw inserts: every typed path coerces on the way in.
+      await database.insert('food_logs', {
+        'id': 'f1',
+        'date_str': today,
+        'meal_slot': 'Breakfast',
+        'name': 'Oats',
+        'kcal': 'loads',
+        'protein_g': 0.0,
+        'carb_g': 0.0,
+        'fat_g': 0.0,
+      });
+      await database.insert('session_logs', {
+        'id': 's1',
+        'day_name': 'Legs',
+        'date_str': today,
+        'duration_seconds': 1800,
+        'total_volume_kg': 1000.0,
+        'status': 'completed',
+        'routine_id': '',
+        'day_id': '',
+        'total_sets': 4,
+        'kcal_burned': 'loads',
+      });
+
+      await tester.pumpWidget(MaterialApp(home: TodayTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      // The session still happened, so the row must not claim otherwise —
+      // only its unreadable estimate is lost.
+      expect(find.text('NO SESSION YET'), findsNothing);
     });
   });
 }

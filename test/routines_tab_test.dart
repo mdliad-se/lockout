@@ -332,43 +332,14 @@ void main() {
       expect(stored, 0.0);
     });
 
-    testWidgets('exercise form: NaN is rejected the same way', (tester) async {
-      final day = await seedRoutineWithDay();
-      await DatabaseService.instance.insertExercise(ExerciseDef(
-        id: 'e1',
-        dayId: day.id,
-        name: 'Bench Press',
-        targetSets: 4,
-        targetRepsMin: 8,
-        targetRepsMax: 12,
-      ).toMap());
-
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
-      await settle(tester);
-      await tester.tap(find.text('Push Day'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Bench Press'));
-      await tester.pumpAndSettle();
-
-      await tester.enterText(
-        find.descendant(
-          of: find.widgetWithText(JinatraInput, 'WEIGHT (KG)'),
-          matching: find.byType(TextField),
-        ),
-        'NaN',
-      );
-      await tester.pump();
-      await tester.ensureVisible(find.text('SAVE CHANGES'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('SAVE CHANGES'));
-      await tester.pumpAndSettle();
-
-      final rows = await DatabaseService.instance.getExercisesForDay(day.id);
-      final stored = (rows.single['target_weight_kg'] as num).toDouble();
-      expect(stored.isNaN, isFalse, reason: 'NaN was persisted');
-      expect(stored, 0.0);
-    });
-
+    // There was a NaN twin of the test above here. It was vacuous: SQLite
+    // stores a NaN REAL as NULL, so the assertion it made held with the
+    // guard removed as well as with it in place — it proved a property of
+    // the database, not of the field. NaN's rejection is a property of the
+    // parse, and it is asserted where the parse lives, in
+    // `numeric_guard_test.dart`. Infinity, which SQLite does store in a
+    // REAL column, is what makes the test above worth driving through the
+    // screen.
     // The guard must not become a blanket "everything is zero".
     testWidgets('exercise form: an ordinary weight still round-trips',
         (tester) async {

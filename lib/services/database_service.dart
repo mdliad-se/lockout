@@ -397,6 +397,19 @@ class DatabaseService {
     return await db.query('session_logs', where: 'date_str = ?', whereArgs: [dateStr]);
   }
 
+  /// Writes one session header and nothing else.
+  ///
+  /// Superseded in production by [insertSessionWithSets]: a header written
+  /// on its own, with the sets following in a second statement, is the split
+  /// write that left a session claiming `totalSets: N` with nothing behind
+  /// it when the process died in between. It survives because five suites
+  /// seed archive rows through it and a transaction they do not need would
+  /// only obscure what they are arranging.
+  ///
+  /// `@visibleForTesting` so reaching for it from a screen is an analyzer
+  /// complaint at the call site, rather than a regression that only a grep
+  /// over `lib/` would ever notice.
+  @visibleForTesting
   Future<void> insertSessionLog(Map<String, dynamic> row) async {
     final db = await instance.database;
     await db.insert('session_logs', row, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -510,7 +523,13 @@ class DatabaseService {
       saveSetting('active_routine_id', routineId);
 
   // --- SET LOGS ---
-  /// Persists every set of a finished session in one transaction.
+  /// Persists a batch of set rows, with no session header attached.
+  ///
+  /// The other half of the split write [insertSessionLog] documents, and
+  /// test-only for the same reason: production writes both tables together
+  /// through [insertSessionWithSets]. The batch is atomic among the sets;
+  /// what it cannot do is tie them to the header they belong to.
+  @visibleForTesting
   Future<void> insertSetLogs(List<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
     final db = await instance.database;

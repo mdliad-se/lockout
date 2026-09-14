@@ -114,30 +114,127 @@ void main() {
   });
 
   // Structural, in the same spirit as the v2 style sweep's source checks:
-  // the value of one shared guard is that no screen re-derives it. A new
-  // `double.tryParse` in a screen is how this whole family of defects got
-  // in, one field at a time.
-  group('no screen re-derives the parse', () {
-    test('lib/screens contains no bare double.tryParse', () {
+  // the value of one shared guard is that nothing re-derives it. A new
+  // `double.tryParse` is how this whole family of defects got in, one field
+  // at a time — and the first version of this check scanned `lib/screens`
+  // only, which is exactly how `GoalService` kept its own private copy of
+  // the finite/floor rule for a whole branch after the consolidation was
+  // declared done. Services read the same poisoned rows screens do.
+  group('nothing in lib re-derives the parse', () {
+    test('the scanner reads code, not prose, and follows a split call', () {
+      const sample = '''
+/* double.tryParse inside a block comment is prose, not a call */
+// and so is double.tryParse in a line comment
+/// as is `double.tryParse` in a doc comment
+final label = 'double.tryParse';
+final value = double
+    .tryParse(raw);
+''';
+      final matches =
+          RegExp(r'double\s*\.\s*tryParse').allMatches(blankComments(sample));
+      // Only the real call and the string literal survive — and the split
+      // call is found, which the old line-by-line check could not see.
+      expect(matches, hasLength(2));
+    });
+
+    test('lib contains no bare double.tryParse outside NumericGuard', () {
       final offenders = <String>[];
-      for (final file in Directory('lib/screens')
+      var scanned = 0;
+      for (final file in Directory('lib')
           .listSync(recursive: true)
           .whereType<File>()
           .where((f) => f.path.endsWith('.dart'))) {
-        final source = file.readAsStringSync();
-        for (final line in source.split('\n')) {
-          final code = line.trim();
-          // Prose about the hazard is not the hazard. `int.tryParse` is
-          // fine either way: ints have no Infinity or NaN to let through.
-          if (code.startsWith('//')) continue;
-          if (code.contains('double.tryParse')) {
-            offenders.add('${file.path}: $code');
-          }
+        final path = file.path.replaceAll(r'\', '/');
+        // The one call the whole rule exists to concentrate in one place.
+        if (path.endsWith('lib/services/numeric_guard.dart')) continue;
+        scanned++;
+        // `int.tryParse` is fine either way: ints have no Infinity or NaN
+        // to let through.
+        final code = blankComments(file.readAsStringSync());
+        for (final match in RegExp(r'double\s*\.\s*tryParse').allMatches(code)) {
+          final line = '\n'.allMatches(code.substring(0, match.start)).length;
+          offenders.add('$path:${line + 1}');
         }
       }
+      // Without this, a mistyped directory makes the loop iterate zero
+      // times and the offender list come back empty — the shape in which
+      // this test passes loudly while checking nothing at all.
+      expect(scanned, greaterThan(0),
+          reason: 'scanned no Dart files: the path is wrong');
       expect(offenders, isEmpty,
           reason: 'route the value through NumericGuard instead, so the '
               'finite/floor rule stays in one place');
     });
   });
+}
+
+/// [source] with every comment blanked out, character for character, so an
+/// offset into the result still maps to the same line of the original.
+///
+/// A line-by-line filter cannot do this job: it misses the `double\n
+/// .tryParse(` shape `dart format` produces from a long enough expression,
+/// and it flags `/* prose */` it has no way to recognise as a comment.
+///
+/// String literals are skipped rather than blanked, so text *about* the
+/// hazard in a message still reads as text; interpolation holding its own
+/// quotes (`'${map['k']}'`) would end the skip early, which errs toward
+/// scanning more of the file as code rather than less.
+String blankComments(String source) {
+  final out = source.split('');
+  var i = 0;
+
+  void blank(int at) {
+    if (source[at] != '\n') out[at] = ' ';
+  }
+
+  while (i < source.length) {
+    if (source.startsWith('//', i)) {
+      while (i < source.length && source[i] != '\n') {
+        blank(i++);
+      }
+    } else if (source.startsWith('/*', i)) {
+      // Dart's block comments nest.
+      var depth = 0;
+      while (i < source.length) {
+        if (source.startsWith('/*', i)) {
+          depth++;
+          blank(i++);
+          blank(i++);
+        } else if (source.startsWith('*/', i)) {
+          depth--;
+          blank(i++);
+          blank(i++);
+          if (depth == 0) break;
+        } else {
+          blank(i++);
+        }
+      }
+    } else if (source[i] == "'" || source[i] == '"') {
+      i = _endOfStringLiteral(source, i);
+    } else {
+      i++;
+    }
+  }
+  return out.join();
+}
+
+/// The offset just past the literal opening at [start].
+int _endOfStringLiteral(String source, int start) {
+  final quote = source[start];
+  final isRaw = start > 0 && (source[start - 1] == 'r' || source[start - 1] == 'R');
+  final tripled = quote + quote + quote;
+  final delimiter = source.startsWith(tripled, start) ? tripled : quote;
+  var i = start + delimiter.length;
+  while (i < source.length) {
+    if (!isRaw && source[i] == r'\') {
+      i += 2;
+      continue;
+    }
+    if (source.startsWith(delimiter, i)) return i + delimiter.length;
+    // An unterminated single-quoted literal ends at the newline; bail there
+    // rather than swallowing the rest of the file.
+    if (delimiter.length == 1 && source[i] == '\n') return i;
+    i++;
+  }
+  return source.length;
 }
