@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'database_service.dart';
+import 'numeric_guard.dart';
 
 /// Outcome of an import attempt, so the UI can report precisely rather than
 /// showing a generic failure.
@@ -95,6 +96,44 @@ class BackupService {
     return importFromJson(raw);
   }
 
+  /// Forces every value destined for a REAL or INTEGER column to be a
+  /// number, so the rest of the app can keep reading those columns as one.
+  ///
+  /// A backup is a plain JSON file the user can hand-edit, and SQLite's
+  /// column affinity is advisory: `"weight_kg": "heavy"` is stored as the
+  /// literal text `heavy` in a REAL column, after which
+  /// `bodyRows.first['weight_kg'] as num` throws a `TypeError` — inside
+  /// `_loadData()`, before its `setState(_isLoading = false)`, which leaves
+  /// BODY, FOOD and HOME on a spinner forever with no error and no retry.
+  /// Guarding here rather than in each of the five reading screens means one
+  /// audit point instead of five try/catches that each hide the symptom.
+  ///
+  /// Text that spells a number keeps its value (`"72.5"` -> `72.5`), because
+  /// that is plainly what the file meant. Anything else — a word, a list, a
+  /// null, a non-finite number — becomes `0`, the same "not recorded" value
+  /// unparseable input already lands on everywhere else in the app. Dropping
+  /// the key instead is not an option: every numeric column in this schema
+  /// is `NOT NULL`, and several carry no default, so a dropped key would
+  /// abort the whole restore over one bad cell. Columns the schema declares
+  /// as TEXT are left exactly as they are.
+  static Map<String, dynamic> _coerceRow(
+    Map<String, dynamic> row,
+    Map<String, String> columnTypes,
+  ) {
+    final out = <String, dynamic>{};
+    row.forEach((key, value) {
+      final type = columnTypes[key];
+      if (type == 'REAL') {
+        out[key] = NumericGuard.read(value) ?? 0.0;
+      } else if (type == 'INTEGER') {
+        out[key] = (NumericGuard.read(value) ?? 0.0).round();
+      } else {
+        out[key] = value;
+      }
+    });
+    return out;
+  }
+
   /// Validates and applies a backup document. Exposed separately from the file
   /// picker so it can be unit tested without touching the filesystem.
   Future<ImportResult> importFromJson(String raw) async {
@@ -137,12 +176,13 @@ class BackupService {
       if (rows is! List) {
         return ImportResult.failure('Table "$table" is malformed.');
       }
+      final types = await DatabaseService.instance.columnTypes(table);
       final typed = <Map<String, dynamic>>[];
       for (final row in rows) {
         if (row is! Map) {
           return ImportResult.failure('Table "$table" has a malformed row.');
         }
-        typed.add(Map<String, dynamic>.from(row));
+        typed.add(_coerceRow(Map<String, dynamic>.from(row), types));
       }
       tables[table] = typed;
       total += typed.length;

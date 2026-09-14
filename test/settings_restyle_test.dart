@@ -305,7 +305,7 @@ void main() {
     }
   });
 
-  group('a restore that cannot be read back still finishes', () {
+  group('a restore of a hand-edited backup still finishes', () {
     /// The two channels `NotificationService.rescheduleAll` touches. Both
     /// must be mocked: an unmocked platform channel under `flutter test`
     /// never answers at all, so the `await` inside `init()` hangs forever
@@ -321,15 +321,25 @@ void main() {
         'a backup carrying a non-numeric weight_kg still reschedules, still '
         'calls back and still tells the user the import applied',
         (tester) async {
-      // `BackupService` coerces rows to `Map<String, dynamic>` without
-      // per-column validation, so a hand-edited backup puts the string
-      // 'heavy' into `body_logs.weight_kg` — a REAL-affinity column SQLite
-      // keeps as TEXT. `_loadSettings` reads it straight back through
+      // A hand-edited backup puts the string 'heavy' into
+      // `body_logs.weight_kg` — a REAL-affinity column SQLite will happily
+      // keep as TEXT. `_loadSettings` reads it back through
       // `GoalService.snapshot()`, whose `bodyRows.first['weight_kg'] as num`
-      // throws `TypeError`. Unguarded, that throw lands on the `await` that
-      // sits ahead of `rescheduleAll()`, `onSettingsUpdated()` and the
-      // "Import complete" toast: the import applies, the OS keeps the
-      // pre-restore reminder schedule forever and the user is told nothing.
+      // threw a `TypeError` on the `await` that sits ahead of
+      // `rescheduleAll()`, `onSettingsUpdated()` and the "Import complete"
+      // toast: the import applied, the OS kept the pre-restore reminder
+      // schedule forever and the user was told nothing.
+      //
+      // The try/catch that first covered this only protected Settings; the
+      // other four `snapshot()` callers were still exposed. The coercion now
+      // happens a layer down, inside `BackupService.importFromJson`, so the
+      // bad value never reaches the column at all and every caller is
+      // covered at once. This test still drives the whole import tail — the
+      // reschedule, the callback and the toast are what it was written to
+      // pin — but the expected outcome is now a clean read-back rather than
+      // a reported failure. Settings' try/catch stays as a belt for any
+      // future read-back failure; nothing arriving through an import can
+      // trip it any more.
       final raw = jsonEncode({
         'app': 'lockout',
         'schemaVersion': 2,
@@ -393,9 +403,10 @@ void main() {
       await tester.tap(find.text('CHOOSE FILE'));
       await settle(tester);
 
-      // The rows did land — this is a completed import, not a rejected one.
+      // The rows did land — this is a completed import, not a rejected one
+      // — and the poisoned cell is a number by the time it is stored.
       final rows = await DatabaseService.instance.getBodyLogs();
-      expect(rows.single['weight_kg'], 'heavy');
+      expect(rows.single['weight_kg'], isA<num>());
 
       await settle(tester);
       expect(tester.takeException(), isNull);
@@ -403,8 +414,8 @@ void main() {
           reason: 'the imported reminder settings must reach the OS');
       expect(callbacks, 1, reason: 'onSettingsUpdated must still fire');
       expect(find.textContaining('Import complete'), findsOneWidget);
-      // And the failed read-back is reported rather than swallowed.
-      expect(find.textContaining('could not be read'), findsOneWidget);
+      expect(find.textContaining('could not be read'), findsNothing,
+          reason: 'there is nothing left for the read-back to choke on');
 
       // Flush the toast's auto-dismiss Timer before teardown.
       await tester.pump(const Duration(seconds: 6));

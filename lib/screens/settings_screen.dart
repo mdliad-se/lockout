@@ -3,6 +3,7 @@ import '../services/backup_service.dart';
 import '../services/database_service.dart';
 import '../services/goal_service.dart';
 import '../services/notification_service.dart';
+import '../services/numeric_guard.dart';
 import '../services/nutrition_planner.dart';
 import '../services/units.dart';
 import '../theme/app_palette.dart';
@@ -172,12 +173,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// downstream of the goal profile. Anything that is not a finite,
   /// non-negative number is stored as '0' — exactly where unparseable text
   /// already lands on read, and the value that leaves `isConfigured` false so
-  /// the user is asked for a real target rather than shown a fabricated plan.
+  /// the user is asked for a real target rather than shown a fabricated
+  /// plan. The finite/non-negative rule itself is `NumericGuard`'s, shared
+  /// with BODY's measurement form and the routine builder's weight field.
   static String _sanitisedTargetWeightKg(String raw) {
     final text = raw.trim();
-    final parsed = double.tryParse(text);
-    if (parsed == null || !parsed.isFinite || parsed < 0) return '0';
-    return text;
+    return NumericGuard.parse(text, min: 0.0) == null ? '0' : text;
   }
 
   /// Height in cm from whichever unit the user is currently editing.
@@ -195,16 +196,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _resolveHeightCm() {
     if (_heightUnit == 'ft') {
       final feet = int.tryParse(_heightFtCtrl.text.trim()) ?? 0;
-      final inches = double.tryParse(_heightInCtrl.text.trim()) ?? 0;
+      final inches = NumericGuard.parse(_heightInCtrl.text) ?? 0;
       final cm = Units.feetInchesToCm(feet, inches);
       return _usableHeightCm(cm);
     }
-    final cm = double.tryParse(_heightCmCtrl.text.trim()) ?? 0;
+    final cm = NumericGuard.parse(_heightCmCtrl.text) ?? 0;
     return _usableHeightCm(cm);
   }
 
   static double _usableHeightCm(double cm) =>
-      cm.isFinite && cm > 0 ? cm : 175.0;
+      NumericGuard.finite(cm, min: 0.0, minExclusive: true) ?? 175.0;
 
   /// Keeps the hidden unit's fields in sync so switching units never loses
   /// the value the user just typed.

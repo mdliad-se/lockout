@@ -355,8 +355,13 @@ class TodayTabState extends State<TodayTab> {
       kcalBurned: burn ?? 0.0,
     );
 
-    await DatabaseService.instance.insertSessionLog(session.toMap());
-    await DatabaseService.instance.insertSetLogs(setRows);
+    // One transaction, not two writes: a kill between a header insert and
+    // its sets leaves a session claiming `totalSets: N` with nothing behind
+    // it, which nothing downstream can tell apart from a legitimately
+    // detail-free entry. Same argument `deleteSessionLog` and
+    // `restoreSessionLog` were given transactions for.
+    await DatabaseService.instance
+        .insertSessionWithSets(session.toMap(), setRows);
 
     if (!mounted) return;
     // Refresh BURNED TODAY (and the rest of the summary) so the hub the user

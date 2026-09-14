@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/goal_service.dart';
+import '../services/numeric_guard.dart';
 import '../services/nutrition_planner.dart';
 import '../services/routine_factory.dart';
 import '../services/units.dart';
@@ -684,27 +685,22 @@ class _MeasurementFormState extends State<_MeasurementForm> {
   /// "reject": `double.tryParse` happily accepts `Infinity`/`-Infinity`
   /// (which then renders as `INFINITY KG` in the hero and breaks the
   /// sparkline's normalisation into NaN) and a non-numeric string used to
-  /// silently fall back to a bogus `0`.
-  double? _parseWeight(String raw) {
-    final text = raw.trim();
-    if (text.isEmpty) return null;
-    final value = double.tryParse(text);
-    if (value == null || !value.isFinite || value <= 0) return null;
-    return value;
-  }
+  /// silently fall back to a bogus `0`. The rule itself lives in
+  /// `NumericGuard`, shared with Settings and the routine builder's weight
+  /// field so all four write sites cannot drift apart.
+  double? _parseWeight(String raw) =>
+      NumericGuard.parse(raw, min: 0.0, minExclusive: true);
 
   /// Parses an optional waist measurement. Blank text and a literal "0"
   /// both mean "not measured" and store `0.0` — before this fix, blank
   /// silently stored `0.0` but typing the more explicit "0" was rejected as
   /// invalid, two different answers to the same question. `null` means
   /// "reject": `Infinity`/`-Infinity` and a negative value are not a real
-  /// waist measurement either way.
+  /// waist measurement either way. Shares `NumericGuard` with the weight
+  /// parse above; only the empty-means-zero rule is local to waist.
   double? _parseWaist(String raw) {
-    final text = raw.trim();
-    if (text.isEmpty) return 0.0;
-    final value = double.tryParse(text);
-    if (value == null || !value.isFinite || value < 0) return null;
-    return value;
+    if (raw.trim().isEmpty) return 0.0;
+    return NumericGuard.parse(raw, min: 0.0);
   }
 
   Future<void> _save() async {

@@ -7,6 +7,7 @@ import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/routines_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/theme/app_palette.dart';
+import 'package:lockout/widgets/jinatra_input.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
 
 import 'test_helpers.dart';
@@ -279,6 +280,130 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
+    });
+
+    // `double.tryParse` accepts the literal text 'Infinity', '-Infinity' and
+    // 'NaN', and this field carries no `inputFormatters`, so the raw string
+    // reached `target_weight_kg`. From there it is copied into every live
+    // set the exercise starts, multiplied into `total_volume_kg`, and
+    // persisted — after which `LogTab`'s `toInt()` throws on every launch
+    // and the archive row that would let the user delete it is the thing
+    // that crashes. Three sibling forms already reject this; this one is
+    // the hole they were fixed around.
+    testWidgets(
+        'exercise form: a non-finite weight cannot reach the database',
+        (tester) async {
+      final day = await seedRoutineWithDay();
+      await DatabaseService.instance.insertExercise(ExerciseDef(
+        id: 'e1',
+        dayId: day.id,
+        name: 'Bench Press',
+        targetSets: 4,
+        targetRepsMin: 8,
+        targetRepsMax: 12,
+        targetWeightKg: 60,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Bench Press'));
+      await tester.pumpAndSettle();
+
+      final weightField = find.descendant(
+        of: find.widgetWithText(JinatraInput, 'WEIGHT (KG)'),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(weightField, 'Infinity');
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('SAVE CHANGES'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SAVE CHANGES'));
+      await tester.pumpAndSettle();
+
+      final rows =
+          await DatabaseService.instance.getExercisesForDay(day.id);
+      final stored = (rows.single['target_weight_kg'] as num).toDouble();
+      expect(stored.isFinite, isTrue,
+          reason: 'Infinity was persisted into target_weight_kg');
+      expect(stored, 0.0);
+    });
+
+    testWidgets('exercise form: NaN is rejected the same way', (tester) async {
+      final day = await seedRoutineWithDay();
+      await DatabaseService.instance.insertExercise(ExerciseDef(
+        id: 'e1',
+        dayId: day.id,
+        name: 'Bench Press',
+        targetSets: 4,
+        targetRepsMin: 8,
+        targetRepsMax: 12,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Bench Press'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.descendant(
+          of: find.widgetWithText(JinatraInput, 'WEIGHT (KG)'),
+          matching: find.byType(TextField),
+        ),
+        'NaN',
+      );
+      await tester.pump();
+      await tester.ensureVisible(find.text('SAVE CHANGES'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SAVE CHANGES'));
+      await tester.pumpAndSettle();
+
+      final rows = await DatabaseService.instance.getExercisesForDay(day.id);
+      final stored = (rows.single['target_weight_kg'] as num).toDouble();
+      expect(stored.isNaN, isFalse, reason: 'NaN was persisted');
+      expect(stored, 0.0);
+    });
+
+    // The guard must not become a blanket "everything is zero".
+    testWidgets('exercise form: an ordinary weight still round-trips',
+        (tester) async {
+      final day = await seedRoutineWithDay();
+      await DatabaseService.instance.insertExercise(ExerciseDef(
+        id: 'e1',
+        dayId: day.id,
+        name: 'Bench Press',
+        targetSets: 4,
+        targetRepsMin: 8,
+        targetRepsMax: 12,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await settle(tester);
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Bench Press'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.descendant(
+          of: find.widgetWithText(JinatraInput, 'WEIGHT (KG)'),
+          matching: find.byType(TextField),
+        ),
+        '62.5',
+      );
+      await tester.pump();
+      await tester.ensureVisible(find.text('SAVE CHANGES'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SAVE CHANGES'));
+      await tester.pumpAndSettle();
+
+      final rows = await DatabaseService.instance.getExercisesForDay(day.id);
+      expect((rows.single['target_weight_kg'] as num).toDouble(), 62.5);
     });
   });
 }

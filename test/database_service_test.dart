@@ -317,6 +317,51 @@ void main() {
           reason: 'both set rows are untouched');
     });
 
+    // Create is the third write of this pair and the only one that ever
+    // produces set data in the first place. `TodayTab._finishSession` used
+    // to call `insertSessionLog` and `insertSetLogs` back to back with
+    // nothing joining them, so a kill between the two — a low-memory
+    // process death right after a workout, the moment the app is most
+    // likely to be backgrounded — left a header claiming `totalSets: N`
+    // with no sets behind it. Indistinguishable, as the two tests above
+    // argue, from a legitimately detail-free entry, so nothing downstream
+    // can even notice it happened.
+    test('a failed set insert rolls the new session header back out',
+        () async {
+      final db = DatabaseService.instance;
+      await failSetLogsOn('INSERT');
+
+      await expectLater(
+        db.insertSessionWithSets(sessionRow(), setRows()),
+        throwsA(anything),
+      );
+
+      expect(await db.getSessionLogs(), isEmpty,
+          reason: 'a header with no sets must not survive the failed write');
+      expect(await db.getSetLogsForSession('tx-1'), isEmpty);
+    });
+
+    // The hazard the transaction introduces: re-entering the database
+    // through the `database` getter from inside `db.transaction` deadlocks
+    // sqflite, and a deadlock is indistinguishable from a slow test until
+    // the harness times out. Only execution can rule it out.
+    test('the happy path commits both tables and does not deadlock',
+        () async {
+      final db = DatabaseService.instance;
+      await db.insertSessionWithSets(sessionRow(), setRows());
+
+      expect(await db.getSessionLogs(), hasLength(1));
+      expect(await db.getSetLogsForSession('tx-1'), hasLength(2));
+    });
+
+    test('a session with no sets is still written', () async {
+      final db = DatabaseService.instance;
+      await db.insertSessionWithSets(sessionRow(), const []);
+
+      expect(await db.getSessionLogs(), hasLength(1));
+      expect(await db.getSetLogsForSession('tx-1'), isEmpty);
+    });
+
     test('a failed set insert rolls the restored header back out', () async {
       final db = DatabaseService.instance;
       await failSetLogsOn('INSERT');

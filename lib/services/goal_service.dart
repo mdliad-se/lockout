@@ -1,4 +1,5 @@
 import 'database_service.dart';
+import 'numeric_guard.dart';
 import 'nutrition_planner.dart';
 import 'training_planner.dart';
 
@@ -155,9 +156,18 @@ class GoalService {
     final profile = await loadProfile();
 
     final bodyRows = await db.getBodyLogs();
+    // `NumericGuard.read` rather than `as num`: `BackupService` only
+    // started coercing numeric columns on import after this branch, so a
+    // database restored by an older build can hold the literal text
+    // 'heavy' in this REAL column. The cast threw a `TypeError` from inside
+    // every caller's `_loadData()`, before its
+    // `setState(_isLoading = false)` — BODY, FOOD and HOME spun forever.
+    // Null here is the same honest "no weight on record" the empty-list
+    // branch above reports, and every caller already renders a prompt for
+    // it, so an unreadable row costs the user a prompt rather than a tab.
     final currentWeight = bodyRows.isEmpty
         ? null
-        : (bodyRows.first['weight_kg'] as num).toDouble();
+        : NumericGuard.read(bodyRows.first['weight_kg']);
 
     final bmi = currentWeight == null
         ? null
@@ -222,8 +232,12 @@ class GoalService {
   /// round, rather than inverted by an accidental same-day tie.
   static double? weightDeltaKg(List<Map<String, dynamic>> bodyLogs) {
     if (bodyLogs.length < 2) return null;
-    final latest = (bodyLogs[0]['weight_kg'] as num).toDouble();
-    final previous = (bodyLogs[1]['weight_kg'] as num).toDouble();
+    // Same untrusted-column hazard as `snapshot()`: null means "cannot be
+    // measured", which is exactly what the fewer-than-two case above
+    // already returns, and which every caller renders as a dash.
+    final latest = NumericGuard.read(bodyLogs[0]['weight_kg']);
+    final previous = NumericGuard.read(bodyLogs[1]['weight_kg']);
+    if (latest == null || previous == null) return null;
     return latest - previous;
   }
 

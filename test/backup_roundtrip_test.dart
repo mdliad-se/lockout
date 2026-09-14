@@ -6,6 +6,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:lockout/models/models.dart';
 import 'package:lockout/services/backup_service.dart';
 import 'package:lockout/services/database_service.dart';
+import 'package:lockout/services/goal_service.dart';
 
 /// Exercises the real export/import code against a real SQLite database.
 ///
@@ -417,6 +418,170 @@ void main() {
       expect(result.ok, isTrue, reason: result.message);
       final routines = await DatabaseService.instance.getRoutines();
       expect(routines.single['name'], 'Legacy Routine');
+    });
+  });
+  // A backup file is untrusted input: it is a plain JSON document the user
+  // can hand-edit, and `restoreTables` writes each value verbatim. SQLite's
+  // column affinity is advisory, so `"weight_kg": "heavy"` is stored as the
+  // literal text 'heavy' in a REAL column and every app-facing read of it
+  // (`bodyRows.first['weight_kg'] as num`) throws a `TypeError`. That throw
+  // escapes `_loadData()` before its `setState(_isLoading = false)`, so
+  // BODY, FOOD and HOME sit on a spinner forever with no error and no
+  // retry. The coercion belongs at the import, one layer down, rather than
+  // in a try/catch on each of the five callers.
+  group('import coerces non-numeric values out of numeric columns', () {
+    Future<ImportResult> importBody(Object? weight, {Object? waist = 0.0}) {
+      return BackupService.instance.importFromJson(jsonEncode({
+        'app': 'lockout',
+        'schemaVersion': 2,
+        'data': {
+          'body_logs': [
+            {
+              'id': 'b1',
+              'date_str': '2026-09-10',
+              'weight_kg': weight,
+              'waist_cm': waist,
+            }
+          ],
+        },
+      }));
+    }
+
+    test('a hand-edited string in a REAL column is not stored verbatim',
+        () async {
+      final result = await importBody('heavy');
+      expect(result.ok, isTrue, reason: result.message);
+
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect(rows.single['weight_kg'], isA<num>(),
+          reason: 'the text "heavy" reached a REAL column unchanged');
+    });
+
+    test('the app-facing read survives that backup', () async {
+      await importBody('heavy');
+      // The read every one of BODY, FOOD, HOME and Settings makes.
+      final snap = await GoalService.instance.snapshot();
+      expect(snap.currentWeightKg, anyOf(isNull, isA<double>()));
+      expect(GoalService.weightDeltaKg(snap.bodyLogs), isNull);
+      // And the model BODY hydrates its list from.
+      expect(() => snap.bodyLogs.map(BodyEntry.fromMap).toList(),
+          returnsNormally);
+    });
+
+    test('numeric text is coerced to the number it spells, not discarded',
+        () async {
+      final result = await importBody('72.5');
+      expect(result.ok, isTrue, reason: result.message);
+
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect((rows.single['weight_kg'] as num).toDouble(), 72.5);
+    });
+
+    test('a genuine number is left exactly as it was', () async {
+      await importBody(81.25, waist: 84.0);
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect((rows.single['weight_kg'] as num).toDouble(), 81.25);
+      expect((rows.single['waist_cm'] as num).toDouble(), 84.0);
+    });
+
+    test(
+        'a null in a NOT NULL numeric column becomes zero, not a failed '
+        'restore', () async {
+      final result = await importBody(null);
+      expect(result.ok, isTrue, reason: result.message);
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect((rows.single['weight_kg'] as num).toDouble(), 0.0);
+    });
+
+    test('INTEGER columns are coerced too', () async {
+      final result = await BackupService.instance.importFromJson(jsonEncode({
+        'app': 'lockout',
+        'schemaVersion': 2,
+        'data': {
+          'food_logs': [
+            {
+              'id': 'f1',
+              'date_str': '2026-09-10',
+              'meal_slot': 'LUNCH',
+              'name': 'Rice',
+              'kcal': 'lots',
+              'protein_g': 8.0,
+              'carb_g': 80.0,
+              'fat_g': 1.0,
+            }
+          ],
+        },
+      }));
+      expect(result.ok, isTrue, reason: result.message);
+
+      final rows =
+          await DatabaseService.instance.getFoodLogsForDate('2026-09-10');
+      expect(rows.single['kcal'], isA<int>());
+      expect(rows.single['kcal'], 0);
+    });
+
+    test('TEXT columns are untouched by the coercion', () async {
+      await importBody(70.0);
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect(rows.single['date_str'], '2026-09-10');
+      expect(rows.single['id'], 'b1');
+    });
+  });
+
+  // The import guard above stops new poison arriving. A database written by
+  // a build that shipped before it can still be holding some, and there is
+  // no migration that can tell a poisoned REAL column from a good one
+  // without reading every row, so the read side has to tolerate it too.
+  group('GoalService tolerates a column that is already poisoned', () {
+    Future<void> poisonBodyWeight(Object value) async {
+      final db = await DatabaseService.instance.database;
+      await db.delete('body_logs');
+      // `rawInsert` rather than the typed helper: this is deliberately the
+      // shape an older `restoreTables` produced, text in a REAL column.
+      await db.rawInsert(
+        'INSERT INTO body_logs (id, date_str, weight_kg, waist_cm) '
+        'VALUES (?, ?, ?, ?)',
+        ['b1', '2026-09-10', value, 0.0],
+      );
+    }
+
+    test('snapshot() reports no usable weight instead of throwing', () async {
+      await poisonBodyWeight('heavy');
+      final snap = await GoalService.instance.snapshot();
+      expect(snap.currentWeightKg, isNull);
+      expect(snap.bmi, isNull);
+      expect(snap.nutrition, isNull);
+    });
+
+    test('weightDeltaKg skips a pair it cannot subtract', () async {
+      final db = await DatabaseService.instance.database;
+      await db.delete('body_logs');
+      await db.rawInsert(
+        'INSERT INTO body_logs (id, date_str, weight_kg, waist_cm) '
+        'VALUES (?, ?, ?, ?)',
+        ['b2', '2026-09-11', 'heavy', 0.0],
+      );
+      await db.rawInsert(
+        'INSERT INTO body_logs (id, date_str, weight_kg, waist_cm) '
+        'VALUES (?, ?, ?, ?)',
+        ['b1', '2026-09-10', 80.0, 0.0],
+      );
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect(GoalService.weightDeltaKg(rows), isNull);
+    });
+
+    test('BodyEntry.fromMap hydrates rather than throwing', () async {
+      await poisonBodyWeight('heavy');
+      final rows = await DatabaseService.instance.getBodyLogs();
+      final entry = BodyEntry.fromMap(rows.single);
+      expect(entry.id, 'b1');
+      expect(entry.weightKg, 0.0);
+    });
+
+    test('a good row still reads back exactly', () async {
+      await poisonBodyWeight(78.4);
+      final snap = await GoalService.instance.snapshot();
+      expect(snap.currentWeightKg, 78.4);
     });
   });
 }

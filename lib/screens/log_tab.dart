@@ -20,6 +20,18 @@ String sessionArchiveLine(SessionLog log) => [
       if (log.kcalLabel.isNotEmpty) log.kcalLabel,
     ].join('  -  ');
 
+/// A whole-kilogram label, or `--` when the figure is not a real number.
+///
+/// Belt to the braces `NumericGuard` puts on every write site: `toInt()`
+/// throws `Unsupported operation: Infinity or NaN` rather than returning
+/// anything, and it is called from `build()`, so one poisoned
+/// `total_volume_kg` written by a build shipped before those guards turns
+/// LOG into a red error screen on every launch — including the archive row
+/// whose DELETE ENTRY is the only way to get rid of the bad session. No
+/// migration can find such a row after the fact, so the render side has to
+/// survive it.
+String kgWhole(double kg) => kg.isFinite ? '${kg.toInt()}' : '--';
+
 class LogTab extends StatefulWidget {
   // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
   // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
@@ -163,7 +175,7 @@ class LogTabState extends State<LogTab> {
               eyebrow: 'CONSISTENCY',
               title: _streakLabel,
               subtitle: '${_logs.length} WORKOUTS - '
-                  '${_totalVolumeAllTime.toInt()} KG TOTAL',
+                  '${kgWhole(_totalVolumeAllTime)} KG TOTAL',
               background: JinatraTokens.accentAt(0),
             ),
             Row(
@@ -245,7 +257,7 @@ class LogTabState extends State<LogTab> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${log.totalVolumeKg.toInt()} kg',
+                      '${kgWhole(log.totalVolumeKg)} kg',
                       style: JinatraTokens.monoData(
                         fontSize: 14,
                         color: JinatraTokens.deepTeal,

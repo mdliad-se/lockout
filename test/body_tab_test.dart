@@ -1061,4 +1061,57 @@ void main() {
       expect(byLabel['BMI'], '26.1');
     });
   });
+  // `BackupService` used to write a backup's JSON values verbatim into
+  // REAL-affinity columns, so `"weight_kg": "heavy"` became the literal text
+  // 'heavy' in `body_logs`. Every app-facing read of it — `snapshot()`,
+  // `weightDeltaKg`, `BodyEntry.fromMap` — cast it with `as num` and threw a
+  // `TypeError` from inside `_loadData()`, before its
+  // `setState(_isLoading = false)`. No error surface, no retry: the tab sat
+  // on its spinner until the row was overwritten, which is only possible
+  // from the tab that will not load. The import now coerces, but a database
+  // written by an older build still holds one, so this pins the read side.
+  group('BodyTab with a non-numeric weight column', () {
+    /// Writes the exact shape an older `restoreTables` produced: text in a
+    /// REAL column. `rawInsert`, because the typed helper cannot express it.
+    Future<void> poisonWeight(String id, String dateStr, Object value) async {
+      final database = await DatabaseService.instance.database;
+      await database.rawInsert(
+        'INSERT INTO body_logs (id, date_str, weight_kg, waist_cm) '
+        'VALUES (?, ?, ?, ?)',
+        [id, dateStr, value, 0.0],
+      );
+    }
+
+    testWidgets('leaves its loading state instead of spinning forever',
+        (tester) async {
+      await poisonWeight('b1', '2026-09-10', 'heavy');
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(home: BodyTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(CircularProgressIndicator), findsNothing,
+          reason: 'BODY never left its loading state');
+      expect(find.byType(HeroCard), findsWidgets,
+          reason: 'the screen body must actually be on screen');
+    });
+
+    testWidgets('a good row logged after a poisoned one still headlines',
+        (tester) async {
+      await poisonWeight('b1', '2026-09-09', 'heavy');
+      await _insertLog(DatabaseService.instance,
+          id: 'b2', dateStr: '2026-09-10', weightKg: 79.5);
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(home: BodyTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      final hero = tester.widget<HeroCard>(find.byType(HeroCard).first);
+      expect(hero.title, '79.5 KG');
+    });
+  });
 }

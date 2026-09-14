@@ -575,6 +575,38 @@ class DatabaseService {
   Future<void> restoreSessionLog(
     Map<String, dynamic> sessionRow,
     List<Map<String, dynamic>> setRows,
+  ) =>
+      _writeSessionAtomically(sessionRow, setRows);
+
+  /// Writes a finished session and its sets atomically — the create path's
+  /// counterpart to the two transactions above, and the only place set data
+  /// is ever produced in the first place.
+  ///
+  /// `TodayTab._finishSession` previously called `insertSessionLog` and
+  /// `insertSetLogs` back to back. A kill between them — a low-memory
+  /// process death right after a workout, when the app is most likely to be
+  /// backgrounded — left a header claiming `totalSets: N` with nothing
+  /// behind it, the exact state the delete and restore transactions exist
+  /// to prevent.
+  Future<void> insertSessionWithSets(
+    Map<String, dynamic> sessionRow,
+    List<Map<String, dynamic>> setRows,
+  ) =>
+      _writeSessionAtomically(sessionRow, setRows);
+
+  /// The one implementation behind both of the above. Create and restore
+  /// are the same write — a header plus its sets, all or nothing — and two
+  /// copies of it could be fixed apart.
+  ///
+  /// Every statement inside the block goes through [txn]. Reaching for the
+  /// `database` getter (or any method that does, which is all of them) from
+  /// inside `db.transaction` re-enters sqflite's queue and deadlocks:
+  /// nothing throws, the future simply never completes. That is why the
+  /// inserts are written out here rather than delegating to
+  /// `insertSessionLog`/`insertSetLogs`.
+  Future<void> _writeSessionAtomically(
+    Map<String, dynamic> sessionRow,
+    List<Map<String, dynamic>> setRows,
   ) async {
     final db = await instance.database;
     await db.transaction((txn) async {
@@ -606,6 +638,23 @@ class DatabaseService {
     'body_logs',
     'user_settings',
   ];
+
+  /// The declared SQLite type of every column in [table], upper-cased and
+  /// keyed by column name — read from the live schema via `PRAGMA
+  /// table_info` rather than a second, hand-maintained copy of the DDL that
+  /// could drift away from it across a migration.
+  ///
+  /// `BackupService` uses this to tell a REAL or INTEGER column from a TEXT
+  /// one when it coerces an untrusted backup, so a column added by a future
+  /// migration is covered the day it exists.
+  Future<Map<String, String>> columnTypes(String table) async {
+    final db = await instance.database;
+    final cols = await db.rawQuery('PRAGMA table_info($table)');
+    return {
+      for (final c in cols)
+        c['name'] as String: ((c['type'] as String?) ?? '').toUpperCase(),
+    };
+  }
 
   Future<List<Map<String, dynamic>>> dumpTable(String table) async {
     final db = await instance.database;

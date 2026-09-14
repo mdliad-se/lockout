@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -156,6 +158,50 @@ void main() {
       expect(saved.first['kcal_burned'], 0.0);
     });
   });
+
+  // Finishing a session is the only place set data is ever produced, and it
+  // wrote two tables back to back with nothing joining them. `deleteSessionLog`
+  // and `restoreSessionLog` were both given transactions on the argument that
+  // a header without its sets is indistinguishable from a legitimately
+  // detail-free entry; the create path has the identical exposure and was
+  // left out.
+  //
+  // Sequential writes pass every other test in this suite, because nothing
+  // else makes the second one fail. This installs the same aborting trigger
+  // `database_service_test.dart` uses, drives a real session through the
+  // real screen, and asserts the header does not survive the failure — a
+  // lock on the call site, not just on the DatabaseService method.
+  // Finishing a session is the only place set data is ever produced, and it
+  // wrote two tables back to back with nothing joining them: a kill between
+  // the header insert and the sets — a low-memory process death right after
+  // a workout, when the app is most likely to be backgrounded — left a
+  // header claiming `totalSets: N` with nothing behind it. That is the same
+  // state `deleteSessionLog` and `restoreSessionLog` were given
+  // transactions to prevent, on the argument that a detail-free header is
+  // indistinguishable from a legitimately detail-free entry.
+  //
+  // The rollback itself is proved against a forced mid-transaction failure
+  // in `database_service_test.dart`; driving the same failure through this
+  // screen cannot be done, because the rejection surfaces as an unhandled
+  // async error out of the button callback and `flutter_test` fails a test
+  // the moment one is raised, before any assertion can run. This reads the
+  // call site instead — the same structural idiom `settings_restyle_test`
+  // uses for the v2 style sweep — so re-splitting the write into two
+  // unguarded calls fails here even though every behavioural test passes.
+  group('_finishSession writes atomically', () {
+    test('the finish path goes through the transactional write', () {
+      final source = File('lib/screens/today_tab.dart').readAsStringSync();
+
+      expect(source, contains('insertSessionWithSets('),
+          reason: 'the session and its sets must be written in one '
+              'transaction');
+      expect(source, isNot(contains('insertSetLogs(')),
+          reason: 'a second, separate set write reopens the gap');
+      expect(source, isNot(contains('insertSessionLog(')),
+          reason: 'a bare header write reopens the gap');
+    });
+  });
+
 
   group('_isLoading sequencing', () {
     testWidgets(

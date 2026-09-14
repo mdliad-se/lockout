@@ -1,3 +1,4 @@
+import '../services/numeric_guard.dart';
 
 // Routine Scheduling Mode
 enum SchedulingMode { weekday, rotating }
@@ -512,12 +513,19 @@ class BodyEntry {
     };
   }
 
+  /// Reads through `NumericGuard` rather than casting: `weight_kg` is a
+  /// REAL column, but SQLite affinity is advisory and a backup restored by a
+  /// build older than that coercion can have put text there. BODY hydrates
+  /// its whole list through this factory inside `_loadData()`, so one bad
+  /// row used to throw before `setState(_isLoading = false)` and strand the
+  /// tab on its spinner. `0.0` renders as an obviously-wrong `0.0 KG` entry
+  /// the user can delete, which beats a screen they cannot reach.
   factory BodyEntry.fromMap(Map<String, dynamic> map) {
     return BodyEntry(
       id: map['id'],
       dateStr: map['date_str'],
-      weightKg: (map['weight_kg'] as num).toDouble(),
-      waistCm: (map['waist_cm'] as num?)?.toDouble() ?? 0.0,
+      weightKg: NumericGuard.read(map['weight_kg']) ?? 0.0,
+      waistCm: NumericGuard.read(map['waist_cm']) ?? 0.0,
     );
   }
 }

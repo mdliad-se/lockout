@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/jinatra_tokens.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../services/numeric_guard.dart';
 import '../services/goal_service.dart';
 import '../widgets/food_picker.dart';
 import '../widgets/jinatra_button.dart';
@@ -284,9 +285,15 @@ class _LogMealFormState extends State<_LogMealForm> {
         mealSlot: _slot,
         name: _nameCtrl.text.trim(),
         kcal: int.tryParse(_kcalCtrl.text) ?? 0,
-        proteinG: double.tryParse(_proteinCtrl.text) ?? 0.0,
-        carbG: double.tryParse(_carbCtrl.text) ?? 0.0,
-        fatG: double.tryParse(_fatCtrl.text) ?? 0.0,
+        // The same guard the routine builder's weight field needed, for
+        // the same reason: these are REAL columns with no
+        // `inputFormatters` in front of them, `double.tryParse` accepts
+        // 'Infinity', and the macro totals this feeds are rendered with
+        // `toInt()`. `kcal` is an `int.tryParse`, which has no Infinity or
+        // NaN to let through.
+        proteinG: NumericGuard.sanitiseKg(_proteinCtrl.text),
+        carbG: NumericGuard.sanitiseKg(_carbCtrl.text),
+        fatG: NumericGuard.sanitiseKg(_fatCtrl.text),
       );
       await DatabaseService.instance.insertFoodLog(entry.toMap());
       if (!mounted) return;

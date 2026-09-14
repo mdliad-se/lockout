@@ -445,4 +445,58 @@ void main() {
           reason: 'on-screen order must match the restored DB order');
     });
   });
+  // A `total_volume_kg` of `Infinity` is no longer reachable through the
+  // routine builder (see `routines_tab_test.dart`), but a database written
+  // by a build shipped before that guard still holds one, and there is no
+  // migration that can spot it. `toInt()` throws `Unsupported operation:
+  // Infinity or NaN` — out of `build()`, so LOG is a red error screen on
+  // every launch, and the archive row whose DELETE ENTRY is the only way to
+  // remove the offending session is part of what fails to paint. These pin
+  // the render side so a poisoned database degrades to a dash instead.
+  group('LogTab survives a poisoned total_volume_kg', () {
+    testWidgets('an infinite session volume renders instead of throwing',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertSession(
+        db,
+        _log(id: 'bad', dayName: 'Poisoned', totalVolumeKg: double.infinity),
+      );
+
+      await tester.pumpWidget(MaterialApp(home: LogTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull,
+          reason: 'LogTab threw while painting a non-finite volume');
+      expect(find.text('Poisoned'), findsOneWidget,
+          reason: 'the archive row the user needs in order to delete the '
+              'bad session must still be on screen');
+    });
+
+    testWidgets('the all-time total degrades to a dash, not a crash',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertSession(db, _log(id: 'good', totalVolumeKg: 1000));
+      await _insertSession(
+        db,
+        _log(id: 'bad', dayName: 'Poisoned', totalVolumeKg: double.infinity),
+      );
+
+      await tester.pumpWidget(MaterialApp(home: LogTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
+      expect(hero.subtitle, contains('2 WORKOUTS'));
+      expect(hero.subtitle, isNot(contains('Infinity')));
+    });
+
+    test('kgWhole renders finite volumes and refuses the rest', () {
+      expect(kgWhole(2295.7), '2295');
+      expect(kgWhole(0), '0');
+      expect(kgWhole(double.infinity), '--');
+      expect(kgWhole(double.negativeInfinity), '--');
+      expect(kgWhole(double.nan), '--');
+    });
+
+  });
 }

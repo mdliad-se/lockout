@@ -3,6 +3,7 @@ import '../data/exercise_library.dart';
 import '../data/routine_templates.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../services/numeric_guard.dart';
 import '../services/routine_factory.dart';
 import '../services/schedule_service.dart';
 import '../theme/jinatra_tokens.dart';
@@ -1412,7 +1413,16 @@ class _ExerciseFormState extends State<_ExerciseForm> {
                 targetSets: int.tryParse(_setsCtrl.text) ?? ex.targetSets,
                 targetRepsMin: minReps,
                 targetRepsMax: maxReps,
-                targetWeightKg: double.tryParse(_weightCtrl.text) ?? 0.0,
+                // `double.tryParse` accepts 'Infinity' and 'NaN', and this
+                // field has no `inputFormatters`. A non-finite target weight
+                // is copied into every live set the exercise starts,
+                // multiplied into the session's `total_volume_kg`, and
+                // persisted — after which LOG's `toInt()` throws on every
+                // launch and the archive row that would let the user delete
+                // the session is the thing that fails to paint.
+                // `NumericGuard.sanitiseKg` is the same guard Settings and
+                // BODY's measurement form already apply.
+                targetWeightKg: NumericGuard.sanitiseKg(_weightCtrl.text),
                 restDefaultS:
                     int.tryParse(_restCtrl.text) ?? ex.restDefaultS,
                 note: _noteCtrl.text.trim(),
