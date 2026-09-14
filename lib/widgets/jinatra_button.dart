@@ -11,7 +11,9 @@ class JinatraButton extends StatefulWidget {
   final bool isSignal;
   final IconData? icon;
 
-  const JinatraButton({
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  JinatraButton({
     super.key,
     required this.label,
     required this.onPressed,
@@ -51,7 +53,7 @@ class _JinatraButtonState extends State<JinatraButton> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
           color: effectiveBg,
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(JinatraTokens.radiusPill),
           border: Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderControl),
           boxShadow: [JinatraTokens.hardShadow(offset: offset)],
         ),

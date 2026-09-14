@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../models/models.dart';
 import 'database_service.dart';
 
@@ -97,37 +99,103 @@ class ScheduleService {
     final start = DateTime.tryParse(routine.createdAt);
     if (start == null) return days.first;
 
-    final elapsed = _midnight(date).difference(_midnight(start)).inDays;
+    // A calendar difference, never `_midnight(date).difference(...).inDays`:
+    // across a spring-forward 191 wall-clock hours is 8 calendar days but
+    // floors to 7, which would advance the cycle to the wrong day and leave
+    // it a slot behind for the rest of the routine's life.
+    final elapsed = calendarDay(date) - calendarDay(start);
     if (elapsed < 0) return null;
 
     final sorted = [...days]..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
     return sorted[elapsed % sorted.length];
   }
 
-  static DateTime _midnight(DateTime d) => DateTime(d.year, d.month, d.day);
+  /// Calendar-day ordinal for [d], derived from its year/month/day fields
+  /// alone (Howard Hinnant's `days_from_civil`) rather than from wall-clock
+  /// subtraction.
+  ///
+  /// Two local midnights are not reliably 24h apart: across a spring-
+  /// forward transition they are 23h apart, so `Duration.inDays` floors
+  /// that to 0; across a fall-back they are 47h apart, so a genuine 2-day
+  /// gap floors to 1. Differencing this ordinal instead is exact on every
+  /// host regardless of DST.
+  @visibleForTesting
+  static int dayNumber(DateTime d) {
+    final m = d.month;
+    final y = m <= 2 ? d.year - 1 : d.year;
+    final era = (y >= 0 ? y : y - 399) ~/ 400;
+    final yoe = y - era * 400; // [0, 399]
+    final doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) ~/ 5 + d.day - 1; // [0, 365]
+    final doe = yoe * 365 + yoe ~/ 4 - yoe ~/ 100 + doy; // [0, 146096]
+    return era * 146097 + doe - 719468;
+  }
+
+  /// How a `DateTime` is reduced to a calendar-day ordinal.
+  ///
+  /// Always [dayNumber] in production, and the only reason it is a mutable
+  /// field rather than a direct call is that the hazard [dayNumber] exists
+  /// to defeat cannot be reproduced on a host whose timezone has no DST
+  /// transition: there, every pair of local midnights makes a calendar
+  /// difference and `Duration.inDays` agree, so no real `DateTime` can
+  /// demonstrate which of the two a day-difference below was computed
+  /// with. Substituting a calendar that disagrees with the clock can.
+  ///
+  /// That convenience is not free, and it is a heavier seam than
+  /// `DatabaseService.testDatabasePath` despite the surface similarity:
+  /// that one is null in production and read exactly once, when the
+  /// database is opened, whereas this is a live function pointer behind
+  /// every date calculation in this class. A test that replaces it and does
+  /// not put it back silently corrupts both the streak and the rotating
+  /// schedule for everything that runs after it — within its own file only,
+  /// since each test file is its own isolate and no substitution can reach
+  /// another suite, but that is the whole of the exposure and it is real.
+  /// Tests that replace it must restore it in a `tearDown`.
+  ///
+  /// [currentStreakDays] alone did not need a mutable field: an optional
+  /// `{int Function(DateTime) calendar = dayNumber}` would do, since both
+  /// production call sites pass their dates positionally. The field exists
+  /// because the other consumer, [_matchByRotation], is reached through
+  /// [resolveFor], so parameterising it would mean threading a calendar
+  /// through the public resolution API for the sake of a test.
+  @visibleForTesting
+  static int Function(DateTime) calendarDay = dayNumber;
 
   /// Consecutive-day training streak ending today or yesterday.
   ///
-  /// Yesterday still counts so a streak is not reported as broken during the
-  /// hours before today's session.
+  /// Rule: the newest logged date must be *today or yesterday* — a gap of
+  /// two or more days (i.e. the newest session is two-plus days old) breaks
+  /// the streak to 0. Yesterday still counts as live so the streak is not
+  /// reported broken during the hours before today's session; today not
+  /// having a session yet does not itself break anything. Multiple
+  /// sessions on the same calendar day collapse to a single day via the
+  /// `toSet()` below, so training twice in one day does not advance the
+  /// count by two. Dates *ahead* of today — clock skew, or a backup
+  /// restored from a device in a later timezone — are dropped before
+  /// anything is counted: a session that has not happened cannot hold a
+  /// dead streak open, nor sit inside a live one and inflate it.
+  ///
+  /// Every comparison is between [calendarDay] ordinals rather than
+  /// `Duration`s, because two local midnights are not reliably 24h apart
+  /// across a DST transition — see [dayNumber].
   static int currentStreakDays(List<String> workoutDates) {
     if (workoutDates.isEmpty) return 0;
 
+    final todayNumber = calendarDay(DateTime.now());
     final days = workoutDates
         .map(DateTime.tryParse)
         .whereType<DateTime>()
-        .map(_midnight)
+        .map(calendarDay)
+        .where((n) => n <= todayNumber)
         .toSet()
         .toList()
       ..sort((a, b) => b.compareTo(a));
 
-    final today = _midnight(DateTime.now());
-    final gapToNewest = today.difference(days.first).inDays;
-    if (gapToNewest > 1) return 0;
+    if (days.isEmpty) return 0;
+    if (todayNumber - days.first > 1) return 0;
 
     var streak = 1;
     for (var i = 0; i < days.length - 1; i++) {
-      if (days[i].difference(days[i + 1]).inDays == 1) {
+      if (days[i] - days[i + 1] == 1) {
         streak++;
       } else {
         break;

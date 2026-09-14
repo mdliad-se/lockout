@@ -8,7 +8,9 @@ class JinatraInput extends StatelessWidget {
   final String? hint;
   final ValueChanged<String>? onChanged;
 
-  const JinatraInput({
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  JinatraInput({
     super.key,
     required this.label,
     required this.controller,
@@ -32,7 +34,7 @@ class JinatraInput extends StatelessWidget {
         Container(
           decoration: BoxDecoration(
             color: JinatraTokens.paper,
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.circular(JinatraTokens.radiusTile),
             border: Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderControl),
           ),
           child: TextField(
@@ -46,7 +48,7 @@ class JinatraInput extends StatelessWidget {
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               border: InputBorder.none,
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.zero,
+                borderRadius: BorderRadius.circular(JinatraTokens.radiusTile),
                 borderSide: BorderSide(color: JinatraTokens.signal, width: 3.0),
               ),
             ),

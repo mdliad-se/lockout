@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/food_library.dart';
+import '../data/food_search.dart';
 import '../theme/jinatra_tokens.dart';
 
 /// Result of the food picker. [servings] scales the catalog entry's macros;
@@ -43,13 +44,17 @@ Future<PickedFood?> showFoodPicker(BuildContext context) {
     context: context,
     isScrollControlled: true,
     backgroundColor: JinatraTokens.sweetCream,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-    builder: (_) => const _FoodPickerSheet(),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
+    ),
+    builder: (_) => _FoodPickerSheet(),
   );
 }
 
 class _FoodPickerSheet extends StatefulWidget {
-  const _FoodPickerSheet();
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  _FoodPickerSheet();
 
   @override
   State<_FoodPickerSheet> createState() => _FoodPickerSheetState();
@@ -66,14 +71,22 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
     super.dispose();
   }
 
-  List<LibraryFood> get _results {
+  /// Ranked, alias-aware search. The match notes (why a surprising row is in
+  /// the list) are returned alongside the list rather than stashed on a
+  /// field, so this stays a pure read with no build-time side effect.
+  ({List<LibraryFood> items, Map<String, String> matchNotes}) get _results {
     var list = _category == 'All'
         ? FoodLibrary.all
         : FoodLibrary.byCategory(_category);
-    if (_query.isNotEmpty) {
-      list = list.where((f) => f.matches(_query)).toList();
+    if (_query.trim().isEmpty) {
+      return (items: list, matchNotes: const {});
     }
-    return list;
+    final hits = searchFoods(_query, source: list);
+    final notes = <String, String>{};
+    for (final h in hits) {
+      if (h.matchedVia != null) notes[h.item.name] = h.matchedVia!;
+    }
+    return (items: hits.map((h) => h.item).toList(), matchNotes: notes);
   }
 
   bool get _canAddCustom =>
@@ -87,7 +100,9 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
       context: context,
       isScrollControlled: true,
       backgroundColor: JinatraTokens.sweetCream,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
+      ),
       builder: (ctx) => StatefulBuilder(
         builder: (context, setSheet) {
           final scaled = PickedFood.fromLibrary(food, servings);
@@ -248,7 +263,8 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final results = _results;
+    final (:items, :matchNotes) = _results;
+    final results = items;
     final cats = ['All', ...FoodLibrary.categories];
 
     return Padding(
@@ -425,6 +441,15 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
                                         style: JinatraTokens.bodyText(
                                             fontWeight: FontWeight.w700),
                                       ),
+                                      if (matchNotes[f.name] != null)
+                                        Text(
+                                          '~ matched "${matchNotes[f.name]}"',
+                                          style: JinatraTokens.monoData(
+                                            fontSize: 9,
+                                            color: JinatraTokens.ink
+                                                .withValues(alpha: 0.55),
+                                          ),
+                                        ),
                                       const SizedBox(height: 3),
                                       Text(
                                         '${f.serving}  -  P${f.proteinG} C${f.carbG} F${f.fatG}',

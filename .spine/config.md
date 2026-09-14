@@ -1,7 +1,7 @@
 # .spine/config.md — pinned cross-cutting context (asserted before task one)
-- Stack:            Flutter 3.x (Dart) + SQLite (sqflite) (GPL-3.0-or-later, zero-network, native Android APK)
-- Test runner:      flutter test
-- DB / project / env: sqflite SQLite local storage engine (offline, local device only)
+- Stack:            Flutter 3.x (Dart) + SQLite (sqflite) (GPL-3.0-or-later, zero-network, native Android APK). SDK at C:\src\flutter (git stable clone; not on PATH — invoke C:\src\flutter\bin\flutter.bat by absolute path)
+- Test runner:      `C:\src\flutter\bin\flutter.bat test --concurrency=1` — MUST be serial. Suites share one sqflite database file, so the default parallel run produces ~10 spurious failures. Serial baseline at 73c35e9: 91 passed.
+- DB / project / env: sqflite SQLite local storage engine, on-device only (offline). Schema version 3, `lib/services/database_service.dart`; migrations use the idempotent add-column helper at line 39, never a destructive recreate.
 - Auth context:     None (100% offline, local device only)
-- Conventions:      Jinatra Neubrutalist Product System v1.1 (0px border-radius, 3px Ink border, zero-blur shadow)
-- Boot assertion:   Offline SQLite database initialization check
+- Conventions:      Jinatra Neubrutalist Product System v2 — 14px card radius / 12px tile radius / full-pill buttons (v1's 0px radius is superseded), 3px ink border, zero-blur hard shadow. Colours resolve through `AppPalette.current`, never compile-time constants; every palette authors an explicit 8-colour `accents` ramp rather than deriving hues by rotating `primary`.
+- Boot assertion:   `flutter test --concurrency=1 test/backup_roundtrip_test.dart` — exercises real sqflite open/create/migrate/round-trip against the offline database and fails loudly if the storage engine or schema version is wrong.

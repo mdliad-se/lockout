@@ -1,0 +1,632 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'package:lockout/models/models.dart';
+import 'package:lockout/screens/food_tab.dart';
+import 'package:lockout/services/database_service.dart';
+import 'package:lockout/theme/app_palette.dart';
+import 'package:lockout/theme/jinatra_tokens.dart';
+import 'package:lockout/widgets/meal_section.dart';
+import 'package:lockout/widgets/progress_hero.dart';
+import 'package:lockout/widgets/sheet_scaffold.dart';
+
+import 'test_helpers.dart';
+
+FoodEntry _entry(String name, int kcal, String slot) => FoodEntry(
+      id: name,
+      dateStr: '2026-09-09',
+      mealSlot: slot,
+      name: name,
+      kcal: kcal,
+      proteinG: 10.0,
+      carbG: 20.0,
+      fatG: 5.0,
+    );
+
+void main() {
+  setUpAll(() {
+    databaseFactory = databaseFactoryFfiNoIsolate;
+    DatabaseService.testDatabasePath = inMemoryDatabasePath;
+    GoogleFonts.config.allowRuntimeFetching = false;
+    AppPalette.apply(AppPalette.paperPress);
+  });
+
+  setUp(() async {
+    await wipeDatabaseAndReseed(DatabaseService.instance);
+  });
+
+  group('mealSubtotalKcal', () {
+    test('sums the entries', () {
+      expect(
+        mealSubtotalKcal([
+          _entry('Paratha', 354, 'Breakfast'),
+          _entry('Cheese Omelette', 225, 'Breakfast'),
+        ]),
+        579,
+      );
+    });
+
+    test('an empty meal is zero', () {
+      expect(mealSubtotalKcal(const []), 0);
+    });
+  });
+
+  group('ProgressHero', () {
+    testWidgets('renders its text and clamps an over-target progress',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ProgressHero(
+            eyebrow: 'TODAY',
+            title: '1240 / 1850 KCAL',
+            subtitle: '610 LEFT',
+            progress: 1.8,
+            background: Colors.orange,
+          ),
+        ),
+      ));
+
+      expect(find.text('TODAY'), findsOneWidget);
+      expect(find.text('1240 / 1850 KCAL'), findsOneWidget);
+      expect(find.text('610 LEFT'), findsOneWidget);
+
+      final bar = tester.widget<LinearProgressIndicator>(
+        find.byType(LinearProgressIndicator),
+      );
+      expect(bar.value, 1.0);
+    });
+
+    testWidgets('a negative progress clamps to zero', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ProgressHero(
+            eyebrow: 'TODAY',
+            title: '0 / 1850 KCAL',
+            subtitle: '1850 LEFT',
+            progress: -3.0,
+            background: Colors.orange,
+          ),
+        ),
+      ));
+
+      final bar = tester.widget<LinearProgressIndicator>(
+        find.byType(LinearProgressIndicator),
+      );
+      expect(bar.value, 0.0);
+    });
+  });
+
+  group('MealSection', () {
+    testWidgets('shows the title, subtotal and every entry', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: MealSection(
+            title: 'Breakfast',
+            entries: [
+              _entry('Paratha', 354, 'Breakfast'),
+              _entry('Cheese Omelette', 225, 'Breakfast'),
+            ],
+            onDelete: (_) {},
+          ),
+        ),
+      ));
+
+      expect(find.text('BREAKFAST'), findsOneWidget);
+      expect(find.text('579 kcal'), findsOneWidget);
+      expect(find.text('Paratha'), findsOneWidget);
+      expect(find.text('Cheese Omelette'), findsOneWidget);
+      // Q4: an entry row carries its own unit, same as v1's
+      // "'${food.kcal} kcal'" — a bare integer next to "P 10 C 20 F 5" is
+      // ambiguous about what it is measuring.
+      expect(find.text('354 kcal'), findsOneWidget);
+      expect(find.text('225 kcal'), findsOneWidget);
+    });
+
+    testWidgets('an empty meal renders nothing at all', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: MealSection(
+            title: 'Snacks',
+            entries: const [],
+            onDelete: (_) {},
+          ),
+        ),
+      ));
+
+      expect(find.text('SNACKS'), findsNothing);
+    });
+
+    testWidgets('deleting an entry reports it', (tester) async {
+      FoodEntry? deleted;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: MealSection(
+            title: 'Lunch',
+            entries: [_entry('Dal Bhat', 374, 'Lunch')],
+            onDelete: (e) => deleted = e,
+          ),
+        ),
+      ));
+
+      await tester.tap(find.byIcon(Icons.close));
+      expect(deleted?.name, 'Dal Bhat');
+    });
+
+    // C1: the old row used a ~40x40 `IconButton`; the rewrite shrank the
+    // affordance to a bare 16x16 `Icon` and only made it register taps
+    // everywhere within that 16x16 box (`HitTestBehavior.opaque` does not
+    // enlarge the box it is applied to). `tester.tap` hits the widget's
+    // centre regardless of its size, so the test above cannot catch a
+    // shrunk hit target — this test measures the actual tappable area
+    // instead, against a 40dp floor (16dp icon + 12dp padding each side,
+    // third-round review Finding 8 — matches BODY's delete affordance
+    // exactly instead of falling short at ~36dp).
+    testWidgets('the delete affordance has at least a 40dp tappable area',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: MealSection(
+            title: 'Lunch',
+            entries: [_entry('Dal Bhat', 374, 'Lunch')],
+            onDelete: (_) {},
+          ),
+        ),
+      ));
+
+      final detector = find.ancestor(
+        of: find.byIcon(Icons.close),
+        matching: find.byType(GestureDetector),
+      );
+      expect(detector, findsOneWidget);
+      final size = tester.getSize(detector);
+      expect(size.width, greaterThanOrEqualTo(40));
+      expect(size.height, greaterThanOrEqualTo(40));
+    });
+
+    // Q1: macro rounding must not manufacture precision in either
+    // direction — 0.4g logged protein must not render as a measured zero,
+    // and an exact whole number must not sprout a fake ".0".
+    testWidgets('macros keep one decimal place instead of rounding to a '
+        'false zero', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: MealSection(
+            title: 'Snacks',
+            entries: [
+              FoodEntry(
+                id: 'partial',
+                dateStr: '2026-09-09',
+                mealSlot: 'Snacks',
+                name: 'Half a Banana',
+                kcal: 45,
+                proteinG: 0.4,
+                carbG: 12.6,
+                fatG: 0.0,
+              ),
+            ],
+            onDelete: (_) {},
+          ),
+        ),
+      ));
+
+      expect(find.text('P 0.4  C 12.6  F 0'), findsOneWidget);
+    });
+  });
+
+  group('FoodTab', () {
+    testWidgets('empty state: shows guidance when nothing is logged today',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      expect(find.textContaining('NO FOOD LOGGED TODAY'), findsOneWidget);
+      // Every meal slot still gets a `MealSection` instance (the empty-list
+      // shrink is internal to each one), so the guidance text plus the
+      // absence of any delete affordance is what proves nothing rendered.
+      expect(find.byIcon(Icons.close), findsNothing);
+    });
+
+    testWidgets(
+        'hero wiring: under target uses the accent background and the '
+        'LEFT subtitle', (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: 'f1',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Oats',
+        kcal: 800,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      final hero = tester.widget<ProgressHero>(find.byType(ProgressHero));
+      // Default seeded calorie_target is DatabaseService.defaultCalorieTarget
+      // (2200), resolved through GoalService.snapshot() — no profile is
+      // configured in a freshly-wiped/reseeded DB, so no nutrition plan
+      // exists to override it.
+      expect(hero.progress, closeTo(800 / 2200, 0.0001));
+      expect(hero.background, equals(JinatraTokens.accentAt(0)));
+      expect(find.textContaining('LEFT'), findsOneWidget);
+    });
+
+    testWidgets(
+        'Ruling E: an over-budget day paints the hero with the signal '
+        'colour and shows OVER, not just the accent every day gets',
+        (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: 'f1',
+        dateStr: today,
+        mealSlot: 'Dinner',
+        name: 'Feast',
+        kcal: 2500,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      final hero = tester.widget<ProgressHero>(find.byType(ProgressHero));
+      expect(hero.background, equals(JinatraTokens.signal));
+      expect(find.textContaining('OVER'), findsOneWidget);
+    });
+
+    testWidgets(
+        'an entry whose meal_slot is not one of the four named slots lands '
+        'in the Other section, not silently dropped', (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: 'f1',
+        dateStr: today,
+        mealSlot: 'Midnight',
+        name: 'Cold Pizza',
+        kcal: 300,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      expect(find.text('OTHER'), findsOneWidget);
+      expect(find.text('Cold Pizza'), findsOneWidget);
+    });
+
+    testWidgets(
+        'the macro StatTiles keep one decimal place instead of rounding a '
+        'small logged amount to zero', (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: 'f1',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Sliver of cheese',
+        kcal: 10,
+        proteinG: 0.4,
+        carbG: 0.0,
+        fatG: 0.0,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      expect(find.text('0.4 g'), findsOneWidget);
+    });
+
+    testWidgets('the LOG FOOD button label has no doubled plus', (tester) async {
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      expect(find.text('LOG FOOD'), findsOneWidget);
+      expect(find.text('+ LOG FOOD'), findsNothing);
+    });
+
+    // Finding 3 / Ruling F: FOOD had the identical no-confirmation,
+    // no-undo delete gap Task 9 left BODY with. The two screens must use
+    // the same shared mechanism, and restoring a row must bring back its
+    // original id and every field, not a near-copy.
+    testWidgets(
+        'deleting a food entry offers UNDO, which restores the exact row',
+        (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: 'f1',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Paratha',
+        kcal: 354,
+        proteinG: 8.0,
+        carbG: 45.0,
+        fatG: 14.0,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      expect(find.text('Paratha'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('Paratha'), findsNothing,
+          reason: 'the row disappears immediately');
+      final afterDelete = await db.getFoodLogsForDate(today);
+      expect(afterDelete, isEmpty,
+          reason: 'the row is deleted immediately, not just hidden');
+
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('Paratha'), findsOneWidget);
+      final restored = await db.getFoodLogsForDate(today);
+      expect(restored.length, 1);
+      expect(restored.first['id'], 'f1');
+      expect(restored.first['kcal'], 354);
+      expect(restored.first['protein_g'], 8.0);
+      expect(restored.first['carb_g'], 45.0);
+      expect(restored.first['fat_g'], 14.0);
+      expect(restored.first['meal_slot'], 'Breakfast');
+    });
+
+    // Third-round review, Finding 4: Ruling F parity gap. `getFoodLogsForDate`
+    // had no `orderBy` at all, so it fell back to SQLite's `rowid`, which
+    // `insertFoodLog`'s `ConflictAlgorithm.replace` restore reassigns —
+    // exactly the defect `getBodyLogs()` was fixed for, just surviving on
+    // FOOD's side of the shared UNDO mechanism. `Alpha, Beta, Gamma` in
+    // Breakfast, delete `Alpha`, tap UNDO — a rowid-fallback restore always
+    // lands the restored row last, regardless of which one was removed, so
+    // this discriminates against the bug (a test deleting `Gamma`, already
+    // last, would pass either way). Mutation-verified: fails (order becomes
+    // `['Beta', 'Gamma', 'Alpha']` instead of `['Alpha', 'Beta', 'Gamma']`)
+    // with `getFoodLogsForDate`'s `orderBy: 'id ASC'` reverted to none,
+    // passes at HEAD.
+    testWidgets(
+        'deleting the first entry of a meal and undoing restores its '
+        'original position, not the end of the list', (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: '1000000000000001',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Alpha',
+        kcal: 100,
+      ).toMap());
+      await db.insertFoodLog(FoodEntry(
+        id: '1000000000000002',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Beta',
+        kcal: 200,
+      ).toMap());
+      await db.insertFoodLog(FoodEntry(
+        id: '1000000000000003',
+        dateStr: today,
+        mealSlot: 'Breakfast',
+        name: 'Gamma',
+        kcal: 300,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      final rowFinder = find.descendant(
+        of: find.byType(MealSection),
+        matching: find.byType(Text),
+      );
+      expect(
+          tester
+              .widgetList<Text>(rowFinder)
+              .map((t) => t.data)
+              .where((d) => ['Alpha', 'Beta', 'Gamma'].contains(d))
+              .toList(),
+          ['Alpha', 'Beta', 'Gamma']);
+
+      // Delete Alpha, the oldest/first entry, then undo it.
+      await tester.tap(find.byIcon(Icons.close).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+      expect(find.text('Alpha'), findsNothing);
+
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final restoredOrder = (await db.getFoodLogsForDate(today))
+          .map((r) => r['name'])
+          .toList();
+      expect(restoredOrder, ['Alpha', 'Beta', 'Gamma'],
+          reason:
+              'Alpha was logged first; restoring it must not push it to '
+              'the end behind Beta and Gamma');
+
+      final texts = tester
+          .widgetList<Text>(find.descendant(
+            of: find.byType(MealSection),
+            matching: find.byType(Text),
+          ))
+          .map((t) => t.data)
+          .where((d) => ['Alpha', 'Beta', 'Gamma'].contains(d))
+          .toList();
+      expect(texts, ['Alpha', 'Beta', 'Gamma'],
+          reason: 'the on-screen order must match the restored DB order');
+    });
+
+    // Same failure mode Finding 1 documented for BODY's CREATE THIS
+    // ROUTINE: a `ScaffoldMessenger` SnackBar would be hidden by a modal
+    // route sitting above it. FOOD's delete is not inside a sheet, but the
+    // shared mechanism must behave identically either way — this proves
+    // the banner is not scoped to whatever row triggered it.
+    testWidgets(
+        'the UNDO banner for a food delete auto-dismisses without leaving '
+        'anything pending', (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await db.insertFoodLog(FoodEntry(
+        id: 'f2',
+        dateStr: today,
+        mealSlot: 'Lunch',
+        name: 'Dal Bhat',
+        kcal: 374,
+      ).toMap());
+
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('UNDO'), findsOneWidget);
+
+      // Let the banner's own Timer expire instead of tapping UNDO.
+      await tester.pump(const Duration(seconds: 6));
+      expect(find.text('UNDO'), findsNothing);
+
+      final rows = await db.getFoodLogsForDate(today);
+      expect(rows, isEmpty, reason: 'expiry must not undo the delete');
+    });
+
+    // The same restore vector LOG's poisoned-volume test documents, on the
+    // column FOOD cannot render without: a backup restored by a build older
+    // than `BackupService`'s import coercion leaves the literal text in
+    // `kcal`, where INTEGER affinity keeps it. `_loadData()` hydrates every
+    // row through `FoodEntry.fromMap`, so a bare cast threw before
+    // `setState(_isLoading = false)` and stranded the tab on its spinner —
+    // with no route off it. A raw insert is the only way to build the row:
+    // every typed path coerces on the way in.
+    testWidgets('an entry whose kcal is text still renders the day',
+        (tester) async {
+      final db = DatabaseService.instance;
+      final today = DateTime.now().toIso8601String().split('T').first;
+      final database = await db.database;
+      await database.insert('food_logs', {
+        'id': 'f1',
+        'date_str': today,
+        'meal_slot': 'Breakfast',
+        'name': 'Oats',
+        'kcal': 'loads',
+        'protein_g': 10.0,
+        'carb_g': 20.0,
+        'fat_g': 5.0,
+      });
+
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Oats'), findsOneWidget,
+          reason: 'one unreadable column must cost the user a number, not '
+              'the whole tab');
+      final hero = tester.widget<ProgressHero>(find.byType(ProgressHero));
+      expect(hero.progress, 0.0,
+          reason: 'an unreadable calorie count contributes nothing, the '
+              'same honest zero BODY shows for a poisoned weight');
+    });
+  });
+
+  // These model the shape of `routines_tab_test.dart`'s sheet regression
+  // tests — Task 8 shipped a Critical twice in exactly this area (a form's
+  // controllers built inside `showJinatraSheet`'s re-invoked builder, then
+  // a second wave disposed them in a `finally` before the sheet's exit
+  // animation finished). Task 9 converted FOOD's confirm sheet the same
+  // way `routines_tab.dart` was already fixed, but shipped with no
+  // regression lock of its own — nothing here stops a future refactor from
+  // reintroducing either failure mode and still going green.
+  group('_LogMealForm sheet regressions', () {
+    /// Drives the real path to the form under test: the LOG FOOD button
+    /// opens the catalog picker first (Task 5), and only a *custom* entry
+    /// (typed name not in the catalog) skips the intermediate
+    /// serving-size sheet and lands directly on `_LogMealForm` — the
+    /// screen's only other path (an existing dish) goes through one more
+    /// sheet this suite has no reason to also drive.
+    Future<void> openLogForm(WidgetTester tester, String customName) async {
+      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await settle(tester);
+
+      await tester.tap(find.text('LOG FOOD'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(
+            TextField, 'Search dish, cuisine or ingredient...'),
+        customName,
+      );
+      await tester.pump();
+
+      await tester.tap(find.textContaining('ADD CUSTOM'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('LOG MEAL ITEM'), findsOneWidget);
+    }
+
+    testWidgets(
+        'a sheet drag that does not dismiss does not clear a typed field',
+        (tester) async {
+      await openLogForm(tester, 'Zzz Custom Test Dish');
+
+      const typed = '555';
+      await tester.enterText(find.byType(TextField).at(1), typed);
+      await tester.pump();
+      expect(find.text(typed), findsOneWidget);
+
+      // Drag from the sheet's title bar, same as routines_tab_test.dart —
+      // the body sits inside SheetScaffold's own SingleChildScrollView,
+      // which wins the vertical-drag gesture arena and just scrolls. A
+      // modest drag from the title bar is a genuine candidate for the
+      // modal's own dismiss-drag detector without actually dismissing it.
+      await tester.drag(find.text('LOG MEAL ITEM'), const Offset(0, 40));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('LOG MEAL ITEM'), findsOneWidget,
+          reason: 'the small drag must not have dismissed the sheet');
+      expect(find.text(typed), findsOneWidget,
+          reason: 'the typed kcal value must survive a non-dismissing drag');
+    });
+
+    testWidgets('typing into a field then closing via the SheetScaffold X '
+        'does not throw', (tester) async {
+      await openLogForm(tester, 'Zzz Another Custom Dish');
+
+      await tester.enterText(find.byType(TextField).at(1), '250');
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.close));
+      // Past the ~200ms exit animation the bottom-sheet route runs before
+      // actually removing the sheet (and its controllers) from the tree.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SheetScaffold), findsNothing);
+    });
+
+    testWidgets('SAVE ENTRY inserts the entry and pops the sheet',
+        (tester) async {
+      await openLogForm(tester, 'Zzz Saved Custom Dish');
+
+      await tester.enterText(find.byType(TextField).at(1), '250');
+      await tester.pump();
+
+      await tester.tap(find.text('SAVE ENTRY'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SheetScaffold), findsNothing);
+      expect(find.text('Zzz Saved Custom Dish'), findsOneWidget);
+      // The section's subtotal and this lone entry's own row both read
+      // "250 kcal" — proof the kcal field's typed text was parsed and
+      // actually persisted, not just that some row exists.
+      expect(find.text('250 kcal'), findsNWidgets(2));
+    });
+  });
+}

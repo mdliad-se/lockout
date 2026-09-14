@@ -8,14 +8,18 @@ class JinatraCard extends StatelessWidget {
   final double shadowOffset;
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry margin;
+  final double radius;
 
-  const JinatraCard({
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  JinatraCard({
     super.key,
     required this.child,
     this.background,
     this.shadowOffset = JinatraTokens.shadowMd,
     this.padding = const EdgeInsets.all(16),
     this.margin = const EdgeInsets.only(bottom: 16),
+    this.radius = JinatraTokens.radiusCard,
   });
 
   @override
@@ -26,6 +30,7 @@ class JinatraCard extends StatelessWidget {
       decoration: JinatraTokens.cardDecoration(
         background: background,
         shadowOffset: shadowOffset,
+        radius: radius,
       ),
       child: child,
     );

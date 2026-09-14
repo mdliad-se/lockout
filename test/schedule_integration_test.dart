@@ -77,6 +77,37 @@ void main() {
       expect(await dayOn(2026, 9, 6), 'Legs');
     });
 
+    // The rotation's "days since the routine was created" is a calendar
+    // difference, not an elapsed-hours one. Across a spring-forward, 191
+    // wall-clock hours is 8 calendar days but floors to 7 under
+    // `Duration.inDays` — the cycle would show the wrong day and stay one
+    // slot behind forever after. This host's timezone has no transition to
+    // reproduce that with (see `widget_test.dart`), so the calendar itself
+    // is swapped for a skewed one: the answer moves only if `_matchByRotation`
+    // actually consults it.
+    test('the cycle advances by calendar day, not by elapsed hours', () async {
+      await seedRotating(
+        createdAt: '2026-09-01T08:00:00.000',
+        dayNames: ['Push', 'Pull', 'Legs'],
+      );
+      addTearDown(
+        () => ScheduleService.calendarDay = ScheduleService.dayNumber,
+      );
+
+      final target = ScheduleService.dayNumber(DateTime(2026, 9, 3));
+      ScheduleService.calendarDay = (d) {
+        final n = ScheduleService.dayNumber(d);
+        return n == target ? n + 1 : n;
+      };
+
+      // By the clock 2026-09-03 is 2 days past the anchor ('Legs'); the
+      // skewed calendar places it 3 days out, back at the top of the cycle.
+      expect(
+        (await ScheduleService.resolveFor(DateTime(2026, 9, 3)))?.day.name,
+        'Push',
+      );
+    });
+
     test('ignores weekday entirely', () async {
       await seedRotating(
         createdAt: '2026-09-01T08:00:00.000',
@@ -180,25 +211,32 @@ void main() {
       ).toMap());
     }
 
-    String key(DateTime d) => ScheduleService.dateKey(d);
+    /// Calendar-day arithmetic (`DateTime(y, m, d - n)`, normalised by the
+    /// constructor) rather than `now.subtract(Duration(days: n))`: a fixed
+    /// 24h step lands on the wrong date across a DST transition, which is
+    /// the exact failure a streak fixture must not introduce itself.
+    String daysAgo(int n) {
+      final now = DateTime.now();
+      return ScheduleService.dateKey(
+        DateTime(now.year, now.month, now.day - n),
+      );
+    }
 
     test('consecutive sessions build a streak', () async {
-      final now = DateTime.now();
-      await logSessionOn(key(now));
-      await logSessionOn(key(now.subtract(const Duration(days: 1))));
-      await logSessionOn(key(now.subtract(const Duration(days: 2))));
+      await logSessionOn(daysAgo(0));
+      await logSessionOn(daysAgo(1));
+      await logSessionOn(daysAgo(2));
 
       final dates = await DatabaseService.instance.getWorkoutDates();
       expect(ScheduleService.currentStreakDays(dates), 3);
     });
 
     test('two sessions on one day count once', () async {
-      final now = DateTime.now();
       // getWorkoutDates() is DISTINCT; a double session must not inflate it.
       await DatabaseService.instance.insertSessionLog(SessionLog(
         id: 'a',
         dayName: 'AM',
-        dateStr: key(now),
+        dateStr: daysAgo(0),
         durationSeconds: 900,
         totalVolumeKg: 500,
         status: 'completed',
@@ -206,7 +244,7 @@ void main() {
       await DatabaseService.instance.insertSessionLog(SessionLog(
         id: 'b',
         dayName: 'PM',
-        dateStr: key(now),
+        dateStr: daysAgo(0),
         durationSeconds: 900,
         totalVolumeKg: 500,
         status: 'completed',
@@ -218,38 +256,35 @@ void main() {
     });
 
     test('a missed day breaks the streak', () async {
-      final now = DateTime.now();
-      await logSessionOn(key(now));
-      await logSessionOn(key(now.subtract(const Duration(days: 1))));
+      await logSessionOn(daysAgo(0));
+      await logSessionOn(daysAgo(1));
       // gap at day 2
-      await logSessionOn(key(now.subtract(const Duration(days: 3))));
-      await logSessionOn(key(now.subtract(const Duration(days: 4))));
+      await logSessionOn(daysAgo(3));
+      await logSessionOn(daysAgo(4));
 
       final dates = await DatabaseService.instance.getWorkoutDates();
       expect(ScheduleService.currentStreakDays(dates), 2);
     });
 
     test('only completed sessions count toward a streak', () async {
-      final now = DateTime.now();
-      await logSessionOn(key(now.subtract(const Duration(days: 1))));
+      await logSessionOn(daysAgo(1));
       await DatabaseService.instance.insertSessionLog(SessionLog(
         id: 'skipped',
         dayName: 'Bailed',
-        dateStr: key(now),
+        dateStr: daysAgo(0),
         durationSeconds: 0,
         totalVolumeKg: 0,
         status: 'skipped',
       ).toMap());
 
       final dates = await DatabaseService.instance.getWorkoutDates();
-      expect(dates, [key(now.subtract(const Duration(days: 1)))]);
+      expect(dates, [daysAgo(1)]);
       expect(ScheduleService.currentStreakDays(dates), 1);
     });
 
     test('a long unbroken run counts fully', () async {
-      final now = DateTime.now();
       for (var i = 0; i < 30; i++) {
-        await logSessionOn(key(now.subtract(Duration(days: i))));
+        await logSessionOn(daysAgo(i));
       }
       final dates = await DatabaseService.instance.getWorkoutDates();
       expect(ScheduleService.currentStreakDays(dates), 30);

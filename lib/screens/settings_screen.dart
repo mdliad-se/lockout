@@ -3,10 +3,13 @@ import '../services/backup_service.dart';
 import '../services/database_service.dart';
 import '../services/goal_service.dart';
 import '../services/notification_service.dart';
+import '../services/numeric_guard.dart';
 import '../services/nutrition_planner.dart';
 import '../services/units.dart';
 import '../theme/app_palette.dart';
 import '../theme/jinatra_tokens.dart';
+import '../widgets/calm_row.dart';
+import '../widgets/day_block.dart';
 import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import '../widgets/jinatra_input.dart';
@@ -14,7 +17,9 @@ import '../widgets/jinatra_input.dart';
 class SettingsScreen extends StatefulWidget {
   final VoidCallback onSettingsUpdated;
 
-  const SettingsScreen({super.key, required this.onSettingsUpdated});
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  SettingsScreen({super.key, required this.onSettingsUpdated});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -65,8 +70,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final db = DatabaseService.instance;
-    final h = await db.getSetting('height_cm', defaultValue: '175.0');
-    final c = await db.getSetting('calorie_target', defaultValue: '2200');
+    final c = await db.getSetting(
+      'calorie_target',
+      defaultValue: '${DatabaseService.defaultCalorieTarget}',
+    );
     final f = await db.getSetting('food_tab_enabled', defaultValue: 'true');
     final u = await db.getSetting('height_unit', defaultValue: 'cm');
     final t =
@@ -81,7 +88,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final goal = await GoalService.instance.loadProfile();
     final snap = await GoalService.instance.snapshot();
 
-    final cm = double.tryParse(h) ?? 175.0;
+    // Height comes from the profile, not a second raw read of the same row:
+    // `GoalService.loadProfile` is where `height_cm` is clamped, and
+    // `Units.cmToFeetInches` does `totalInches ~/ 12.0`, which throws
+    // `Unsupported operation: Infinity or NaN toInt` on a non-finite value.
+    // Parsing the row again here reintroduced exactly that throw — inside
+    // `_loadSettings`, ahead of its `setState`, so a backup carrying
+    // `height_cm = 'Infinity'` (import writes `user_settings` verbatim) left
+    // Settings with every field empty and no plan, and took the reschedule,
+    // the `onSettingsUpdated` callback and the "Import complete" toast in
+    // `_restoreBackup` down with it.
+    final cm = goal.heightCm;
     final split = Units.cmToFeetInches(cm);
 
     if (!mounted) return;
@@ -121,7 +138,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await db.saveSetting('age', _ageCtrl.text.trim());
     await db.saveSetting('sex', _sex.name);
     await db.saveSetting('activity_level', _activity.name);
-    await db.saveSetting('target_weight_kg', _targetWeightCtrl.text.trim());
+    await db.saveSetting(
+      'target_weight_kg',
+      _sanitisedTargetWeightKg(_targetWeightCtrl.text),
+    );
     await db.saveSetting('goal_weeks', _weeksCtrl.text.trim());
     await db.saveSetting('training_days_per_week', _daysPerWeek.toString());
 
@@ -144,17 +164,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// The target weight as it may be persisted.
+  ///
+  /// `double.tryParse` accepts 'Infinity', '-Infinity' and 'NaN', so saving
+  /// the field's raw text let a non-finite value reach `target_weight_kg`.
+  /// `GoalService.loadProfile` parses it back unchanged, which made the BODY
+  /// screen's TARGET tile render 'Infinity kg' and poisoned every calculation
+  /// downstream of the goal profile. Anything that is not a finite,
+  /// non-negative number is stored as '0' — exactly where unparseable text
+  /// already lands on read, and the value that leaves `isConfigured` false so
+  /// the user is asked for a real target rather than shown a fabricated
+  /// plan. The finite/non-negative rule itself is `NumericGuard`'s, shared
+  /// with BODY's measurement form and the routine builder's weight field.
+  static String _sanitisedTargetWeightKg(String raw) {
+    final text = raw.trim();
+    return NumericGuard.parse(text, min: 0.0) == null ? '0' : text;
+  }
+
   /// Height in cm from whichever unit the user is currently editing.
+  ///
+  /// Guarded the same way [_sanitisedTargetWeightKg] is, and for the same
+  /// reason: `double.tryParse` accepts 'Infinity' and 'NaN', `Infinity > 0`
+  /// is true, and `double.infinity.toStringAsFixed(2)` is the literal string
+  /// 'Infinity'. No numeric field here carries `inputFormatters`, so paste or
+  /// a letters keyboard reaches this. A non-finite height stored to
+  /// `height_cm` made `NutritionPlanner.build` throw `Unsupported operation:
+  /// Infinity or NaN toInt` out of `GoalService.snapshot()` — which BODY,
+  /// FOOD, TODAY and Settings itself all call, so one typed word bricked four
+  /// screens until the row was overwritten. Anything not finite and positive
+  /// falls back to the same 175.0 default unparseable text already lands on.
   double _resolveHeightCm() {
     if (_heightUnit == 'ft') {
       final feet = int.tryParse(_heightFtCtrl.text.trim()) ?? 0;
-      final inches = double.tryParse(_heightInCtrl.text.trim()) ?? 0;
+      final inches = NumericGuard.parse(_heightInCtrl.text) ?? 0;
       final cm = Units.feetInchesToCm(feet, inches);
-      return cm > 0 ? cm : 175.0;
+      return _usableHeightCm(cm);
     }
-    final cm = double.tryParse(_heightCmCtrl.text.trim()) ?? 0;
-    return cm > 0 ? cm : 175.0;
+    final cm = NumericGuard.parse(_heightCmCtrl.text) ?? 0;
+    return _usableHeightCm(cm);
   }
+
+  static double _usableHeightCm(double cm) =>
+      NumericGuard.finite(cm, min: 0.0, minExclusive: true) ?? 175.0;
 
   /// Keeps the hidden unit's fields in sync so switching units never loses
   /// the value the user just typed.
@@ -260,7 +311,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: JinatraTokens.sweetCream,
         shape: RoundedRectangleBorder(
           side: BorderSide(color: JinatraTokens.ink, width: 3),
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
         ),
         title: Text('REPLACE ALL DATA?',
             style: JinatraTokens.sectionHeader(fontSize: 16)),
@@ -306,12 +357,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await db.getSetting('theme_key', defaultValue: AppPalette.fallback.key);
     AppPalette.applyKey(restoredTheme);
     if (!mounted) return;
-    await _loadSettings();
+
+    // A belt, and deliberately kept as one now that both braces hold:
+    // `BackupService` coerces numeric columns on import, and every read on
+    // the far side of this `await` goes through `NumericGuard` rather than
+    // a cast, so nothing arriving through an import can still throw here.
+    // What that leaves is an unenumerable class — any future failure in
+    // `_loadSettings`, from a schema the running build does not know to a
+    // disk error — and the consequence has not changed: unguarded, the
+    // throw takes the reschedule, the callback and the toast with it, so
+    // the import applies while the OS keeps the pre-restore reminder
+    // schedule and the user is told nothing.
+    // Re-reading settings is best-effort; everything after it is not.
+    var reloaded = true;
+    try {
+      await _loadSettings();
+    } catch (_) {
+      reloaded = false;
+    }
     await NotificationService.instance.rescheduleAll();
     widget.onSettingsUpdated();
 
     if (!mounted) return;
-    _toast('Import complete. ${result.rowsRestored} rows restored.');
+    // Two different things can be worth warning about, and they are
+    // independent. `reloaded` is the belt above failing — rare, and now
+    // unreachable from an import. `coercedValues` is the common one: the
+    // restore succeeded by rewriting cells it could not read as `0`, and
+    // saying only "Import complete" there reports a silent edit of the
+    // user's own data as an unqualified success.
+    final rewritten = result.coercedValues > 0;
+    _toast(
+      reloaded
+          ? 'Import complete. ${result.rowsRestored} rows restored.'
+              '${ImportResult.coercionNote(result.coercedValues)}'
+          : 'Import complete. ${result.rowsRestored} rows restored, but some '
+              'of them could not be read back. Check the backup file.',
+      warn: !reloaded || rewritten,
+    );
   }
 
   // --- BUILD ---
@@ -362,7 +444,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('APPEARANCE', style: JinatraTokens.monoData(fontSize: 14)),
+          SectionHeading(title: 'APPEARANCE'),
           const SizedBox(height: 4),
           Text(
             'Eight neubrutalist palettes. Applies instantly.',
@@ -416,11 +498,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: p.canvas,
+          borderRadius: BorderRadius.circular(JinatraTokens.radiusTile),
           border: Border.all(
             color: selected ? JinatraTokens.signal : JinatraTokens.ink,
-            width: selected ? 4 : 2,
+            width: selected
+                ? JinatraTokens.borderHero
+                : JinatraTokens.borderDivider,
           ),
-          boxShadow: [JinatraTokens.hardShadow(offset: selected ? 4 : 2)],
+          // Shadows only ever sit on the 3/6/10 scale the spec pins, so the
+          // selected swatch lifts to the card offset rather than an ad-hoc 4.
+          boxShadow: [
+            JinatraTokens.hardShadow(
+              offset:
+                  selected ? JinatraTokens.shadowMd : JinatraTokens.shadowSm,
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -431,15 +523,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
                 color: p.surface,
+                borderRadius: BorderRadius.circular(JinatraTokens.radiusTile),
                 border: Border.all(color: p.ink, width: 2),
               ),
               child: Row(
                 children: [
-                  Expanded(flex: 3, child: Container(color: p.primary)),
+                  Expanded(flex: 3, child: _swatchChip(p.primary)),
                   const SizedBox(width: 4),
-                  Expanded(child: Container(color: p.accent)),
+                  Expanded(child: _swatchChip(p.accent)),
                   const SizedBox(width: 4),
-                  Expanded(child: Container(color: p.surfaceAlt)),
+                  Expanded(child: _swatchChip(p.surfaceAlt)),
                 ],
               ),
             ),
@@ -456,8 +549,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (selected) Icon(Icons.check, size: 13, color: p.ink),
               ],
             ),
+            const SizedBox(height: 7),
+            // The palette's authored eight-accent ramp, so the user can see
+            // what a theme will hand to training days and charts before
+            // choosing it. Bordered in this palette's own ink rather than the
+            // live theme's, because every other colour in the swatch previews
+            // `p` - the running theme's ink disappears against a swatch whose
+            // canvas is the opposite brightness. Wrapped rather than laid out
+            // in a Row so eight dots cannot overflow a narrow phone's
+            // half-width swatch.
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                for (final accent in p.accents)
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: p.ink, width: 1),
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// One colour bar inside a theme swatch's miniature card.
+  Widget _swatchChip(Color color) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(JinatraTokens.radiusPill),
       ),
     );
   }
@@ -468,8 +596,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('PROFILE & PREFERENCES',
-              style: JinatraTokens.monoData(fontSize: 14)),
+          SectionHeading(title: 'PROFILE & PREFERENCES'),
           const SizedBox(height: 14),
 
           Text('HEIGHT UNIT', style: JinatraTokens.monoData(fontSize: 12)),
@@ -542,19 +669,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('ENABLE NUTRITION TAB',
-                  style: JinatraTokens.monoData(fontSize: 13)),
-              Switch(
-                value: _foodTabEnabled,
-                activeThumbColor: JinatraTokens.deepTeal,
-                onChanged: (val) => setState(() => _foodTabEnabled = val),
-              ),
-            ],
+          _switchRow(
+            label: 'ENABLE NUTRITION TAB',
+            value: _foodTabEnabled,
+            onChanged: (val) => setState(() => _foodTabEnabled = val),
           ),
-          const SizedBox(height: 14),
           JinatraButton(
             label: 'SAVE SETTINGS',
             onPressed: () async {
@@ -586,8 +705,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('GOAL & CALORIE TARGET',
-              style: JinatraTokens.monoData(fontSize: 14)),
+          SectionHeading(title: 'GOAL & CALORIE TARGET'),
           const SizedBox(height: 4),
           Text(
             'Your daily calories are calculated from these, not guessed. BMR '
@@ -659,6 +777,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 decoration: BoxDecoration(
                   color:
                       selected ? JinatraTokens.mistTeal : JinatraTokens.paper,
+                  borderRadius:
+                      BorderRadius.circular(JinatraTokens.radiusTile),
                   border: Border.all(
                     color:
                         selected ? JinatraTokens.deepTeal : JinatraTokens.ink,
@@ -723,6 +843,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           horizontal: 12, vertical: 11),
                       decoration: BoxDecoration(
                         color: JinatraTokens.paper,
+                        borderRadius:
+                            BorderRadius.circular(JinatraTokens.radiusTile),
                         border: Border.all(
                             color: JinatraTokens.ink,
                             width: JinatraTokens.borderControl),
@@ -765,12 +887,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: JinatraTokens.deepTeal,
-                border: Border.all(
-                    color: JinatraTokens.ink,
-                    width: JinatraTokens.borderControl),
-                boxShadow: [JinatraTokens.hardShadow(offset: 3)],
+              decoration: JinatraTokens.cardDecoration(
+                background: JinatraTokens.deepTeal,
+                shadowOffset: JinatraTokens.shadowSm,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -784,10 +903,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: JinatraTokens.signal,
-                          border:
-                              Border.all(color: JinatraTokens.ink, width: 2),
+                        decoration: JinatraTokens.cardDecoration(
+                          background: JinatraTokens.signal,
+                          borderWidth: JinatraTokens.borderDivider,
+                          hasShadow: false,
+                          radius: JinatraTokens.radiusTile,
                         ),
                         child: Text(plan.directionLabel,
                             style: JinatraTokens.monoData(
@@ -819,9 +939,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: JinatraTokens.signal,
-                  border: Border.all(color: JinatraTokens.ink, width: 2),
+                decoration: JinatraTokens.cardDecoration(
+                  background: JinatraTokens.signal,
+                  borderWidth: JinatraTokens.borderDivider,
+                  hasShadow: false,
+                  radius: JinatraTokens.radiusTile,
                 ),
                 child: Text(
                   plan.warning!,
@@ -842,8 +964,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('REMINDERS & ACCOUNTABILITY',
-              style: JinatraTokens.monoData(fontSize: 14)),
+          SectionHeading(title: 'REMINDERS & ACCOUNTABILITY'),
           const SizedBox(height: 4),
           Text(
             'Scheduled by your device from local data. Nothing is sent anywhere.',
@@ -854,62 +975,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 10),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text('DAILY TRAINING NUDGE',
-                    style: JinatraTokens.monoData(fontSize: 13)),
-              ),
-              Switch(
-                value: _remindersEnabled,
-                activeThumbColor: JinatraTokens.deepTeal,
-                onChanged: _toggleReminders,
-              ),
-            ],
+          _switchRow(
+            label: 'DAILY TRAINING NUDGE',
+            value: _remindersEnabled,
+            onChanged: _toggleReminders,
           ),
 
           if (_remindersEnabled) ...[
-            GestureDetector(
+            CalmRow(
+              icon: Icons.schedule,
+              title: 'REMINDER TIME',
+              value: _reminderTime.format(context),
               onTap: _pickReminderTime,
-              child: Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  color: JinatraTokens.mistTeal,
-                  border: Border.all(color: JinatraTokens.ink, width: 2),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('REMINDER TIME',
-                        style: JinatraTokens.monoData(fontSize: 12)),
-                    Text(
-                      _reminderTime.format(context),
-                      style: JinatraTokens.monoData(
-                          fontSize: 15, fontWeight: FontWeight.w900),
-                    ),
-                  ],
-                ),
-              ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text('STREAK WARNING AT 21:00',
-                      style: JinatraTokens.monoData(fontSize: 13)),
-                ),
-                Switch(
-                  value: _streakAlertsEnabled,
-                  activeThumbColor: JinatraTokens.deepTeal,
-                  onChanged: _toggleStreakAlerts,
-                ),
-              ],
+            _switchRow(
+              label: 'STREAK WARNING AT 21:00',
+              value: _streakAlertsEnabled,
+              onChanged: _toggleStreakAlerts,
             ),
-            const SizedBox(height: 6),
             JinatraButton(
               label: 'SEND TEST NOTIFICATION',
               background: JinatraTokens.paper,
@@ -931,7 +1014,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('DATA BACKUP', style: JinatraTokens.monoData(fontSize: 14)),
+          SectionHeading(title: 'DATA BACKUP'),
           const SizedBox(height: 8),
           Text(
             'Export writes every routine, workout, set, meal, body entry and '
@@ -962,7 +1045,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('ABOUT LOCKOUT', style: JinatraTokens.monoData(fontSize: 14)),
+          SectionHeading(title: 'ABOUT LOCKOUT'),
           const SizedBox(height: 8),
           Text(
             'LOCKOUT v1.1.0\nPublished by Jinatra Ltd. under GPL-3.0-or-later.\n'
@@ -971,6 +1054,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'account.\nThe network is used for one thing — streaming exercise '
             'form videos from YouTube when you tap WATCH.',
             style: JinatraTokens.bodyText(fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A settings row that owns an inline switch.
+  ///
+  /// The switch stays exactly where it was; only the chrome changes. The row
+  /// takes the same rounded bordered frame a [CalmRow] draws, so a toggle and
+  /// a navigable row read as the same kind of thing in a settings group.
+  Widget _switchRow({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(left: 12, right: 4),
+      decoration: JinatraTokens.cardDecoration(
+        shadowOffset: JinatraTokens.shadowSm,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label, style: JinatraTokens.monoData(fontSize: 13)),
+          ),
+          Switch(
+            value: value,
+            activeThumbColor: JinatraTokens.deepTeal,
+            onChanged: onChanged,
           ),
         ],
       ),
@@ -986,9 +1100,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-        decoration: BoxDecoration(
-          color: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
-          border: Border.all(color: JinatraTokens.ink, width: 3),
+        decoration: JinatraTokens.cardDecoration(
+          background: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
+          hasShadow: false,
+          radius: JinatraTokens.radiusPill,
         ),
         child: Center(
           child: Text(

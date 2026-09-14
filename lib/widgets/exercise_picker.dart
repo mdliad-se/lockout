@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/exercise_library.dart';
+import '../data/food_search.dart';
 import '../theme/jinatra_tokens.dart';
 
 /// Result of the picker: either a catalog entry or a user-typed custom name.
@@ -41,13 +42,17 @@ Future<PickedExercise?> showExercisePicker(BuildContext context) {
     context: context,
     isScrollControlled: true,
     backgroundColor: JinatraTokens.sweetCream,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-    builder: (_) => const _ExercisePickerSheet(),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
+    ),
+    builder: (_) => _ExercisePickerSheet(),
   );
 }
 
 class _ExercisePickerSheet extends StatefulWidget {
-  const _ExercisePickerSheet();
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  _ExercisePickerSheet();
 
   @override
   State<_ExercisePickerSheet> createState() => _ExercisePickerSheetState();
@@ -68,8 +73,8 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
     var list = _group == 'All'
         ? ExerciseLibrary.all
         : ExerciseLibrary.byGroup(_group);
-    if (_query.isNotEmpty) {
-      list = list.where((e) => e.matches(_query)).toList();
+    if (_query.trim().isNotEmpty) {
+      list = searchExercises(_query, source: list).map((h) => h.item).toList();
     }
     return list;
   }
@@ -246,7 +251,9 @@ class _ExerciseRow extends StatelessWidget {
   final LibraryExercise exercise;
   final VoidCallback onTap;
 
-  const _ExerciseRow({required this.exercise, required this.onTap});
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  _ExerciseRow({required this.exercise, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

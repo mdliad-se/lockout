@@ -2,17 +2,31 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../theme/jinatra_tokens.dart';
 
-/// Colour coding per day type, so a training week reads at a glance.
+/// Colour coding per training day, so a week reads at a glance.
 ///
-/// The printed plan fills each day's whole header bar with a distinct hue —
-/// Push yellow, Pull blue, Legs green — rather than tinting a small chip.
-/// Hardcoding those would fight eight themes, so the hues are derived by
-/// rotating the active palette's primary: distinct from each other, still
-/// recognisably part of the current theme.
-class DayPalette {
+/// Two rules, in this order:
+///  1. A day proposes the accent for its category, so Push/Pull/Legs keep a
+///     recognisable colour across routines and across themes.
+///  2. Within one routine, no two training days may share a colour while a
+///     free slot remains. v1 broke here: "Upper Body + Core" and "Upper
+///     Body" are both category 5, so both rendered the same magenta and the
+///     week stopped being scannable. A day whose category accent is already
+///     taken walks forward to the first free slot; once every slot is in
+///     use, colours repeat deterministically. Either way, a training day
+///     never receives the colour reserved for rest days.
+///
+/// Colours come from the palette's authored ramp rather than HSL rotation of
+/// the primary — rotation produced muddy mid-tones in several themes and
+/// could not guarantee distinctness in the first place.
+class DayColours {
+  DayColours._();
+
+  /// Rest days recede rather than compete, and never consume an accent.
+  static Color get restColour => JinatraTokens.mistTeal;
+
   /// Day categories in a fixed order, so the same kind of session keeps the
   /// same colour everywhere in the app.
-  static int _categoryOf(TrainingDay day) {
+  static int categoryOf(TrainingDay day) {
     final key = '${day.name} ${day.focus}'.toLowerCase();
     if (key.contains('push') || key.contains('chest')) return 0;
     if (key.contains('pull') ||
@@ -26,35 +40,77 @@ class DayPalette {
     if (key.contains('shoulder') || key.contains('delt')) return 3;
     if (key.contains('arm') || key.contains('tricep')) return 4;
     if (key.contains('upper') || key.contains('full')) return 5;
-    // Anything unrecognised still gets a stable colour rather than a default.
+    // Anything unrecognised still gets a stable category rather than a
+    // default, so the same custom day name always looks the same.
     return day.name.isEmpty ? 0 : day.name.codeUnitAt(0) % 6;
   }
 
-  static Color forDay(TrainingDay day) {
-    // Rest keeps the muted secondary surface — it should recede, not compete.
-    if (day.isRestDay) return JinatraTokens.mistTeal;
+  /// Colour per day for one routine, keyed by [TrainingDay.id].
+  ///
+  /// Pass the routine's days in display order; the order decides who keeps
+  /// their category colour when two days want the same one.
+  static Map<String, Color> assign(List<TrainingDay> days) {
+    final ramp = JinatraTokens.accents;
+    final result = <String, Color>{};
+    final taken = <int>{};
 
-    final base = HSLColor.fromColor(JinatraTokens.deepTeal);
-    final hue = (base.hue + _categoryOf(day) * 58) % 360;
+    // Some themes' authored ramp happens to reuse the same colour as the
+    // muted rest surface (e.g. Paper Press's yellow accent equals its
+    // surfaceAlt). Reserve those slots up front so a training day can never
+    // be handed the rest colour by coincidence — this holds no matter how
+    // many training days are in the list.
+    final reserved = <int>{};
+    for (var i = 0; i < ramp.length; i++) {
+      if (ramp[i] == restColour) reserved.add(i);
+    }
+    taken.addAll(reserved);
 
-    // Clamp saturation and lightness so every rotation lands somewhere the
-    // ink border and the label can both survive.
-    final saturation = base.saturation.clamp(0.55, 0.95);
-    final lightness = JinatraTokens.isDark
-        ? base.lightness.clamp(0.45, 0.62)
-        : base.lightness.clamp(0.38, 0.58);
+    for (final day in days) {
+      if (day.isRestDay) {
+        result[day.id] = restColour;
+        continue;
+      }
 
-    return HSLColor.fromAHSL(1.0, hue, saturation, lightness).toColor();
+      final seed = categoryOf(day) % ramp.length;
+
+      // Walk forward from the category seed to the first slot not yet in
+      // use (reserved slots count as in-use from the start). Bounded by
+      // ramp.length so a fully saturated ramp can't spin forever.
+      var slot = seed;
+      var steps = 0;
+      while (taken.contains(slot) && steps < ramp.length) {
+        slot = (slot + 1) % ramp.length;
+        steps++;
+      }
+
+      if (!taken.contains(slot)) {
+        taken.add(slot);
+        result[day.id] = ramp[slot];
+        continue;
+      }
+
+      // Saturated: every slot — reserved or not — is already in use.
+      // Colours may now repeat, but never the reserved one. Walk again from
+      // the same seed, this time stepping only around reserved slots; the
+      // outcome depends solely on the seed and the palette, so repeated
+      // calls with the same days stay identical. If a palette had every
+      // accent equal to restColour, this bottoms out back at the seed
+      // instead of looping forever.
+      var reuse = seed;
+      var reuseSteps = 0;
+      while (reserved.contains(reuse) && reuseSteps < ramp.length) {
+        reuse = (reuse + 1) % ramp.length;
+        reuseSteps++;
+      }
+      result[day.id] = ramp[reuse];
+    }
+
+    return result;
   }
 
-  /// Text and icons drawn on [forDay]. Decided by luminance rather than by a
-  /// lookup, so it stays correct for every derived hue in every theme.
-  static Color onColorFor(TrainingDay day) {
-    final bg = forDay(day);
-    return bg.computeLuminance() > 0.45
-        ? const Color(0xFF111111)
-        : const Color(0xFFFFFFFF);
-  }
+  /// Text and icons drawn on a day colour.
+  static Color onColorFor(Color background) =>
+      JinatraTokens.onAccentColor(background);
 }
 
 /// A section heading inside an expanded day — "WARM-UP", "FINISHER".
@@ -67,7 +123,13 @@ class SectionHeading extends StatelessWidget {
   final String amount;
   final VoidCallback? onAdd;
 
-  const SectionHeading({
+  // NOT const: `build` resolves a palette colour, so a const call site
+  // would canonicalise this widget and `Element.updateChild` would skip
+  // its rebuild on a theme switch, stranding it in the old palette. A
+  // non-const constructor makes that unrepresentable rather than asking
+  // every call site to remember.
+  // ignore: prefer_const_constructors_in_immutables
+  SectionHeading({
     super.key,
     required this.title,
     this.amount = '',
@@ -128,7 +190,9 @@ class SubItemRow extends StatelessWidget {
   final String amt;
   final VoidCallback? onRemove;
 
-  const SubItemRow({
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  SubItemRow({
     super.key,
     required this.name,
     required this.amt,
@@ -175,7 +239,9 @@ class AddLink extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const AddLink({super.key, required this.label, required this.onTap});
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  AddLink({super.key, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

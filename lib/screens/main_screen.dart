@@ -10,7 +10,11 @@ import 'log_tab.dart';
 import 'settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. Here the
+  // palette is read by the AppBar and BottomNav this screen builds, not by
+  // the screen itself; canonicalising it strands them just the same.
+  // ignore: prefer_const_constructors_in_immutables
+  MainScreen({super.key});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -47,31 +51,43 @@ class _MainScreenState extends State<MainScreen> {
     _refreshVisibleTab();
   }
 
-  List<Widget> get _screens => [
-        RoutinesTab(key: _routinesKey),
-        TodayTab(key: _todayKey),
-        if (_foodTabEnabled) FoodTab(key: _foodKey),
-        BodyTab(key: _bodyKey),
-        LogTab(key: _logKey),
-      ];
+  /// `BottomNav.visibleTabs` is the single source of truth for order and
+  /// visibility; `_screens` and `_tabIds` are both derived from it so they
+  /// cannot silently drift apart from what the nav bar actually shows.
+  List<String> get _tabIds => BottomNav.visibleTabs(foodTabEnabled: _foodTabEnabled)
+      .map((t) => t.id)
+      .toList();
 
-  /// Labels aligned with `_screens`, used to decide which key to refresh.
-  List<String> get _tabIds => [
-        'routines',
-        'today',
-        if (_foodTabEnabled) 'food',
-        'body',
-        'log',
-      ];
+  List<Widget> get _screens =>
+      BottomNav.visibleTabs(foodTabEnabled: _foodTabEnabled)
+          .map((t) => _screenFor(t.tab))
+          .toList();
+
+  /// A switch *expression* over the `NavTab` enum: the compiler rejects this
+  /// if a case is missing, so a tab added to `BottomNav._allTabs` without a
+  /// matching branch here is a compile error rather than the runtime
+  /// `StateError` a `String`-keyed switch could only catch with a
+  /// remembered `default`.
+  Widget _screenFor(NavTab tab) => switch (tab) {
+        NavTab.home => TodayTab(
+            key: _todayKey,
+            onNavigate: _goToTab,
+            foodTabEnabled: _foodTabEnabled,
+          ),
+        NavTab.routines => RoutinesTab(key: _routinesKey),
+        NavTab.food => FoodTab(key: _foodKey),
+        NavTab.body => BodyTab(key: _bodyKey),
+        NavTab.log => LogTab(key: _logKey),
+      };
 
   void _refreshVisibleTab() {
     if (_currentIndex >= _tabIds.length) return;
     switch (_tabIds[_currentIndex]) {
+      case 'home':
+        _todayKey.currentState?.reload();
+        break;
       case 'routines':
         _routinesKey.currentState?.reload();
-        break;
-      case 'today':
-        _todayKey.currentState?.reload();
         break;
       case 'food':
         _foodKey.currentState?.reload();
@@ -89,6 +105,14 @@ class _MainScreenState extends State<MainScreen> {
     setState(() => _currentIndex = index);
     // Pull fresh data after the frame so the new tab is mounted first.
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshVisibleTab());
+  }
+
+  /// Lets HOME's action grid switch tabs by id. Ids rather than indices,
+  /// because hiding the Food tab shifts every index after it.
+  void _goToTab(String tabId) {
+    final index = _tabIds.indexOf(tabId);
+    if (index < 0) return;
+    _onTabTapped(index);
   }
 
   @override

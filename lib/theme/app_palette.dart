@@ -38,6 +38,14 @@ class AppPalette {
   /// Text/icons drawn on top of [accent].
   final Color onAccent;
 
+  /// Eight authored colours used wherever many categories must be told apart
+  /// at a glance: training-day rails, the HOME action grid, category chips.
+  ///
+  /// Authored rather than derived. Rotating a single primary through HSL
+  /// produced collisions — two same-category days landed on one hue — and
+  /// muddy mid-tones in several themes, so each palette states its own ramp.
+  final List<Color> accents;
+
   const AppPalette({
     required this.key,
     required this.name,
@@ -51,6 +59,7 @@ class AppPalette {
     required this.ink,
     required this.accent,
     required this.onAccent,
+    required this.accents,
   });
 
   // --- LIGHT PALETTES ---
@@ -68,6 +77,16 @@ class AppPalette {
     ink: Color(0xFF1A1A1A),
     accent: Color(0xFFFF6B35),
     onAccent: Color(0xFF1A1A1A),
+    accents: [
+      Color(0xFF0A756C), // teal
+      Color(0xFFFF6B35), // coral
+      Color(0xFFF2B01E), // amber
+      Color(0xFF3E7D3A), // green
+      Color(0xFF2B59FF), // blue
+      Color(0xFFA64BC4), // purple
+      Color(0xFFE0447E), // pink
+      Color(0xFF17A2B8), // cyan
+    ],
   );
 
   static const paperPress = AppPalette(
@@ -83,6 +102,16 @@ class AppPalette {
     ink: Color(0xFF111111),
     accent: Color(0xFF2B59FF),
     onAccent: Color(0xFFFFFFFF),
+    accents: [
+      Color(0xFFE23A2E), // red
+      Color(0xFFFFE24A), // yellow
+      Color(0xFFB6F53C), // lime
+      Color(0xFF2CE0D4), // cyan
+      Color(0xFF2B59FF), // blue
+      Color(0xFFC77DFF), // purple
+      Color(0xFFFF7AC4), // pink
+      Color(0xFFFF8A3D), // orange
+    ],
   );
 
   static const mintLab = AppPalette(
@@ -98,6 +127,16 @@ class AppPalette {
     ink: Color(0xFF14211C),
     accent: Color(0xFFB6F53C),
     onAccent: Color(0xFF14211C),
+    accents: [
+      Color(0xFF6C3FD4), // purple
+      Color(0xFFB6F53C), // lime
+      Color(0xFF00A5A5), // teal
+      Color(0xFFFF5C8A), // pink
+      Color(0xFFFFB020), // amber
+      Color(0xFF2B6CFF), // blue
+      Color(0xFF38B000), // green
+      Color(0xFFFF6B35), // orange
+    ],
   );
 
   static const sunblock = AppPalette(
@@ -113,6 +152,16 @@ class AppPalette {
     ink: Color(0xFF141414),
     accent: Color(0xFFFF3D9A),
     onAccent: Color(0xFFFFFFFF),
+    accents: [
+      Color(0xFF1E44D6), // blue
+      Color(0xFFFF3D9A), // pink
+      Color(0xFF00A98F), // teal
+      Color(0xFFFF8A00), // orange
+      Color(0xFF7B2FF2), // purple
+      Color(0xFFE23A2E), // red
+      Color(0xFF2CB67D), // green
+      Color(0xFF0FA3B1), // cyan
+    ],
   );
 
   // --- DARK PALETTES ---
@@ -130,6 +179,16 @@ class AppPalette {
     ink: Color(0xFFF2F2F2),
     accent: Color(0xFFFF6B35),
     onAccent: Color(0xFF101010),
+    accents: [
+      Color(0xFFB6F53C), // lime
+      Color(0xFFFF6B35), // orange
+      Color(0xFF2CE0D4), // cyan
+      Color(0xFFFFD23F), // yellow
+      Color(0xFFFF4D8D), // pink
+      Color(0xFF9D7BFF), // violet
+      Color(0xFF4CC9F0), // sky
+      Color(0xFF7CD97C), // green
+    ],
   );
 
   static const midnightCyan = AppPalette(
@@ -145,6 +204,16 @@ class AppPalette {
     ink: Color(0xFFEAF4FF),
     accent: Color(0xFFFF4D8D),
     onAccent: Color(0xFF10040A),
+    accents: [
+      Color(0xFF2CE0D4), // cyan
+      Color(0xFFFF4D8D), // pink
+      Color(0xFFFFC53D), // amber
+      Color(0xFF7BD3FF), // sky
+      Color(0xFFA78BFA), // violet
+      Color(0xFF4ADE80), // green
+      Color(0xFFFB923C), // orange
+      Color(0xFFD4D700), // citron
+    ],
   );
 
   static const ashAmber = AppPalette(
@@ -160,6 +229,16 @@ class AppPalette {
     ink: Color(0xFFF5EFE6),
     accent: Color(0xFFFF4D4D),
     onAccent: Color(0xFF1B0505),
+    accents: [
+      Color(0xFFFFB020), // amber
+      Color(0xFFFF4D4D), // red
+      Color(0xFFA3E635), // lime
+      Color(0xFF22D3EE), // cyan
+      Color(0xFF93C5FD), // blue
+      Color(0xFFC4B5FD), // violet
+      Color(0xFFFDA4AF), // rose
+      Color(0xFF6EE7B7), // mint
+    ],
   );
 
   static const voidMagenta = AppPalette(
@@ -175,6 +254,16 @@ class AppPalette {
     ink: Color(0xFFFFFFFF),
     accent: Color(0xFF25F4EE),
     onAccent: Color(0xFF001312),
+    accents: [
+      Color(0xFFFF2BD1), // magenta
+      Color(0xFF25F4EE), // cyan
+      Color(0xFFFFE347), // yellow
+      Color(0xFF7CFF6B), // green
+      Color(0xFF6B8CFF), // blue
+      Color(0xFFFF8A3D), // orange
+      Color(0xFFC77DFF), // purple
+      Color(0xFFFF5C7A), // rose
+    ],
   );
 
   static const List<AppPalette> light = [
