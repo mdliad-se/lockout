@@ -148,10 +148,13 @@ void main() {
 
     // Scroll to the very end: the last line of the last card must then sit
     // above the navigation bar rather than under it.
-    final scroller = find.descendant(
-      of: find.byType(AbsorbPointer),
-      matching: find.byType(SingleChildScrollView),
-    );
+    // `.first` is outermost in depth-first order, so this keeps working if a
+    // card ever gains a horizontally-scrolling row — a palette swatch strip
+    // being the obvious candidate on this screen. Matching on type alone
+    // would then throw "Bad state: Too many elements", which is how the first
+    // draft of this test died on `scrollUntilVisible` and the six
+    // `Scrollable`s that `EditableText` contributes.
+    final scroller = find.byType(SingleChildScrollView).first;
     for (var i = 0; i < 6; i++) {
       await tester.drag(scroller, const Offset(0, -800));
       await tester.pumpAndSettle();

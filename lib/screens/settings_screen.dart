@@ -424,8 +424,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // `SafeArea`. Padding keeps content scrolling UNDER the bar, which
           // a `SafeArea` would stop, while still letting the user scroll the
           // last line clear of it.
+          //
+          // `paddingOf`, not `viewPaddingOf`: `resizeToAvoidBottomInset` has
+          // already shortened this body when the keyboard is up, and
+          // `viewPadding` ignores insets, so it would reserve another 48dp of
+          // dead space above the keyboard. `padding.bottom` collapses to 0 in
+          // exactly that case. It is also what `SafeArea` reads, so this and
+          // exercise_video_screen.dart take their inset from one source.
           padding: EdgeInsets.all(16.0).copyWith(
-            bottom: 16.0 + MediaQuery.viewPaddingOf(context).bottom,
+            bottom: 16.0 + MediaQuery.paddingOf(context).bottom,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
