@@ -29,6 +29,48 @@ class TextSearch {
   /// token the library actually uses. Bengali/Hindi romanisation varies by
   /// person, so both the common spellings and the English word are accepted.
   static const Map<String, String> aliases = {
+    // gym vocabulary — the exercise catalog names a movement in the
+    // singular ("Lateral Raise"), users type it in the plural, and the
+    // fuzzy band only reaches one edit away, so "flyes" never found "Fly".
+    // Both sides are canonicalised, so a plural IN a name ("Seated Marches")
+    // folds to the same token.
+    'flyes': 'fly',
+    'flies': 'fly',
+    'flys': 'fly',
+    'crossover': 'fly',
+    'crossovers': 'fly',
+    'raises': 'raise',
+    'curls': 'curl',
+    'rows': 'row',
+    'presses': 'press',
+    'extensions': 'extension',
+    'pushdowns': 'pushdown',
+    'pulldowns': 'pulldown',
+    'squats': 'squat',
+    'lunges': 'lunge',
+    'dips': 'dip',
+    'crunches': 'crunch',
+    'planks': 'plank',
+    'deadlifts': 'deadlift',
+    'shrugs': 'shrug',
+    'kickbacks': 'kickback',
+    'thrusts': 'thrust',
+    'bridges': 'bridge',
+    'marches': 'march',
+    'twists': 'twist',
+    'circles': 'circle',
+    'swings': 'swing',
+    'stretches': 'stretch',
+    'pumps': 'pump',
+    'taps': 'tap',
+    'kicks': 'kick',
+    'rolls': 'roll',
+    'slides': 'slide',
+    'bicep': 'biceps',
+    'tricep': 'triceps',
+    'delts': 'shoulders',
+    'freehand': 'bodyweight',
+    'calisthenics': 'bodyweight',
     // breads
     'ruti': 'roti',
     'rooti': 'roti',
@@ -239,6 +281,7 @@ SearchHit<T>? _score<T>({
   required String rawQuery,
   required List<String> queryTokens,
   required List<String> canonicalQuery,
+  bool crossField = false,
 }) {
   final normName = TextSearch.normalise(name);
   final nameTokens = TextSearch.tokenise(name);
@@ -286,6 +329,32 @@ SearchHit<T>? _score<T>({
       rank: _Rank.fuzzyName,
       matchedVia: rawQuery.trim(),
     );
+  }
+
+  // Cross-field band, exercises only. A gym query mixes the movement with
+  // the body part or the kit — "cable chest fly", "bodyweight legs" — and
+  // those live on different fields: "chest" is the muscleGroup, "cable" and
+  // "fly" are in the name. Every band above requires ONE field to satisfy
+  // EVERY token, so such a query found nothing at all. Here each token may
+  // land in any field, which is only safe because an exercise's secondary
+  // fields are two short controlled vocabularies. Foods keep the stricter
+  // rule: their ingredient lists are long enough that this would match
+  // nearly anything.
+  if (crossField) {
+    final pool = [normName, ...secondary.map(TextSearch.normalise)].join(' ');
+    final canonicalPool = TextSearch.canonicalise(TextSearch.tokenise(pool));
+    final matched = canonicalQuery.every(
+      (q) => TextSearch._candidatesFor(q).any(
+            (c) => canonicalPool.any((n) => n == c) || pool.contains(c),
+          ),
+    );
+    if (matched) {
+      return SearchHit(
+        item: item,
+        rank: _Rank.category,
+        matchedVia: rawQuery.trim(),
+      );
+    }
   }
 
   // Secondary fields, in the order they were passed: category before
@@ -372,6 +441,7 @@ List<SearchHit<LibraryExercise>> searchExercises(
       rawQuery: query,
       queryTokens: tokens,
       canonicalQuery: canonical,
+      crossField: true,
     );
     if (hit != null) hits.add(hit);
   }

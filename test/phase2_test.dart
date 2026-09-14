@@ -390,6 +390,128 @@ void main() {
     });
   });
 
+  // Reported from the device: a user building a light, controlled leg day
+  // had to type "Seated Marches" and "Lying Leg Rise" into the FINISHER
+  // free-text rows, because the exercise picker could not offer them — the
+  // catalog was built around loaded gym work and thin on the chair-, floor-
+  // and wall-based movements a deload, a rehab block or a no-equipment day
+  // is made of.
+  group('freehand catalog', () {
+    test('the catalog covers low-impact freehand movements', () {
+      const expected = [
+        'Seated Marches',
+        'Seated Knee Raise',
+        'Seated Leg Extension',
+        'Seated Heel Raise',
+        'Seated Torso Twist',
+        'Standing March',
+        'Standing Knee Raise',
+        'Standing Hip Abduction',
+        'Standing Hamstring Curl',
+        'Sit-to-Stand',
+        'Short-Arc Quad',
+        'Straight-Leg Raise',
+        'Heel Slide',
+        'Side-Lying Leg Raise',
+        'Prone Leg Raise',
+        'Glute Squeeze',
+        'Wall Push-Up',
+        'Knee Push-Up',
+        'Scapular Retraction',
+        'Superman',
+        'Reverse Crunch',
+        'Flutter Kicks',
+        'Heel Taps',
+        'Wall Angel',
+        'Chin Tuck',
+        'Shoulder Rolls',
+        'Neck Rotation',
+        'Ankle Pumps',
+        'Seated Forward Fold',
+        'Figure-Four Stretch',
+      ];
+      final missing = [
+        for (final name in expected)
+          if (ExerciseLibrary.findByName(name) == null) name,
+      ];
+      expect(missing, isEmpty);
+    });
+
+    test('every freehand addition needs no equipment', () {
+      const freehand = [
+        'Seated Marches',
+        'Sit-to-Stand',
+        'Wall Push-Up',
+        'Superman',
+        'Chin Tuck',
+      ];
+      for (final name in freehand) {
+        expect(ExerciseLibrary.findByName(name)!.equipment, 'Bodyweight',
+            reason: name);
+      }
+    });
+
+    // The reported spelling was "Lying Leg Rise", and that entry already
+    // existed as "Lying Leg Raise" — so the picker missing it was a search
+    // problem, not a catalog one. Both halves are pinned here.
+    // Reported as "many more missing, like Cable chest flyes, lateral
+    // raises, Shoulder press (no machine)". None of those were missing:
+    // `Cable Crossover`, `Low Cable Fly`, `Lateral Raise`, `Overhead Press`
+    // and `Seated Dumbbell Shoulder Press` were all already in the catalog.
+    // The picker could not reach them, because the query was a plural the
+    // search had no alias for, or it named the body part ("chest") which
+    // lives on `muscleGroup` rather than in the name.
+    test('plural gym vocabulary reaches the singular entry', () {
+      const cases = {
+        'lateral raises': 'Lateral Raise',
+        'dumbbell flyes': 'Dumbbell Fly',
+        'bicep curls': 'Dumbbell Curl',
+        'barbell rows': 'Barbell Row',
+        'triceps pushdowns': 'Triceps Pushdown',
+        'leg extensions': 'Leg Extension',
+        'walking lunges': 'Walking Lunge',
+        'crunches': 'Crunch',
+        'seated marches': 'Seated Marches',
+      };
+      cases.forEach((query, expected) {
+        expect(ExerciseLibrary.search(query).map((e) => e.name), contains(expected),
+            reason: query);
+      });
+    });
+
+    test('a query may name the body part as well as the movement', () {
+      expect(
+        ExerciseLibrary.search('cable chest flyes').map((e) => e.name),
+        anyOf(contains('Cable Crossover'), contains('Low Cable Fly')),
+      );
+      expect(
+        ExerciseLibrary.search('shoulder press').map((e) => e.name),
+        contains('Dumbbell Shoulder Press'),
+      );
+      expect(
+        ExerciseLibrary.search('bodyweight legs').map((e) => e.name),
+        contains('Bodyweight Squat'),
+      );
+    });
+
+    test('a free-weight shoulder press is reachable without a machine', () {
+      final press = ExerciseLibrary.findByName('Dumbbell Shoulder Press');
+      expect(press, isNotNull);
+      expect(press!.equipment, 'Dumbbell');
+    });
+
+    test('search reaches a freehand move from the spelling a user types', () {
+      expect(
+        ExerciseLibrary.search('lying leg rise').map((e) => e.name),
+        contains('Lying Leg Raise'),
+      );
+      expect(
+        ExerciseLibrary.search('seated march').map((e) => e.name),
+        contains('Seated Marches'),
+      );
+    });
+  });
+
   group('RoutineTemplate', () {
     test('every template day references real catalog exercises', () {
       for (final t in RoutineTemplate.all) {
