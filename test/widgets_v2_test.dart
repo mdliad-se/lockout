@@ -135,6 +135,25 @@ void main() {
             epsilon: 0.5));
   });
 
+  // The day sheet's rows carried a bare 14px `Icons.close` — the one delete
+  // affordance in the app still under the 40dp floor that log_tab.dart,
+  // meal_section.dart and undo_banner.dart each set for themselves.
+  testWidgets('SubItemRow remove affordance has a 40dp tap target',
+      (tester) async {
+    await tester.pumpWidget(_host(
+      SubItemRow(name: 'Band pull-aparts', amt: 'x15', onRemove: () {}),
+    ));
+
+    final detector = find.ancestor(
+      of: find.byIcon(Icons.close),
+      matching: find.byType(GestureDetector),
+    );
+    expect(detector, findsOneWidget);
+    final size = tester.getSize(detector);
+    expect(size.width, greaterThanOrEqualTo(40));
+    expect(size.height, greaterThanOrEqualTo(40));
+  });
+
   // The width leg needs its own case: every real label is ~135dp wide, so a
   // long one satisfies `>= 40` whatever the constraint says and would pass
   // against `minWidth: 0`.

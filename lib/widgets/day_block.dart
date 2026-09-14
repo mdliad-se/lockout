@@ -189,12 +189,13 @@ class SubItemRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 5, left: 2),
+      padding: const EdgeInsets.only(left: 2),
       child: Row(
         children: [
           Expanded(
             child: Text(name, style: JinatraTokens.bodyText(fontSize: 13)),
           ),
+          const SizedBox(width: 8),
           Text(
             amt,
             style: JinatraTokens.monoData(
@@ -202,18 +203,26 @@ class SubItemRow extends StatelessWidget {
               color: JinatraTokens.ink.withValues(alpha: 0.65),
             ),
           ),
-          if (onRemove != null) ...[
-            const SizedBox(width: 10),
+          // A bare 14px glyph was the last delete affordance in the app under
+          // the 40dp floor that log_tab.dart, meal_section.dart and
+          // undo_banner.dart each set for themselves. The box carries the
+          // row's height too, so every row in the day sheet is one bar tall
+          // whether or not it has a remove control.
+          if (onRemove != null)
             GestureDetector(
               onTap: onRemove,
               behavior: HitTestBehavior.opaque,
-              child: Icon(
-                Icons.close,
-                size: 14,
-                color: JinatraTokens.ink.withValues(alpha: 0.5),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                child: Icon(
+                  Icons.close,
+                  size: 14,
+                  color: JinatraTokens.ink.withValues(alpha: 0.5),
+                ),
               ),
-            ),
-          ],
+            )
+          else
+            const SizedBox(width: 40, height: 40),
         ],
       ),
     );

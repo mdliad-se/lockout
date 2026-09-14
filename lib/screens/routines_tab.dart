@@ -491,6 +491,16 @@ class RoutinesTabState extends State<RoutinesTab> {
 
   /// Number, name, then target and WATCH on a second line — a long name and a
   /// target chip competing for one row forced three-line wraps.
+  /// One exercise line inside the day sheet.
+  ///
+  /// Deliberately a line, not a card. Each of the three sections used to
+  /// draw its rows differently — warm-ups and finishers as plain text, the
+  /// exercises as bordered, shadowed cards — so one sheet spoke three visual
+  /// languages for three lists of the same kind of thing, and the exercises
+  /// read as a wall of rectangles between them. Now every row in the sheet
+  /// is a name on the left, its prescription in mono on the right, and a
+  /// 40dp control at the end. Only the number chip and WATCH tell an
+  /// exercise apart, and those carry information the other rows do not have.
   Widget _buildExerciseRow(
     int number,
     ExerciseDef ex,
@@ -501,76 +511,52 @@ class RoutinesTabState extends State<RoutinesTab> {
     return GestureDetector(
       onTap: () => refreshAfter(() => _openExerciseSheet(ex)),
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 7),
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-        decoration: JinatraTokens.cardDecoration(
-          background: JinatraTokens.sweetCream,
-          borderWidth: JinatraTokens.borderControl,
-          radius: JinatraTokens.radiusTile,
-          hasShadow: true,
-          shadowOffset: JinatraTokens.shadowSm,
-        ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 40),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 20,
-              height: 20,
+              width: 18,
+              height: 18,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: accent,
                 border: Border.all(color: JinatraTokens.ink, width: 1),
               ),
               child: Text('$number',
-                  style:
-                      JinatraTokens.monoData(fontSize: 9, color: onAccent)),
+                  style: JinatraTokens.monoData(fontSize: 9, color: onAccent)),
             ),
             const SizedBox(width: 9),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    ex.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: JinatraTokens.bodyText(
-                        fontWeight: FontWeight.w700, fontSize: 13),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    ex.targetWeightKg > 0
-                        ? '${ex.targetLabel} @ ${ex.targetWeightKg}kg'
-                        : ex.targetLabel,
-                    style: JinatraTokens.monoData(
-                      fontSize: 10,
-                      color: JinatraTokens.ink.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ],
+              child: Text(
+                ex.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: JinatraTokens.bodyText(fontSize: 13),
               ),
             ),
             const SizedBox(width: 8),
+            Text(
+              ex.targetWeightKg > 0
+                  ? '${ex.targetLabel} @ ${ex.targetWeightKg}kg'
+                  : ex.targetLabel,
+              style: JinatraTokens.monoData(
+                fontSize: 10,
+                color: JinatraTokens.ink.withValues(alpha: 0.65),
+              ),
+            ),
+            // Sits where the remove glyph sits on a warm-up or finisher row,
+            // on the same 40dp box, so the right edge of the sheet is one
+            // column of controls rather than three.
             GestureDetector(
               onTap: () => _openVideo(ex.name, ex.videoUrl),
               behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                decoration: JinatraTokens.cardDecoration(
-                  background: JinatraTokens.paper,
-                  borderWidth: JinatraTokens.borderControl,
-                  radius: JinatraTokens.radiusPill,
-                  hasShadow: false,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.play_arrow, size: 11, color: JinatraTokens.ink),
-                    const SizedBox(width: 3),
-                    Text('WATCH', style: JinatraTokens.monoData(fontSize: 8)),
-                  ],
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                child: Icon(
+                  Icons.play_circle_outline,
+                  size: 16,
+                  color: JinatraTokens.deepTeal,
                 ),
               ),
             ),
