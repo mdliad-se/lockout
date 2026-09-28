@@ -8,7 +8,7 @@ import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/goal_service.dart';
 import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/calm_row.dart';
-import 'package:lockout/widgets/hero_card.dart';
+import 'package:lockout/widgets/weight_card.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
 import 'package:lockout/widgets/sparkline.dart';
 import 'package:lockout/widgets/stat_tile.dart';
@@ -74,6 +74,7 @@ void main() {
   group('Sparkline', () {
     testWidgets('draws when it has data', (tester) async {
       await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
         home: Scaffold(
           body: Sparkline(
             values: const [70.0, 71.5, 71.0, 72.4],
@@ -88,6 +89,7 @@ void main() {
     testWidgets('renders an empty box rather than failing on one point',
         (tester) async {
       await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
         home: Scaffold(
           body: Sparkline(values: const [70.0], lineColor: Colors.black),
         ),
@@ -107,7 +109,7 @@ void main() {
   Future<void> pumpBody(WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(MaterialApp(home: BodyTab()));
+    await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
   }
 
   group('BodyTab', () {
@@ -116,16 +118,16 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, 'NO DATA YET');
-      expect(hero.subtitle, 'LOG A SECOND WEIGHT TO SEE A TREND');
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, isNull);
+      expect(card.deltaKg, isNull);
       expect(find.byType(Sparkline), findsNothing);
 
       final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
       final byLabel = {for (final t in tiles) t.label: t.value};
       expect(byLabel['BMI'], '--');
-      expect(byLabel['TARGET'], '--');
-      expect(byLabel['ENTRIES'], '0');
+      expect(byLabel['Target'], '--');
+      expect(byLabel['Entries'], '0');
     });
 
     testWidgets(
@@ -137,9 +139,9 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '80.0 KG');
-      expect(hero.subtitle, 'LOG A SECOND WEIGHT TO SEE A TREND');
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 80.0);
+      expect(card.deltaKg, isNull);
       expect(find.byType(Sparkline), findsNothing);
     });
 
@@ -152,9 +154,9 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '82.0 KG');
-      expect(hero.subtitle, '+2.0 KG SINCE LAST ENTRY');
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 82.0);
+      expect(card.deltaKg, 2.0);
       expect(find.byType(Sparkline), findsOneWidget);
       // Finding 2: `_bodyLogs` is newest-first, so the production code
       // reverses it before handing it to `Sparkline` — deleting that
@@ -174,8 +176,8 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.subtitle, '-2.0 KG SINCE LAST ENTRY');
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.deltaKg, -2.0);
     });
 
     // Ambiguity resolution 2: two weigh-ins on the same calendar day are a
@@ -196,11 +198,11 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
       // The second insert (79.0) is the latest by id; the delta must be
       // 79.0 - 80.0, not the other way round.
-      expect(hero.title, '79.0 KG');
-      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY');
+      expect(card.weightKg, 79.0);
+      expect(card.deltaKg, -1.0);
     });
 
     testWidgets('the stat grid reflects a configured goal snapshot exactly',
@@ -218,9 +220,9 @@ void main() {
       final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
       final byLabel = {for (final t in tiles) t.label: t.value};
       expect(byLabel['BMI'], snap.bmi!.toStringAsFixed(1));
-      expect(byLabel['TARGET'], '75.0 kg');
-      expect(byLabel['DAILY INTAKE'], '${snap.calorieTarget} kcal');
-      expect(byLabel['ENTRIES'], '1');
+      expect(byLabel['Target'], '75.0 kg');
+      expect(byLabel['Daily intake'], '${snap.calorieTarget} kcal');
+      expect(byLabel['Entries'], '1');
     });
 
     testWidgets('every reference row is present, LOG HISTORY carries the '
@@ -232,11 +234,11 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      expect(find.text('GOAL PROGRESS'), findsOneWidget);
-      expect(find.text('RECOMMENDED PLAN'), findsOneWidget);
-      expect(find.text('HOW THIS BMI IS CALCULATED'), findsOneWidget);
+      expect(find.text('Goal progress'), findsOneWidget);
+      expect(find.text('Recommended plan'), findsOneWidget);
+      expect(find.text('How this BMI is calculated'), findsOneWidget);
       final historyRow =
-          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'LOG HISTORY'));
+          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'Weight history'));
       expect(historyRow.value, '2');
     });
 
@@ -248,7 +250,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('HOW THIS BMI IS CALCULATED'));
+      await tester.tap(find.text('How this BMI is calculated'));
       await tester.pumpAndSettle();
 
       expect(find.text('BMI'), findsWidgets);
@@ -261,7 +263,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('GOAL PROGRESS'));
+      await tester.tap(find.text('Goal progress'));
       await tester.pumpAndSettle();
 
       expect(find.text('NO GOAL SET'), findsOneWidget);
@@ -284,11 +286,11 @@ void main() {
       await settle(tester);
 
       expect(find.byType(SheetScaffold), findsNothing);
-      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '77.5 KG');
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 77.5);
       final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
       final byLabel = {for (final t in tiles) t.label: t.value};
-      expect(byLabel['ENTRIES'], '1');
+      expect(byLabel['Entries'], '1');
     });
 
     // Regression lock for the disposable-controller lesson this branch paid
@@ -347,7 +349,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('LOG HISTORY'));
+      await tester.tap(find.text('Weight history'));
       await tester.pumpAndSettle();
 
       // The delete glyph is deliberately not `Icons.close` in this sheet —
@@ -380,7 +382,7 @@ void main() {
       await settle(tester);
 
       final historyRow =
-          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'LOG HISTORY'));
+          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'Weight history'));
       expect(historyRow.value, '1');
 
       // The delete above queued an UNDO banner with a 5s auto-dismiss
@@ -406,7 +408,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('LOG HISTORY'));
+      await tester.tap(find.text('Weight history'));
       await tester.pumpAndSettle();
 
       // 'b' (2026-09-02) sorts first (newest-first), so 'a' is the second
@@ -446,7 +448,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('LOG HISTORY'));
+      await tester.tap(find.text('Weight history'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.delete_outline).first);
@@ -468,7 +470,7 @@ void main() {
       await settle(tester);
 
       final historyRow =
-          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'LOG HISTORY'));
+          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'Weight history'));
       expect(historyRow.value, '2');
     });
 
@@ -489,7 +491,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('LOG HISTORY'));
+      await tester.tap(find.text('Weight history'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.delete_outline).first);
@@ -512,7 +514,7 @@ void main() {
       expect(find.byIcon(Icons.delete_outline), findsNWidgets(2),
           reason: 'the open sheet must reflect the restore live');
       final historyRow =
-          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'LOG HISTORY'));
+          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'Weight history'));
       expect(historyRow.value, '2');
     });
 
@@ -536,11 +538,11 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      var hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '79.0 KG');
-      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY');
+      var card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 79.0);
+      expect(card.deltaKg, -1.0);
 
-      await tester.tap(find.text('LOG HISTORY'));
+      await tester.tap(find.text('Weight history'));
       await tester.pumpAndSettle();
 
       // 'm2' (79.0) sorts first (newest), so it's the first delete
@@ -558,10 +560,10 @@ void main() {
       await tester.pumpAndSettle();
       await settle(tester);
 
-      hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '79.0 KG',
+      card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 79.0,
           reason: 'the restored later weigh-in must still be the latest');
-      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY',
+      expect(card.deltaKg, -1.0,
           reason: 'the delta sign must not flip after a same-day restore');
 
       final order = (await db.getBodyLogs()).map((r) => r['id']).toList();
@@ -586,11 +588,11 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      var hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '79.0 KG');
-      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY');
+      var card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 79.0);
+      expect(card.deltaKg, -1.0);
 
-      await tester.tap(find.text('LOG HISTORY'));
+      await tester.tap(find.text('Weight history'));
       await tester.pumpAndSettle();
 
       // q2 (79.0, newest) sorts first, so it's delete affordance .first;
@@ -608,11 +610,11 @@ void main() {
       await tester.pumpAndSettle();
       await settle(tester);
 
-      hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '79.0 KG',
+      card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 79.0,
           reason: 'q2 was never touched; restoring the older q1 must not '
               'steal the headline');
-      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY',
+      expect(card.deltaKg, -1.0,
           reason: 'the delta sign must not flip after restoring the older '
               'entry');
 
@@ -638,7 +640,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('LOG HISTORY'));
+      await tester.tap(find.text('Weight history'));
       await tester.pumpAndSettle();
 
       // Delete r1 (80.0, the older entry) — .at(1), same as above.
@@ -661,11 +663,11 @@ void main() {
       await tester.pumpAndSettle();
       await settle(tester);
 
-      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '78.0 KG',
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 78.0,
           reason: 'r3 was logged after r1 was deleted and must remain the '
               'headline even after r1 is restored');
-      expect(hero.subtitle, '-1.0 KG SINCE LAST ENTRY',
+      expect(card.deltaKg, -1.0,
           reason: 'r3 vs r2 (79.0), not r3 vs the restored r1');
 
       final order = (await db.getBodyLogs()).map((r) => r['id']).toList();
@@ -690,7 +692,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('RECOMMENDED PLAN'));
+      await tester.tap(find.text('Recommended plan'));
       await tester.pumpAndSettle();
       expect(find.text('RECOMMENDED TRAINING PLAN'), findsWidgets);
 
@@ -720,7 +722,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('RECOMMENDED PLAN'));
+      await tester.tap(find.text('Recommended plan'));
       await tester.pumpAndSettle();
 
       expect(
@@ -747,10 +749,10 @@ void main() {
 
       final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
       final byLabel = {for (final t in tiles) t.label: t.value};
-      expect(byLabel['TARGET'], '70.0 kg');
+      expect(byLabel['Target'], '70.0 kg');
       // The plan-derived number still correctly has nothing to show,
       // because it genuinely cannot be calculated without an age.
-      expect(byLabel['DAILY INTAKE'], '${DatabaseService.defaultCalorieTarget} kcal');
+      expect(byLabel['Daily intake'], '${DatabaseService.defaultCalorieTarget} kcal');
     });
 
     // Findings 6 & 9: `double.tryParse` accepts "Infinity"/"-Infinity" and
@@ -839,7 +841,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('LOG HISTORY'));
+      await tester.tap(find.text('Weight history'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.delete_outline).first);
@@ -894,7 +896,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('LOG HISTORY'));
+      await tester.tap(find.text('Weight history'));
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.delete_outline).first);
       await tester.pumpAndSettle();
@@ -937,6 +939,7 @@ void main() {
       await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
 
       await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
         home: Builder(
           builder: (context) => Scaffold(
             body: Center(
@@ -958,7 +961,7 @@ void main() {
       await tester.pumpAndSettle();
       await settle(tester);
 
-      await tester.tap(find.text('RECOMMENDED PLAN'));
+      await tester.tap(find.text('Recommended plan'));
       await tester.pumpAndSettle();
 
       // Starts `_createRecommendedRoutine`, which awaits
@@ -999,11 +1002,11 @@ void main() {
 
       await tester.binding.setSurfaceSize(const Size(390, 844));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(MaterialApp(home: BodyTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull);
-      expect(find.byType(HeroCard), findsOneWidget);
+      expect(find.byType(WeightCard), findsOneWidget);
       expect(find.byType(Sparkline), findsOneWidget);
     });
   });
@@ -1022,7 +1025,7 @@ void main() {
 
       await tester.binding.setSurfaceSize(const Size(800, 2000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(MaterialApp(home: BodyTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
       await settle(tester);
 
       // Before the read-side clamp `GoalService.snapshot()` threw
@@ -1032,12 +1035,12 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('Infinity kg'), findsNothing);
 
-      final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '80.0 KG');
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 80.0);
 
       final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
       final byLabel = {for (final t in tiles) t.label: t.value};
-      expect(byLabel['TARGET'], '--');
+      expect(byLabel['Target'], '--');
     });
 
     testWidgets('a non-finite height still renders a finite BMI',
@@ -1048,7 +1051,7 @@ void main() {
 
       await tester.binding.setSurfaceSize(const Size(800, 2000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(MaterialApp(home: BodyTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull);
@@ -1086,13 +1089,13 @@ void main() {
 
       await tester.binding.setSurfaceSize(const Size(800, 2000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(MaterialApp(home: BodyTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull);
       expect(find.byType(CircularProgressIndicator), findsNothing,
           reason: 'BODY never left its loading state');
-      expect(find.byType(HeroCard), findsWidgets,
+      expect(find.byType(WeightCard), findsWidgets,
           reason: 'the screen body must actually be on screen');
     });
 
@@ -1104,12 +1107,12 @@ void main() {
 
       await tester.binding.setSurfaceSize(const Size(800, 2000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(MaterialApp(home: BodyTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull);
-      final hero = tester.widget<HeroCard>(find.byType(HeroCard).first);
-      expect(hero.title, '79.5 KG');
+      final card = tester.widget<WeightCard>(find.byType(WeightCard).first);
+      expect(card.weightKg, 79.5);
     });
   });
 }

@@ -112,7 +112,7 @@ void main() {
     await tester.tap(_navLabel('Progress'));
     await _settle(tester);
 
-    await tester.tap(find.text('LOG HISTORY'));
+    await tester.tap(find.text('Weight history'));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.delete_outline).first);
     await tester.pumpAndSettle();

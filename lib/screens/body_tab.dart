@@ -7,12 +7,12 @@ import '../services/nutrition_planner.dart';
 import '../services/routine_factory.dart';
 import '../services/units.dart';
 import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_theme.dart';
 import '../widgets/calm_row.dart';
-import '../widgets/hero_card.dart';
-import '../widgets/jinatra_card.dart';
+import '../widgets/lockout_card.dart';
+import '../widgets/weight_card.dart';
 import '../widgets/jinatra_input.dart';
 import '../widgets/sheet_scaffold.dart';
-import '../widgets/sparkline.dart';
 import '../widgets/stat_tile.dart';
 import '../widgets/undo_banner.dart';
 
@@ -165,11 +165,9 @@ class BodyTabState extends State<BodyTab> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: JinatraTokens.deepTeal,
         content: Text(
-          '${rec.template.name} created and set active. Open the Routines tab.',
-          style: JinatraTokens.monoData(
-              color: JinatraTokens.onPrimary, fontSize: 12),
+          '${rec.template.name} created and set active. '
+          'Open the Workout tab.',
         ),
       ),
     );
@@ -178,8 +176,7 @@ class BodyTabState extends State<BodyTab> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Center(
-          child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
+      return const Center(child: CircularProgressIndicator());
     }
 
     // `_bodyLogs` is ordered newest-first (`getBodyLogs`'s
@@ -212,34 +209,29 @@ class BodyTabState extends State<BodyTab> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          HeroCard(
-            eyebrow: 'BODYWEIGHT',
-            title: latest == null
-                ? 'NO DATA YET'
-                : '${latest.toStringAsFixed(1)} KG',
-            subtitle: delta == null
-                ? 'LOG A SECOND WEIGHT TO SEE A TREND'
-                : '${delta > 0 ? '+' : ''}${delta.toStringAsFixed(1)} KG '
-                    'SINCE LAST ENTRY',
-            accent: JinatraTokens.accentAt(2),
-            actions: [
-              FilledButton(onPressed: _openMeasurementSheet, child: Text('Log measurement')),
-            ],
+          // The same card Home leads with, rather than a second presentation
+          // of the same three facts. Two screens disagreeing about how to
+          // show a bodyweight is how the old UI ended up with a hero here and
+          // a one-line row there.
+          WeightCard(
+            weightKg: latest,
+            targetWeightKg:
+                (targetWeightKg != null && targetWeightKg > 0)
+                    ? targetWeightKg
+                    : null,
+            deltaKg: delta,
+            series: weights,
           ),
-          if (weights.length >= 2)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: JinatraTokens.cardDecoration(
-                  shadowOffset: JinatraTokens.shadowSm,
-                ),
-                child: Sparkline(
-                  values: weights,
-                  lineColor: JinatraTokens.deepTeal,
-                ),
-              ),
+          const SizedBox(height: LockoutTheme.spaceMd),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _openMeasurementSheet,
+              icon: const Icon(Icons.add),
+              label: const Text('Log measurement'),
             ),
+          ),
+          const SizedBox(height: LockoutTheme.spaceLg),
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
@@ -253,17 +245,17 @@ class BodyTabState extends State<BodyTab> {
                 value: bmi == null ? '--' : bmi.toStringAsFixed(1),
               ),
               StatTile(
-                label: 'TARGET',
+                label: 'Target',
                 value: (targetWeightKg == null || targetWeightKg <= 0)
                     ? '--'
                     : '${targetWeightKg.toStringAsFixed(1)} kg',
               ),
               StatTile(
-                label: 'DAILY INTAKE',
+                label: 'Daily intake',
                 value: targetKcal == null ? '--' : '$targetKcal kcal',
               ),
               StatTile(
-                label: 'ENTRIES',
+                label: 'Entries',
                 value: '${_bodyLogs.length}',
               ),
             ],
@@ -271,25 +263,25 @@ class BodyTabState extends State<BodyTab> {
           const SizedBox(height: 20),
           CalmRow(
             icon: Icons.flag,
-            title: 'GOAL PROGRESS',
+            title: 'Goal progress',
             onTap: () => showLockoutSheet<void>(
               context: context,
-              title: 'GOAL PROGRESS',
+              title: 'Goal progress',
               builder: (ctx) => _buildGoalCard(),
             ),
           ),
           CalmRow(
             icon: Icons.insights,
-            title: 'RECOMMENDED PLAN',
+            title: 'Recommended plan',
             onTap: () => showLockoutSheet<void>(
               context: context,
-              title: 'RECOMMENDED TRAINING PLAN',
+              title: 'Recommended training plan',
               builder: (ctx) => _buildPlanCard(ctx),
             ),
           ),
           CalmRow(
             icon: Icons.straighten,
-            title: 'HOW THIS BMI IS CALCULATED',
+            title: 'How this BMI is calculated',
             onTap: () => showLockoutSheet<void>(
               context: context,
               title: 'BMI',
@@ -298,11 +290,11 @@ class BodyTabState extends State<BodyTab> {
           ),
           CalmRow(
             icon: Icons.history,
-            title: 'LOG HISTORY',
+            title: 'Weight history',
             value: '${_bodyLogs.length}',
             onTap: () => showLockoutSheet<void>(
               context: context,
-              title: 'LOG HISTORY',
+              title: 'Weight history',
               builder: (ctx) => _HistoryList(
                   logsNotifier: _bodyLogsNotifier, onDelete: _deleteLog),
             ),
@@ -319,8 +311,7 @@ class BodyTabState extends State<BodyTab> {
     final bmi = _goal?.bmi;
     final metres = heightCm / 100.0;
 
-    return JinatraCard(
-      margin: EdgeInsets.zero,
+    return LockoutCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -331,10 +322,10 @@ class BodyTabState extends State<BodyTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('LATEST WEIGHT',
-                      style: JinatraTokens.monoData(fontSize: 11)),
+                      style: Theme.of(context).textTheme.labelSmall),
                   Text(
                     weight != null ? '${weight.toStringAsFixed(1)} kg' : '--',
-                    style: JinatraTokens.displayHeader(fontSize: 26),
+                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
                 ],
               ),
@@ -342,7 +333,7 @@ class BodyTabState extends State<BodyTab> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('BMI', style: JinatraTokens.monoData(fontSize: 11)),
+                  Text('BMI', style: Theme.of(context).textTheme.labelSmall),
                   Text(
                     bmi != null ? bmi.toStringAsFixed(1) : '--',
                     style: JinatraTokens.displayHeader(
@@ -380,7 +371,7 @@ class BodyTabState extends State<BodyTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('HOW THIS BMI IS CALCULATED',
-                    style: JinatraTokens.monoData(fontSize: 10)),
+                    style: Theme.of(context).textTheme.labelSmall),
                 const SizedBox(height: 5),
                 Text(
                   weight == null
@@ -388,16 +379,16 @@ class BodyTabState extends State<BodyTab> {
                       : '${weight.toStringAsFixed(1)} kg / '
                           '(${metres.toStringAsFixed(2)} m)² = '
                           '${bmi!.toStringAsFixed(1)}',
-                  style: JinatraTokens.monoData(fontSize: 13),
+                  style: LockoutTheme.numeric(context, size: 13),
                 ),
                 const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('HEIGHT FROM SETTINGS',
-                        style: JinatraTokens.monoData(fontSize: 9)),
+                        style: Theme.of(context).textTheme.labelSmall),
                     Text(Units.formatHeight(heightCm, _heightUnit),
-                        style: JinatraTokens.monoData(fontSize: 11)),
+                        style: Theme.of(context).textTheme.labelSmall),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -423,13 +414,12 @@ class BodyTabState extends State<BodyTab> {
     final plan = snap?.nutrition;
 
     if (snap == null || plan == null || snap.currentWeightKg == null) {
-      return JinatraCard(
-        margin: EdgeInsets.zero,
+      return LockoutCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('NO GOAL SET',
-                style: JinatraTokens.sectionHeader(fontSize: 16)),
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             Text(
               'Add your age and target weight in Settings, and log one body '
@@ -451,8 +441,7 @@ class BodyTabState extends State<BodyTab> {
         totalDelta <= 0 ? 1.0 : (doneDelta / totalDelta).clamp(0.0, 1.0);
     final range = NutritionPlanner.healthyWeightRangeKg(snap.profile.heightCm);
 
-    return JinatraCard(
-      margin: EdgeInsets.zero,
+    return LockoutCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -524,14 +513,14 @@ class BodyTabState extends State<BodyTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('DAILY INTAKE TARGET',
-                    style: JinatraTokens.monoData(fontSize: 10)),
+                    style: Theme.of(context).textTheme.labelSmall),
                 const SizedBox(height: 3),
                 Text('${plan.targetKcal} kcal',
                     style: JinatraTokens.displayHeader(fontSize: 22)),
                 const SizedBox(height: 4),
                 Text(
                   'P ${plan.proteinG}g  -  C ${plan.carbG}g  -  F ${plan.fatG}g',
-                  style: JinatraTokens.monoData(fontSize: 11),
+                  style: Theme.of(context).textTheme.labelSmall,
                 ),
               ],
             ),
@@ -558,8 +547,7 @@ class BodyTabState extends State<BodyTab> {
   Widget _buildPlanCard(BuildContext sheetContext) {
     final rec = _goal?.training;
     if (rec == null) {
-      return JinatraCard(
-        margin: EdgeInsets.zero,
+      return LockoutCard(
         child: Text(
           'Add your age and target weight in Settings, and log one body '
           'weight, to get a recommended training split.',
@@ -568,8 +556,7 @@ class BodyTabState extends State<BodyTab> {
       );
     }
 
-    return JinatraCard(
-      margin: EdgeInsets.zero,
+    return LockoutCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -617,7 +604,7 @@ class BodyTabState extends State<BodyTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: JinatraTokens.monoData(fontSize: 10)),
+          Text(title, style: Theme.of(context).textTheme.labelSmall),
           const SizedBox(height: 3),
           Text(body, style: JinatraTokens.bodyText(fontSize: 12)),
         ],
@@ -629,7 +616,7 @@ class BodyTabState extends State<BodyTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: JinatraTokens.monoData(fontSize: 9)),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
         const SizedBox(height: 2),
         Text(value, style: JinatraTokens.monoData(fontSize: 14)),
       ],
@@ -819,60 +806,58 @@ class _HistoryList extends StatelessWidget {
         if (logs.isEmpty) {
           return Text(
             'No weight entries yet.',
-            style: JinatraTokens.monoData(
-              color: JinatraTokens.ink.withValues(alpha: 0.6),
-            ),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           );
         }
 
-        return Column(children: logs.map(_row).toList());
+        return Column(
+          children: [for (final log in logs) _row(context, log)],
+        );
       },
     );
   }
 
-  Widget _row(BodyEntry log) {
-    return JinatraCard(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      child: Row(
+  Widget _row(BuildContext context, BodyEntry log) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
+      child: LockoutCard(
+        padding: const EdgeInsets.only(
+          left: LockoutTheme.spaceMd,
+          top: LockoutTheme.spaceXs,
+          bottom: LockoutTheme.spaceXs,
+        ),
+        child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(log.dateStr, style: JinatraTokens.monoData(fontSize: 13)),
+          Text(log.dateStr, style: LockoutTheme.numeric(context, size: 13)),
           Row(
             children: [
               Text('${log.weightKg} kg',
-                  style: JinatraTokens.sectionHeader(fontSize: 16)),
+                  style: Theme.of(context).textTheme.titleMedium),
               if (log.waistCm > 0) ...[
                 const SizedBox(width: 10),
                 Text('waist ${log.waistCm} cm',
-                    style: JinatraTokens.monoData(fontSize: 10)),
+                    style: Theme.of(context).textTheme.labelSmall),
               ],
-              // Padding lives *inside* the detector so the tappable area
-              // grows to a ~40dp square without enlarging the visible
-              // glyph — `HitTestBehavior.opaque` alone only makes the
-              // existing 16x16 box register taps everywhere within it, it
-              // does not resize that box. This is a different glyph
-              // (`delete_outline`, not `close`) from the pre-Task-10 row's
-              // `IconButton`, deliberately: `SheetScaffold` already uses
-              // `Icons.close` for "dismiss this sheet", and this row now
-              // lives inside a sheet, so reusing `close` here for "delete
-              // this row" would put the same glyph on two different
-              // actions on screen at once.
-              GestureDetector(
-                onTap: () => onDelete(log),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Icon(
-                    Icons.delete_outline,
-                    size: 16,
-                    color: JinatraTokens.ink.withValues(alpha: 0.6),
-                  ),
+              // `delete_outline`, not `close`: SheetScaffold already uses
+              // `Icons.close` for "dismiss this sheet" and this row lives
+              // inside one, so reusing it here would put the same glyph on
+              // two different actions at once. The 48dp target comes from
+              // IconButton's theme rather than padding wrapped by hand.
+              IconButton(
+                onPressed: () => onDelete(log),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: 18,
+                  semanticLabel: 'Delete entry',
                 ),
               ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
