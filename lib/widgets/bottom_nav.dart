@@ -1,35 +1,35 @@
 import 'package:flutter/material.dart';
-import '../theme/jinatra_tokens.dart';
 
-/// One nav destination, enum-keyed. `MainScreen._screenFor` switches on this
-/// with a Dart switch *expression*, which the compiler rejects if a case is
-/// missing — so a tab added here without a matching branch there is a
-/// compile error, not the runtime `StateError` a `String`-keyed switch could
-/// only catch by remembering to write a `default`.
-enum NavTab { home, routines, food, body, log }
-
-/// One nav destination: a stable id plus how it renders.
+/// One nav destination, enum-keyed.
 ///
-/// `BottomNav.visibleTabs` is the single source of truth for tab order and
-/// which tabs exist. `MainScreen` binds its `_screens` and `_tabIds` lists to
-/// it directly, rather than hard-coding the same order a second and third
-/// time, so a future reorder can't make the three lists disagree.
+/// `MainScreen._screenFor` switches on this with a Dart switch *expression*,
+/// which the compiler rejects if a case is missing — so a tab added here
+/// without a matching branch there is a compile error, not the runtime
+/// `StateError` a `String`-keyed switch could only catch with a remembered
+/// `default`.
+enum NavTab { home, workout, progress, food, profile }
+
 class NavTabDef {
   final NavTab tab;
 
-  /// The id `TodayTab.onNavigate(String tabId)` and `MainScreen._goToTab`
-  /// use — a public string contract (see the Task 7 brief), kept alongside
-  /// [tab] rather than derived from its `.name`, so renaming an enum member
-  /// can never silently change that contract.
+  /// The id `TodayTab.onNavigate(String tabId)` and `MainScreen._goToTab` use
+  /// — a public string contract, kept alongside [tab] rather than derived
+  /// from its `.name`, so renaming an enum member can never silently change
+  /// that contract.
   final String id;
   final String label;
+
+  /// Outlined when inactive, filled when active: the M3 convention that
+  /// carries selection without relying on colour alone.
   final IconData icon;
+  final IconData selectedIcon;
 
   const NavTabDef({
     required this.tab,
     required this.id,
     required this.label,
     required this.icon,
+    required this.selectedIcon,
   });
 }
 
@@ -38,7 +38,9 @@ class BottomNav extends StatefulWidget {
   final ValueChanged<int> onTap;
   final bool foodTabEnabled;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. The bar
+  // reads its colours from the theme, and a canonicalised instance is skipped
+  // on rebuild, stranding it in the previous theme after a switch.
   // ignore: prefer_const_constructors_in_immutables
   BottomNav({
     super.key,
@@ -48,49 +50,57 @@ class BottomNav extends StatefulWidget {
   });
 
   static const List<NavTabDef> _allTabs = [
-    NavTabDef(tab: NavTab.home, id: 'home', label: 'HOME', icon: Icons.home),
     NavTabDef(
-      tab: NavTab.routines,
-      id: 'routines',
-      label: 'ROUTINES',
-      icon: Icons.fitness_center,
+      tab: NavTab.home,
+      id: 'home',
+      label: 'Home',
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home,
+    ),
+    NavTabDef(
+      tab: NavTab.workout,
+      id: 'workout',
+      label: 'Workout',
+      icon: Icons.fitness_center_outlined,
+      selectedIcon: Icons.fitness_center,
+    ),
+    NavTabDef(
+      tab: NavTab.progress,
+      id: 'progress',
+      label: 'Progress',
+      icon: Icons.insights_outlined,
+      selectedIcon: Icons.insights,
     ),
     NavTabDef(
       tab: NavTab.food,
       id: 'food',
-      label: 'FOOD',
-      icon: Icons.restaurant,
+      label: 'Food',
+      icon: Icons.restaurant_outlined,
+      selectedIcon: Icons.restaurant,
     ),
     NavTabDef(
-      tab: NavTab.body,
-      id: 'body',
-      label: 'BODY',
-      icon: Icons.monitor_weight,
-    ),
-    NavTabDef(
-      tab: NavTab.log,
-      id: 'log',
-      label: 'LOG',
-      icon: Icons.calendar_month,
+      tab: NavTab.profile,
+      id: 'profile',
+      label: 'Profile',
+      icon: Icons.person_outline,
+      selectedIcon: Icons.person,
     ),
   ];
 
-  /// The ordered, currently-visible tabs. `MainScreen` derives both its
-  /// screen list and its id list from this so they can't drift out of sync
-  /// with what `BottomNav` actually renders.
+  /// The ordered, currently-visible tabs. `MainScreen` derives both its screen
+  /// list and its id list from this so they cannot drift out of sync with what
+  /// the bar actually renders.
   static List<NavTabDef> visibleTabs({bool foodTabEnabled = true}) =>
       _allTabs.where((t) => t.id != 'food' || foodTabEnabled).toList();
 
   /// The most recently *measured* rendered height of a live `BottomNav`,
-  /// including its own bottom safe-area inset — `0.0` until one has laid
-  /// out at least once (there is no bar to clear yet, e.g. in a widget test
-  /// that pumps a tab on its own with no `MainScreen`/`BottomNav` around it
-  /// at all). `showUndoBanner` (`lib/widgets/undo_banner.dart`) reads this
-  /// so its `Positioned(bottom: ...)` clears the bar instead of sitting on
-  /// top of it for the whole 5s undo window. A measured value rather than a
-  /// guessed constant so it can't fall short on an unusual font-scale or
-  /// device inset, and can't overshoot (pushing the banner needlessly high)
-  /// where no bar exists to clear at all.
+  /// including its own bottom safe-area inset — `0.0` until one has laid out
+  /// at least once (there is no bar to clear yet, e.g. in a widget test that
+  /// pumps a tab on its own). `showUndoBanner` (`lib/widgets/undo_banner.dart`)
+  /// reads this so its `Positioned(bottom: ...)` clears the bar instead of
+  /// sitting on top of it for the whole 5s undo window. A measured value
+  /// rather than a guessed constant so it cannot fall short on an unusual
+  /// font-scale or device inset, and cannot overshoot where no bar exists.
   static final ValueNotifier<double> lastRenderedHeight =
       ValueNotifier<double>(0.0);
 
@@ -120,25 +130,10 @@ class _BottomNavState extends State<BottomNav> {
     }
   }
 
-  // Third-round review, Finding 2: this static ValueNotifier had no
-  // teardown at all — once any `BottomNav` had ever mounted in this
-  // process, `lastRenderedHeight` stayed at its last measured value
-  // forever, so a `BodyTab` pumped standalone (no `MainScreen` around it)
-  // *after* a `MainScreen` had mounted and unmounted would still see a
-  // stale non-zero inset instead of the `0.0` the doc on
-  // `lastRenderedHeight` promises. Resetting to `0.0` here is the cheap
-  // fix, not the preferred one: `MainScreen` is `home:` in this app and
-  // never unmounts in production, so this line does not fire there, and it
-  // does not solve the sibling problem that `lastRenderedHeight` is also
-  // never re-measured on a MediaQuery-only relayout (keyboard, rotation,
-  // font scale) with no new frame from `BottomNav` itself — it can still go
-  // stale *high* while mounted. The doc-preferred fix (publish the inset
-  // through an `InheritedWidget` `MainScreen` owns, read via the caller's
-  // `context` in `showUndoBanner`) removes the static, and with it both
-  // problems, but is a larger structural change than this finding's given
-  // scope; this reset at least makes the one property this class currently
-  // documents (0.0 for a tab pumped with no bar ever mounted) hold even
-  // after a bar-bearing widget has come and gone in the same test process.
+  // Resets so a tab pumped standalone *after* a bar has come and gone in the
+  // same test process sees the documented 0.0 rather than a stale inset.
+  // MainScreen is `home:` in this app and never unmounts, so this does not
+  // fire in production.
   @override
   void dispose() {
     BottomNav.lastRenderedHeight.value = 0.0;
@@ -149,70 +144,24 @@ class _BottomNavState extends State<BottomNav> {
   Widget build(BuildContext context) {
     final tabs = BottomNav.visibleTabs(foodTabEnabled: widget.foodTabEnabled);
 
-    return Container(
-      key: _barKey,
-      decoration: BoxDecoration(
-        color: JinatraTokens.sweetCream,
-        border: Border(
-          top: BorderSide(color: JinatraTokens.ink, width: JinatraTokens.borderControl),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: List.generate(tabs.length, (index) {
-            final isActive = widget.currentIndex == index;
-            final item = tabs[index];
+    // Clamped rather than asserted: hiding the Food tab shortens this list
+    // while `MainScreen` still holds the old index for one frame, and a
+    // RangeError there would take down the whole app over a transient.
+    final index = widget.currentIndex.clamp(0, tabs.length - 1);
 
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => widget.onTap(index),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 8,
-                  ),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: isActive
-                        ? JinatraTokens.cardDecoration(
-                            background: JinatraTokens.deepTeal,
-                            shadowOffset: JinatraTokens.shadowSm,
-                            radius: JinatraTokens.radiusPill,
-                          )
-                        : const BoxDecoration(),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          item.icon,
-                          color: isActive
-                              ? JinatraTokens.onPrimary
-                              : JinatraTokens.ink.withValues(alpha: 0.6),
-                          size: 20,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          item.label,
-                          style: JinatraTokens.monoData(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            color: isActive
-                                ? JinatraTokens.onPrimary
-                                : JinatraTokens.ink.withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-        ),
-      ),
+    return NavigationBar(
+      key: _barKey,
+      selectedIndex: index,
+      onDestinationSelected: widget.onTap,
+      destinations: [
+        for (final tab in tabs)
+          NavigationDestination(
+            icon: Icon(tab.icon),
+            selectedIcon: Icon(tab.selectedIcon),
+            label: tab.label,
+            tooltip: tab.label,
+          ),
+      ],
     );
   }
 }

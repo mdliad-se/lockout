@@ -108,7 +108,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: MainScreen()));
     await _settle(tester);
 
-    await tester.tap(_navLabel('BODY'));
+    // Body now lives inside Progress, which opens on its Weight segment.
+    await tester.tap(_navLabel('Progress'));
     await _settle(tester);
 
     await tester.tap(find.text('LOG HISTORY'));

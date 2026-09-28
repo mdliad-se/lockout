@@ -4,29 +4,29 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:lockout/main.dart';
 import 'package:lockout/screens/main_screen.dart';
-import 'package:lockout/screens/settings_screen.dart';
 import 'package:lockout/services/database_service.dart';
-import 'package:lockout/theme/app_palette.dart';
+import 'package:lockout/theme/lockout_semantics.dart';
+import 'package:lockout/theme/schemes.dart';
+import 'package:lockout/theme/theme_controller.dart';
 import 'package:lockout/widgets/bottom_nav.dart';
 
 import 'test_helpers.dart';
 
 /// The only coverage `lib/main.dart` has.
 ///
-/// `AppPalette.revision` -> `ValueListenableBuilder` -> `MaterialApp` ->
-/// `home: MainScreen()` is the single mechanism that makes the whole
-/// non-const sweep worth anything: thirty-one
+/// `ThemeController` -> `ListenableBuilder` -> `MaterialApp` ->
+/// `home: MainScreen()` is the single mechanism that makes the whole non-const
+/// sweep worth anything: the
 /// `// ignore: prefer_const_constructors_in_immutables` suppressions across
-/// three fix waves exist so that this chain can actually repaint the tree,
-/// and nothing pinned the chain itself. Every other repaint test in the repo
+/// this codebase exist so that this chain can actually repaint the tree, and
+/// nothing else pins the chain itself. Every other repaint test in the repo
 /// pumps a screen directly under a bare `MaterialApp`, which bypasses
-/// `LockoutApp` entirely — so deleting the `ValueListenableBuilder`, or
-/// putting `const` back on `MainScreen` and its call site, broke nothing
-/// that any test could see.
+/// `LockoutApp` entirely — so deleting the `ListenableBuilder`, or putting
+/// `const` back on `MainScreen` and its call site, would break nothing that
+/// any other test could see.
 ///
-/// `LockoutApp` is one of the two documented const-constructor exceptions
-/// (`Sparkline` is the other): it builds no palette-derived colour itself,
-/// it only rebuilds what does.
+/// `LockoutApp` itself stays a const-constructor exception: it builds no
+/// theme-derived colour of its own, it only rebuilds what does.
 void main() {
   setUpAll(() {
     databaseFactory = databaseFactoryFfiNoIsolate;
@@ -35,87 +35,126 @@ void main() {
 
   setUp(() async {
     await wipeDatabaseAndReseed(DatabaseService.instance);
-    AppPalette.apply(AppPalette.jinatraCream);
+    ThemeController.instance.resetForTest();
+    await ThemeController.instance.load();
   });
 
-  // The shared serial runner reuses one process, so a palette left applied
+  // The shared serial runner reuses one process, so a selection left applied
   // here would follow every later suite into its own setUpAll.
-  tearDown(() => AppPalette.apply(AppPalette.paperPress));
+  tearDown(() => ThemeController.instance.resetForTest());
 
-  /// The fill `MainScreen`'s AppBar actually painted. Built by
-  /// `MainScreen.build`, which is precisely the build that a canonicalised
-  /// `const MainScreen()` would let Flutter skip.
-  Color appBarFill(WidgetTester tester) {
-    final bar = tester.widget<AppBar>(find.byType(AppBar));
-    return bar.backgroundColor!;
-  }
-
-  /// The fill of the nav bar's outer `Container` — the other half of the
-  /// chrome `main.dart`'s comment says a skipped rebuild strands.
-  Color navFill(WidgetTester tester) {
-    final container = tester.widget<Container>(
-      find
-          .descendant(
-            of: find.byType(BottomNav),
-            matching: find.byType(Container),
-          )
-          .first,
+  /// The surface `MainScreen` actually painted. Built by `MainScreen.build`,
+  /// which is precisely the build that a canonicalised `const MainScreen()`
+  /// would let Flutter skip.
+  Color scaffoldFill(WidgetTester tester) {
+    final scaffold = tester.widget<Scaffold>(
+      find.descendant(of: find.byType(MainScreen), matching: find.byType(Scaffold)).first,
     );
-    return (container.decoration as BoxDecoration).color!;
+    return scaffold.backgroundColor!;
   }
 
-  testWidgets('applying a palette repaints the tree LockoutApp builds',
+  /// The nav bar's resolved background — the other half of the chrome that
+  /// `main.dart`'s comment says a skipped rebuild strands.
+  Color navFill(WidgetTester tester) {
+    final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    final context = tester.element(find.byType(NavigationBar));
+    return bar.backgroundColor ??
+        Theme.of(context).navigationBarTheme.backgroundColor!;
+  }
+
+  testWidgets('the app boots on the saved theme', (tester) async {
+    await tester.pumpWidget(const LockoutApp());
+    await settle(tester);
+
+    expect(find.byType(MainScreen), findsOneWidget);
+    expect(find.byType(BottomNav), findsOneWidget);
+    expect(scaffoldFill(tester), LockoutScheme.graphite.colors.surface);
+  });
+
+  testWidgets('the semantics extension reaches the widgets below MaterialApp',
       (tester) async {
     await tester.pumpWidget(const LockoutApp());
     await settle(tester);
 
-    final before = appBarFill(tester);
-    expect(before, AppPalette.jinatraCream.canvas);
-
-    AppPalette.apply(AppPalette.carbonLime);
-    await tester.pump();
-
-    final after = appBarFill(tester);
-    expect(after, isNot(before),
-        reason: 'the AppBar kept the previous palette after a theme change');
-    expect(after, AppPalette.carbonLime.canvas);
-    expect(navFill(tester), AppPalette.carbonLime.canvas,
-        reason: 'the nav bar repaints along with the rest of the chrome');
+    final context = tester.element(find.byType(BottomNav));
+    expect(
+      LockoutSemantics.of(context).categoryRamp,
+      LockoutScheme.graphite.semantics.categoryRamp,
+    );
   });
 
-  testWidgets('a theme chosen in Settings has repainted HOME by the time the '
-      'user is back on it', (tester) async {
-    // The harder route case: Settings is pushed on top of MainScreen, so
-    // MainScreen is still mounted but not on screen when the palette
-    // changes. Its rebuild has to happen anyway, because popping back does
-    // not rebuild a route that Flutter thinks is unchanged.
+  testWidgets('selecting a theme repaints the tree LockoutApp builds',
+      (tester) async {
+    await tester.pumpWidget(const LockoutApp());
+    await settle(tester);
+
+    final before = scaffoldFill(tester);
+    expect(before, LockoutScheme.graphite.colors.surface);
+    final navBefore = navFill(tester);
+
+    await ThemeController.instance.select('paper');
+    // pumpAndSettle, not a single pump: MaterialApp wraps its theme in an
+    // AnimatedTheme, so frame zero still samples the previous colours and a
+    // one-frame pump would assert against the tween's starting value.
+    await tester.pumpAndSettle();
+
+    expect(
+      scaffoldFill(tester),
+      isNot(before),
+      reason: 'MainScreen kept the previous theme after a change',
+    );
+    expect(scaffoldFill(tester), LockoutScheme.paper.colors.surface);
+    expect(
+      navFill(tester),
+      isNot(navBefore),
+      reason: 'the nav bar repaints along with the rest of the chrome',
+    );
+  });
+
+  testWidgets('a theme chosen while another route is on top has repainted '
+      'HOME by the time the user is back on it', (tester) async {
+    // The harder case: a pushed route sits on top of MainScreen, so MainScreen
+    // is still mounted but not on screen when the theme changes. Its rebuild
+    // has to happen anyway, because popping back does not rebuild a route
+    // Flutter thinks is unchanged.
     await tester.pumpWidget(const LockoutApp());
     await settle(tester);
 
     final navBefore = navFill(tester);
 
-    await tester.tap(find.byIcon(Icons.settings));
-    await settle(tester);
-    expect(find.byType(SettingsScreen), findsOneWidget);
-
-    await tester.ensureVisible(find.text('CARBON LIME'));
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator).last);
+    navigator.push(MaterialPageRoute<void>(
+      builder: (_) => const Scaffold(body: Center(child: Text('on top'))),
+    ));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('CARBON LIME'));
-    await settle(tester);
-    expect(AppPalette.current.key, 'carbon_lime');
+    expect(find.text('on top'), findsOneWidget);
 
-    await tester.pageBack();
+    await ThemeController.instance.select('indigo');
+    await tester.pumpAndSettle();
+
+    navigator.pop();
+    await tester.pumpAndSettle();
     await settle(tester);
+
     expect(find.byType(MainScreen), findsOneWidget);
+    expect(
+      navFill(tester),
+      isNot(navBefore),
+      reason: 'BottomNav still carries the theme it was built with before the '
+          'user changed it',
+    );
+    expect(scaffoldFill(tester), LockoutScheme.indigo.colors.surface);
+  });
 
-    expect(navFill(tester), isNot(navBefore),
-        reason: 'BottomNav still carries the palette it was built with '
-            'before the user changed the theme');
-    expect(navFill(tester), AppPalette.carbonLime.canvas);
-    expect(appBarFill(tester), AppPalette.carbonLime.canvas);
+  testWidgets('a legacy palette key saved by the previous build still boots',
+      (tester) async {
+    await DatabaseService.instance.saveSetting('theme_key', 'carbon_lime');
+    ThemeController.instance.resetForTest();
+    await ThemeController.instance.load();
 
-    // Flush the toast timer Settings started, so no timer is pending when
-    // the tree is torn down.
-    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpWidget(const LockoutApp());
+    await settle(tester);
+
+    expect(scaffoldFill(tester), LockoutScheme.graphite.colors.surface);
   });
 }

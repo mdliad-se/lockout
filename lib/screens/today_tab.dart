@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+
+import 'progress_tab.dart' show ProgressSegment;
 import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/energy_estimator.dart';
@@ -55,7 +57,12 @@ class _LiveExercise {
 class TodayTab extends StatefulWidget {
   /// Switches tabs by id — 'routines', 'food', 'body', 'log'. Supplied by
   /// MainScreen; null in tests that pump this tab on its own.
-  final void Function(String tabId)? onNavigate;
+  /// Switches tabs by id.
+  ///
+  /// [segment] is meaningful only for `'progress'`, which hosts both the
+  /// weight view and the session history behind one tab id — "Weigh in" and
+  /// "History" must not open the same half.
+  final void Function(String tabId, {ProgressSegment? segment})? onNavigate;
 
   /// Whether the Food tab is currently reachable. When false, the hub must
   /// not offer a tap target that silently does nothing.
@@ -498,8 +505,10 @@ class TodayTabState extends State<TodayTab> {
         onOpenFood: widget.foodTabEnabled
             ? () => widget.onNavigate?.call('food')
             : null,
-        onOpenBody: () => widget.onNavigate?.call('body'),
-        onOpenLog: () => widget.onNavigate?.call('log'),
+        onOpenBody: () =>
+            widget.onNavigate?.call('progress', segment: ProgressSegment.weight),
+        onOpenLog: () =>
+            widget.onNavigate?.call('progress', segment: ProgressSegment.history),
         actions: _quickActions(),
       ),
     );
@@ -527,19 +536,19 @@ class TodayTabState extends State<TodayTab> {
         label: 'WEIGH IN',
         icon: Icons.monitor_weight,
         color: JinatraTokens.accentAt(1),
-        onTap: () => go?.call('body'),
+        onTap: () => go?.call('progress', segment: ProgressSegment.weight),
       ),
       ActionItem(
         label: 'ROUTINES',
         icon: Icons.fitness_center,
         color: JinatraTokens.accentAt(2),
-        onTap: () => go?.call('routines'),
+        onTap: () => go?.call('workout'),
       ),
       ActionItem(
         label: 'HISTORY',
         icon: Icons.calendar_month,
         color: JinatraTokens.accentAt(3),
-        onTap: () => go?.call('log'),
+        onTap: () => go?.call('progress', segment: ProgressSegment.history),
       ),
       ActionItem(
         label: 'CUSTOM',
@@ -551,19 +560,19 @@ class TodayTabState extends State<TodayTab> {
         label: 'STREAK',
         icon: Icons.local_fire_department,
         color: JinatraTokens.accentAt(5),
-        onTap: () => go?.call('log'),
+        onTap: () => go?.call('progress', segment: ProgressSegment.history),
       ),
       ActionItem(
         label: 'PLAN',
         icon: Icons.insights,
         color: JinatraTokens.accentAt(6),
-        onTap: () => go?.call('body'),
+        onTap: () => go?.call('progress', segment: ProgressSegment.weight),
       ),
       ActionItem(
         label: 'EXERCISES',
         icon: Icons.list,
         color: JinatraTokens.accentAt(7),
-        onTap: () => go?.call('routines'),
+        onTap: () => go?.call('workout'),
       ),
     ];
   }

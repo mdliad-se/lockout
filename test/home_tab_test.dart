@@ -2,62 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/action_grid.dart';
-import 'package:lockout/widgets/bottom_nav.dart';
 import 'package:lockout/widgets/calm_row.dart';
 import 'package:lockout/widgets/hero_card.dart';
 import 'package:lockout/widgets/home_hub.dart';
 
+// The BottomNav groups that used to live here moved to bottom_nav_test.dart
+// when the bar became a framework NavigationBar: that suite covers tab order,
+// the food-hidden order, tap indices in both configurations, icon pairs,
+// measured height and index clamping, which is a superset of what was here.
 void main() {
   setUpAll(() {
     AppPalette.apply(AppPalette.paperPress);
-  });
-
-  group('BottomNav', () {
-    testWidgets('HOME is the first destination and LOG the last',
-        (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          bottomNavigationBar: BottomNav(currentIndex: 0, onTap: (_) {}),
-        ),
-      ));
-
-      expect(find.text('HOME'), findsOneWidget);
-      expect(find.text('ROUTINES'), findsOneWidget);
-      expect(find.text('FOOD'), findsOneWidget);
-      expect(find.text('BODY'), findsOneWidget);
-      expect(find.text('LOG'), findsOneWidget);
-      expect(find.text('TODAY'), findsNothing);
-    });
-
-    testWidgets('tapping a destination reports its index', (tester) async {
-      var tappedIndex = -1;
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          bottomNavigationBar:
-              BottomNav(currentIndex: 0, onTap: (i) => tappedIndex = i),
-        ),
-      ));
-
-      await tester.tap(find.text('BODY'));
-      expect(tappedIndex, 3);
-    });
-
-    testWidgets('hiding the food tab shifts the later indices', (tester) async {
-      var tappedIndex = -1;
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          bottomNavigationBar: BottomNav(
-            currentIndex: 0,
-            foodTabEnabled: false,
-            onTap: (i) => tappedIndex = i,
-          ),
-        ),
-      ));
-
-      expect(find.text('FOOD'), findsNothing);
-      await tester.tap(find.text('BODY'));
-      expect(tappedIndex, 2);
-    });
   });
 
   group('HomeHub', () {
@@ -312,22 +267,6 @@ void main() {
 
       await tester.tap(find.byType(ActionTile));
       expect(tapped, true);
-    });
-  });
-
-  group('BottomNav.visibleTabs', () {
-    test('food-enabled: HOME, ROUTINES, FOOD, BODY, LOG in order', () {
-      final ids = BottomNav.visibleTabs(foodTabEnabled: true)
-          .map((t) => t.id)
-          .toList();
-      expect(ids, ['home', 'routines', 'food', 'body', 'log']);
-    });
-
-    test('food-hidden: FOOD is dropped, the rest stay in order', () {
-      final ids = BottomNav.visibleTabs(foodTabEnabled: false)
-          .map((t) => t.id)
-          .toList();
-      expect(ids, ['home', 'routines', 'body', 'log']);
     });
   });
 }
