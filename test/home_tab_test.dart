@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/action_grid.dart';
 import 'package:lockout/widgets/bottom_nav.dart';
@@ -10,7 +9,6 @@ import 'package:lockout/widgets/home_hub.dart';
 
 void main() {
   setUpAll(() {
-    GoogleFonts.config.allowRuntimeFetching = false;
     AppPalette.apply(AppPalette.paperPress);
   });
 

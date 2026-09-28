@@ -36,7 +36,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   sqflite: ^2.4.2+1
   path: ^1.9.1
-  google_fonts: ^8.2.1
+  # Inter and JetBrains Mono are bundled under assets/fonts instead of
+  # resolved through google_fonts: that package downloads typefaces over
+  # HTTP at first paint, which never completes on a zero-network device, so
+  # every chosen face silently fell back to Roboto in the shipped APK.
+  dynamic_color: ^1.7.0
   intl: ^0.20.3
   path_provider: ^2.1.6
   share_plus: ^13.3.0
@@ -69,6 +73,27 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Static weights rather than the variable font: Flutter resolves a
+  # variable face to a single default instance, so `fontWeight` would stop
+  # doing anything across the type scale.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

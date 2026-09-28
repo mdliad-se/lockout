@@ -1,7 +1,6 @@
 import 'dart:math' show max, min;
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_palette.dart';
 
 /// Design tokens for the Jinatra neubrutalist system.
@@ -84,11 +83,20 @@ class JinatraTokens {
   static const double shadowMd = 6.0; // Cards
   static const double shadowLg = 10.0; // Hero elements
 
-  // Typography Styles
+  // Typography Styles.
+  //
+  // These name bundled families directly rather than going through
+  // google_fonts, which fetched them over HTTP and therefore resolved to
+  // Roboto on a zero-network device. Archivo is gone with it: Inter's
+  // heaviest bundled weight is 700, which is what the replacement type
+  // scale calls for anyway, so the w900/w800 headers step down to w700/w600
+  // rather than asking the rasteriser to synthesise a weight that does not
+  // exist in the file.
   static TextStyle displayHeader({Color? color, double fontSize = 28.0}) {
-    return GoogleFonts.archivo(
+    return TextStyle(
+      fontFamily: 'Inter',
       fontSize: fontSize,
-      fontWeight: FontWeight.w900,
+      fontWeight: FontWeight.w700,
       color: color ?? ink,
       height: 1.02,
       letterSpacing: -0.5,
@@ -96,9 +104,10 @@ class JinatraTokens {
   }
 
   static TextStyle sectionHeader({Color? color, double fontSize = 20.0}) {
-    return GoogleFonts.archivo(
+    return TextStyle(
+      fontFamily: 'Inter',
       fontSize: fontSize,
-      fontWeight: FontWeight.w800,
+      fontWeight: FontWeight.w600,
       color: color ?? ink,
       height: 1.05,
     );
@@ -109,7 +118,8 @@ class JinatraTokens {
     double fontSize = 15.0,
     FontWeight fontWeight = FontWeight.w400,
   }) {
-    return GoogleFonts.inter(
+    return TextStyle(
+      fontFamily: 'Inter',
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color ?? ink,
@@ -122,7 +132,8 @@ class JinatraTokens {
     double fontSize = 13.0,
     FontWeight fontWeight = FontWeight.w700,
   }) {
-    return GoogleFonts.jetBrainsMono(
+    return TextStyle(
+      fontFamily: 'JetBrainsMono',
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color ?? ink,

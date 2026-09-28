@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/theme/jinatra_tokens.dart';
 import 'package:lockout/widgets/action_grid.dart';
@@ -17,7 +16,6 @@ Widget _host(Widget child) => MaterialApp(
 void main() {
   setUpAll(() {
     // A widget test must never reach the network for a font file.
-    GoogleFonts.config.allowRuntimeFetching = false;
     AppPalette.apply(AppPalette.paperPress);
   });
 

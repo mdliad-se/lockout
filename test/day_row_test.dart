@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:lockout/models/models.dart';
 import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/day_row.dart';
@@ -33,7 +32,6 @@ ExerciseDef _ex(String name, int sets) => ExerciseDef(
 
 void main() {
   setUpAll(() {
-    GoogleFonts.config.allowRuntimeFetching = false;
     AppPalette.apply(AppPalette.paperPress);
   });
 
