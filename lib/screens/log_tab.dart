@@ -162,7 +162,7 @@ class LogTabState extends State<LogTab> {
     }
 
     return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(

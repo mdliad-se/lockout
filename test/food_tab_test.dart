@@ -316,12 +316,22 @@ void main() {
       expect(find.text('0.4 g'), findsOneWidget);
     });
 
-    testWidgets('the LOG FOOD button label has no doubled plus', (tester) async {
+    testWidgets('the Log food button carries its plus as an icon, not text',
+        (tester) async {
       await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
-      expect(find.text('LOG FOOD'), findsOneWidget);
-      expect(find.text('+ LOG FOOD'), findsNothing);
+      // The '+' is an Icon on FilledButton.icon now, so it can never be
+      // doubled up with a '+' baked into the label string.
+      expect(find.text('Log food'), findsOneWidget);
+      expect(find.text('+ Log food'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.widgetWithText(FilledButton, 'Log food'),
+          matching: find.byIcon(Icons.add),
+        ),
+        findsOneWidget,
+      );
     });
 
     // Finding 3 / Ruling F: FOOD had the identical no-confirmation,
@@ -551,7 +561,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: FoodTab()));
       await settle(tester);
 
-      await tester.tap(find.text('LOG FOOD'));
+      await tester.tap(find.text('Log food'));
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -609,14 +619,14 @@ void main() {
       expect(find.byType(SheetScaffold), findsNothing);
     });
 
-    testWidgets('SAVE ENTRY inserts the entry and pops the sheet',
+    testWidgets('Save entry inserts the entry and pops the sheet',
         (tester) async {
       await openLogForm(tester, 'Zzz Saved Custom Dish');
 
       await tester.enterText(find.byType(TextField).at(1), '250');
       await tester.pump();
 
-      await tester.tap(find.text('SAVE ENTRY'));
+      await tester.tap(find.text('Save entry'));
       await tester.pumpAndSettle();
 
       expect(find.byType(SheetScaffold), findsNothing);

@@ -41,7 +41,7 @@ Future<PickedExercise?> showExercisePicker(BuildContext context) {
   return showModalBottomSheet<PickedExercise>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: JinatraTokens.sweetCream,
+    backgroundColor: Theme.of(context).colorScheme.surface,
     // Keeps a full-height picker off the status bar; see sheet_scaffold.dart.
     useSafeArea: true,
     shape: RoundedRectangleBorder(

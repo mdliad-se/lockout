@@ -128,6 +128,55 @@ void main() {
     // the test ends.
     await tester.pump(const Duration(seconds: 6));
   });
+
+  // MainScreen dropped its global AppBar in the five-tab restructure, which
+  // means every tab is now responsible for its own top inset. On an
+  // edge-to-edge window (the QA device is API 36) a tab without one paints
+  // its header under the status bar — caught on the emulator, where the
+  // Workout tab's "+ NEW" button sat beneath the clock and swallowed taps.
+  testWidgets('no tab paints its header under the status bar', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.padding = const FakeViewPadding(top: 144, bottom: 144);
+    tester.view.viewPadding = const FakeViewPadding(top: 144, bottom: 144);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(theme: lockoutTestTheme(), home: MainScreen()),
+    );
+    await _settle(tester);
+
+    const statusBar = 144.0 / 3.0; // logical pixels
+
+    for (final tab in BottomNav.visibleTabs(foodTabEnabled: true)) {
+      await tester.tap(_navLabel(tab.label));
+      await _settle(tester);
+
+      // The topmost piece of text this tab renders must clear the status bar.
+      final texts = find.byType(Text).evaluate().toList();
+      expect(texts, isNotEmpty, reason: '${tab.id} rendered no text');
+
+      var highest = double.infinity;
+      String? highestLabel;
+      for (final element in texts) {
+        final box = element.renderObject as RenderBox?;
+        if (box == null || !box.hasSize || box.size.isEmpty) continue;
+        final top = box.localToGlobal(Offset.zero).dy;
+        if (top < highest) {
+          highest = top;
+          highestLabel = (element.widget as Text).data;
+        }
+      }
+
+      expect(
+        highest,
+        greaterThanOrEqualTo(statusBar),
+        reason: '${tab.id}: "$highestLabel" starts at $highest, inside the '
+            '${statusBar}dp status bar',
+      );
+    }
+  });
+
 }
 
 /// The nav bar's copy of [label], not any other widget's — see the note

@@ -107,13 +107,13 @@ void main() {
     // EDIT EXERCISE sheet, landing back on the still-open day sheet.
     await tester.tap(find.text('Bench Press'));
     await tester.pumpAndSettle();
-    expect(find.text('REMOVE EXERCISE'), findsOneWidget);
+    expect(find.text('Remove exercise'), findsOneWidget);
 
     // REMOVE EXERCISE sits below the fold of the test's default viewport,
     // inside the sheet's own scroll view.
-    await tester.ensureVisible(find.text('REMOVE EXERCISE'));
+    await tester.ensureVisible(find.text('Remove exercise'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('REMOVE EXERCISE'));
+    await tester.tap(find.text('Remove exercise'));
     await tester.pumpAndSettle();
 
     // The day sheet is still open (refreshAfter kept it open and repainted
@@ -137,9 +137,9 @@ void main() {
 
     await tester.tap(find.text('EDIT DAY'));
     await tester.pumpAndSettle();
-    expect(find.text('SAVE DAY'), findsOneWidget);
+    expect(find.text('Save day'), findsOneWidget);
 
-    await tester.tap(find.text('SAVE DAY'));
+    await tester.tap(find.text('Save day'));
     await tester.pumpAndSettle();
 
     // Both the edit-day form sheet and the day-detail sheet it was opened
@@ -155,7 +155,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
     await settle(tester);
 
-    await tester.tap(find.text('+ NEW'));
+    await tester.tap(find.text('New'));
     await tester.pumpAndSettle();
     expect(find.text('CREATE NEW ROUTINE'), findsOneWidget);
 
@@ -355,7 +355,7 @@ void main() {
     Future<void> openCreateForm(WidgetTester tester) async {
       await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
-      await tester.tap(find.text('+ NEW'));
+      await tester.tap(find.text('New'));
       await tester.pumpAndSettle();
       await tester.enterText(
           find.widgetWithText(TextField, 'e.g. Push / Pull / Legs'),
@@ -364,9 +364,9 @@ void main() {
     }
 
     Future<void> saveRoutine(WidgetTester tester) async {
-      await tester.ensureVisible(find.text('SAVE ROUTINE'));
+      await tester.ensureVisible(find.text('Save routine'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('SAVE ROUTINE'));
+      await tester.tap(find.text('Save routine'));
       await tester.pumpAndSettle();
     }
 
@@ -425,7 +425,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
 
-      await tester.tap(find.text('+ NEW'));
+      await tester.tap(find.text('New'));
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -433,9 +433,9 @@ void main() {
           'My Custom Split');
       await tester.pump();
 
-      await tester.ensureVisible(find.text('SAVE ROUTINE'));
+      await tester.ensureVisible(find.text('Save routine'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('SAVE ROUTINE'));
+      await tester.tap(find.text('Save routine'));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
@@ -460,7 +460,7 @@ void main() {
           find.widgetWithText(TextField, 'e.g. Push'), 'Pull Day');
       await tester.pump();
 
-      await tester.tap(find.text('ADD DAY'));
+      await tester.tap(find.text('Add day'));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
@@ -485,7 +485,7 @@ void main() {
           'Band pull-aparts');
       await tester.pump();
 
-      await tester.tap(find.text('ADD'));
+      await tester.tap(find.text('Add'));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
@@ -517,9 +517,9 @@ void main() {
           'slow eccentric');
       await tester.pump();
 
-      await tester.ensureVisible(find.text('SAVE CHANGES'));
+      await tester.ensureVisible(find.text('Save changes'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('SAVE CHANGES'));
+      await tester.tap(find.text('Save changes'));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
@@ -562,9 +562,9 @@ void main() {
       await tester.enterText(weightField, 'Infinity');
       await tester.pump();
 
-      await tester.ensureVisible(find.text('SAVE CHANGES'));
+      await tester.ensureVisible(find.text('Save changes'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('SAVE CHANGES'));
+      await tester.tap(find.text('Save changes'));
       await tester.pumpAndSettle();
 
       final rows =
@@ -611,9 +611,9 @@ void main() {
         '62.5',
       );
       await tester.pump();
-      await tester.ensureVisible(find.text('SAVE CHANGES'));
+      await tester.ensureVisible(find.text('Save changes'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('SAVE CHANGES'));
+      await tester.tap(find.text('Save changes'));
       await tester.pumpAndSettle();
 
       final rows = await DatabaseService.instance.getExercisesForDay(day.id);

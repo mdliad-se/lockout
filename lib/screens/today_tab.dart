@@ -14,7 +14,6 @@ import '../widgets/action_grid.dart';
 import '../widgets/exercise_picker.dart';
 import '../widgets/hero_card.dart';
 import '../widgets/home_hub.dart';
-import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import 'exercise_video_screen.dart';
 
@@ -401,7 +400,7 @@ class TodayTabState extends State<TodayTab> {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: JinatraTokens.sweetCream,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           side: BorderSide(color: JinatraTokens.ink, width: 3),
           borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
@@ -460,10 +459,19 @@ class TodayTabState extends State<TodayTab> {
     }
 
     return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: _sessionActive ? _buildActiveSession() : _buildPreSession(context),
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      // SafeArea(bottom: false): MainScreen dropped its global AppBar in the
+      // five-tab restructure, so each tab now owns its top inset. Without
+      // this the header paints under the status bar on an edge-to-edge
+      // window and swallows taps. Bottom is left alone — BottomNav carries
+      // its own inset, and this tab's content should scroll under it.
+      body: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child:
+              _sessionActive ? _buildActiveSession() : _buildPreSession(context),
+        ),
       ),
       // Kept visible while the exercise list scrolls, rather than inline in
       // the body. This is TodayTab's own Scaffold (nested inside MainScreen's
@@ -641,7 +649,7 @@ class TodayTabState extends State<TodayTab> {
         ),
 
         const SizedBox(height: 12),
-        JinatraButton(label: 'FINISH SESSION & SAVE', onPressed: _finishSession),
+        FilledButton(onPressed: _finishSession, child: Text('Finish session & save')),
       ],
     );
   }

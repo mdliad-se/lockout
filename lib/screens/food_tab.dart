@@ -5,7 +5,6 @@ import '../services/database_service.dart';
 import '../services/numeric_guard.dart';
 import '../services/goal_service.dart';
 import '../widgets/food_picker.dart';
-import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_input.dart';
 import '../widgets/meal_section.dart';
 import '../widgets/progress_hero.dart';
@@ -129,10 +128,17 @@ class FoodTabState extends State<FoodTab> {
     final left = target - eaten;
 
     return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      // SafeArea(bottom: false): MainScreen dropped its global AppBar in the
+      // five-tab restructure, so each tab now owns its top inset. Without it
+      // the header paints under the status bar on an edge-to-edge window and
+      // swallows taps there. Bottom is left alone — BottomNav carries its own
+      // inset and content should scroll under it.
+      body: SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
           ProgressHero(
             eyebrow: 'TODAY',
             title: '$eaten / $target KCAL',
@@ -173,11 +179,7 @@ class FoodTabState extends State<FoodTab> {
             ],
           ),
           const SizedBox(height: 20),
-          JinatraButton(
-            label: 'LOG FOOD',
-            icon: Icons.add,
-            onPressed: _addFood,
-          ),
+          FilledButton.icon(onPressed: _addFood, icon: Icon(Icons.add), label: Text('Log food')),
           const SizedBox(height: 20),
           if (_foodLogs.isEmpty)
             Padding(
@@ -206,8 +208,9 @@ class FoodTabState extends State<FoodTab> {
                 .toList(),
             onDelete: _deleteEntry,
           ),
-          const SizedBox(height: 28),
-        ],
+            const SizedBox(height: 28),
+          ],
+        ),
       ),
     );
   }
@@ -378,7 +381,7 @@ class _LogMealFormState extends State<_LogMealForm> {
             ),
           ],
         ),
-        JinatraButton(label: 'SAVE ENTRY', onPressed: _save),
+        FilledButton(onPressed: _save, child: Text('Save entry')),
       ],
     );
   }

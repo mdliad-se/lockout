@@ -129,9 +129,9 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
-        backgroundColor: JinatraTokens.sweetCream,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         iconTheme: IconThemeData(color: JinatraTokens.ink),
         shape: Border(

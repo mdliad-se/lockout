@@ -273,13 +273,13 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('+ LOG MEASUREMENT'));
+      await tester.tap(find.text('Log measurement'));
       await tester.pumpAndSettle();
       expect(find.text('LOG BODY METRICS'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField).first, '77.5');
       await tester.pump();
-      await tester.tap(find.text('SAVE MEASUREMENT'));
+      await tester.tap(find.text('Save measurement'));
       await tester.pumpAndSettle();
       await settle(tester);
 
@@ -299,7 +299,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('+ LOG MEASUREMENT'));
+      await tester.tap(find.text('Log measurement'));
       await tester.pumpAndSettle();
 
       const typed = '68.2';
@@ -323,7 +323,7 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('+ LOG MEASUREMENT'));
+      await tester.tap(find.text('Log measurement'));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField).first, '68.2');
@@ -694,7 +694,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('RECOMMENDED TRAINING PLAN'), findsWidgets);
 
-      await tester.tap(find.text('CREATE THIS ROUTINE'));
+      await tester.tap(find.text('Create this routine'));
       await tester.pumpAndSettle();
       await settle(tester);
 
@@ -728,7 +728,7 @@ void main() {
             'log one body weight, to get a recommended training split'),
         findsOneWidget,
       );
-      expect(find.text('CREATE THIS ROUTINE'), findsNothing);
+      expect(find.text('Create this routine'), findsNothing);
     });
 
     // Finding 5: `targetWeightKg` used to be gated on `isConfigured`
@@ -763,12 +763,12 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('+ LOG MEASUREMENT'));
+      await tester.tap(find.text('Log measurement'));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField).first, 'Infinity');
       await tester.pump();
-      await tester.tap(find.text('SAVE MEASUREMENT'));
+      await tester.tap(find.text('Save measurement'));
       await tester.pump();
 
       expect(find.byType(SheetScaffold), findsOneWidget,
@@ -785,10 +785,10 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('+ LOG MEASUREMENT'));
+      await tester.tap(find.text('Log measurement'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('SAVE MEASUREMENT'));
+      await tester.tap(find.text('Save measurement'));
       await tester.pump();
 
       expect(find.byType(SheetScaffold), findsOneWidget);
@@ -805,14 +805,14 @@ void main() {
       await pumpBody(tester);
       await settle(tester);
 
-      await tester.tap(find.text('+ LOG MEASUREMENT'));
+      await tester.tap(find.text('Log measurement'));
       await tester.pumpAndSettle();
 
       final fields = find.byType(TextField);
       await tester.enterText(fields.first, '77.0');
       await tester.enterText(fields.at(1), '0');
       await tester.pump();
-      await tester.tap(find.text('SAVE MEASUREMENT'));
+      await tester.tap(find.text('Save measurement'));
       await tester.pumpAndSettle();
       await settle(tester);
 
@@ -967,7 +967,7 @@ void main() {
       // sheet immediately afterwards, with no `pump` in between to let the
       // create finish first, simulates the sheet closing out from under
       // the in-flight call.
-      await tester.tap(find.text('CREATE THIS ROUTINE'));
+      await tester.tap(find.text('Create this routine'));
       await tester.tap(find.byIcon(Icons.close));
       await tester.pumpAndSettle();
       await settle(tester);

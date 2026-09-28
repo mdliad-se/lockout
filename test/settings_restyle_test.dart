@@ -85,7 +85,7 @@ void main() {
       await tester.enterText(field, typed);
       await tester.pump();
 
-      await tester.tap(find.text('CALCULATE MY TARGET'));
+      await tester.tap(find.text('Calculate my target'));
       await settle(tester);
 
       final stored = await DatabaseService.instance
@@ -265,7 +265,7 @@ void main() {
       await tester.enterText(field, typed);
       await tester.pump();
 
-      await tester.tap(find.text('SAVE SETTINGS'));
+      await tester.tap(find.text('Save settings'));
       await settle(tester);
 
       final stored = await DatabaseService.instance
@@ -398,7 +398,7 @@ void main() {
       ));
       await settle(tester);
 
-      await tester.tap(find.text('IMPORT BACKUP JSON'));
+      await tester.tap(find.text('Import backup JSON'));
       await settle(tester);
       await tester.tap(find.text('CHOOSE FILE'));
       await settle(tester);

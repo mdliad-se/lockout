@@ -9,7 +9,6 @@ import '../services/units.dart';
 import '../theme/jinatra_tokens.dart';
 import '../widgets/calm_row.dart';
 import '../widgets/hero_card.dart';
-import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import '../widgets/jinatra_input.dart';
 import '../widgets/sheet_scaffold.dart';
@@ -209,7 +208,7 @@ class BodyTabState extends State<BodyTab> {
     final targetKcal = _goal?.calorieTarget;
 
     return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -224,10 +223,7 @@ class BodyTabState extends State<BodyTab> {
                     'SINCE LAST ENTRY',
             accent: JinatraTokens.accentAt(2),
             actions: [
-              JinatraButton(
-                label: '+ LOG MEASUREMENT',
-                onPressed: _openMeasurementSheet,
-              ),
+              FilledButton(onPressed: _openMeasurementSheet, child: Text('Log measurement')),
             ],
           ),
           if (weights.length >= 2)
@@ -609,10 +605,7 @@ class BodyTabState extends State<BodyTab> {
           _advice('HOW TO LOAD IT', rec.loadingAdvice),
           _advice('CARDIO', rec.cardioAdvice),
           const SizedBox(height: 6),
-          JinatraButton(
-            label: 'CREATE THIS ROUTINE',
-            onPressed: () => _createRecommendedRoutine(sheetContext),
-          ),
+          FilledButton(onPressed: () => _createRecommendedRoutine(sheetContext), child: Text('Create this routine')),
         ],
       ),
     );
@@ -789,9 +782,9 @@ class _MeasurementFormState extends State<_MeasurementForm> {
           opacity: _saving ? 0.6 : 1.0,
           child: IgnorePointer(
             ignoring: _saving,
-            child: JinatraButton(
-              label: _saving ? 'SAVING…' : 'SAVE MEASUREMENT',
+            child: FilledButton(
               onPressed: _save,
+              child: Text(_saving ? 'Saving…' : 'Save measurement'),
             ),
           ),
         ),

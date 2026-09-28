@@ -43,7 +43,7 @@ Future<PickedFood?> showFoodPicker(BuildContext context) {
   return showModalBottomSheet<PickedFood>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: JinatraTokens.sweetCream,
+    backgroundColor: Theme.of(context).colorScheme.surface,
     // Keeps a full-height picker off the status bar; see sheet_scaffold.dart.
     useSafeArea: true,
     shape: RoundedRectangleBorder(
@@ -101,7 +101,7 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
     final result = await showModalBottomSheet<PickedFood>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: JinatraTokens.sweetCream,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       // Keeps a full-height picker off the status bar; see sheet_scaffold.dart.
       useSafeArea: true,
       shape: RoundedRectangleBorder(

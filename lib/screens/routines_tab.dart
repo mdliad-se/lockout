@@ -15,7 +15,6 @@ import '../widgets/lockout_card.dart';
 import '../widgets/today_day_card.dart';
 import '../widgets/week_day_row.dart';
 import '../widgets/exercise_picker.dart';
-import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import '../widgets/jinatra_input.dart';
 import '../widgets/sheet_scaffold.dart';
@@ -225,7 +224,7 @@ class RoutinesTabState extends State<RoutinesTab> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: JinatraTokens.sweetCream,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           side: BorderSide(
               color: JinatraTokens.ink, width: JinatraTokens.borderControl),
@@ -589,22 +588,36 @@ class RoutinesTabState extends State<RoutinesTab> {
     }
 
     return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                    child: Text('WORKOUT ROUTINES',
-                        style: JinatraTokens.sectionHeader())),
-                JinatraButton(
-                    label: '+ NEW', onPressed: _openCreateRoutineSheet),
-              ],
-            ),
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      // SafeArea(bottom: false): MainScreen dropped its global AppBar in the
+      // five-tab restructure, so each tab now owns its top inset. Without it
+      // the header paints under the status bar on an edge-to-edge window and
+      // swallows taps there. Bottom is left alone — BottomNav carries its own
+      // inset and content should scroll under it.
+      body: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Workout',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                  ),
+                  // A tonal button rather than the old pill: the label and its
+                  // icon overflowed an 11dp-narrow Row on a 360dp window.
+                  FilledButton.tonalIcon(
+                    onPressed: _openCreateRoutineSheet,
+                    icon: const Icon(Icons.add),
+                    label: const Text('New'),
+                  ),
+                ],
+              ),
             const SizedBox(height: 16),
             Expanded(
               child: _routines.isEmpty
@@ -613,8 +626,9 @@ class RoutinesTabState extends State<RoutinesTab> {
                       itemCount: _routines.length,
                       itemBuilder: (ctx, i) => _buildRoutineCard(_routines[i]),
                     ),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1042,9 +1056,7 @@ class _CreateRoutineFormState extends State<_CreateRoutineForm> {
           );
         }),
         const SizedBox(height: 16),
-        JinatraButton(
-          label: 'SAVE ROUTINE',
-          onPressed: () async {
+        FilledButton(onPressed: () async {
             final template = _template;
             if (template == null) {
               setState(() => _showTemplateError = true);
@@ -1062,8 +1074,7 @@ class _CreateRoutineFormState extends State<_CreateRoutineForm> {
             );
             if (!context.mounted) return;
             Navigator.pop(context, true);
-          },
-        ),
+          }, child: Text('Save routine')),
       ],
     );
   }
@@ -1208,9 +1219,7 @@ class _DayFormState extends State<_DayForm> {
           ],
         ),
         const SizedBox(height: 8),
-        JinatraButton(
-          label: existing == null ? 'ADD DAY' : 'SAVE DAY',
-          onPressed: () async {
+        FilledButton(onPressed: () async {
             if (_nameCtrl.text.trim().isEmpty) return;
             await DatabaseService.instance.insertDay(TrainingDay(
               id: existing?.id ?? _newId(),
@@ -1225,6 +1234,10 @@ class _DayFormState extends State<_DayForm> {
             if (!context.mounted) return;
             Navigator.pop(context, true);
           },
+          // 'Create day', not 'Add day': the week expander's own action is
+          // already called Add day, and two controls with the same words
+          // one tap apart is ambiguous.
+          child: Text(widget.existing == null ? 'Create day' : 'Save day'),
         ),
       ],
     );
@@ -1273,9 +1286,7 @@ class _SubItemFormState extends State<_SubItemForm> {
           controller: _amtCtrl,
           hint: widget.isWarmup ? 'e.g. 3-4 min' : 'e.g. 12-15 reps',
         ),
-        JinatraButton(
-          label: 'ADD',
-          onPressed: () async {
+        FilledButton(onPressed: () async {
             if (_nameCtrl.text.trim().isEmpty) return;
             final db = DatabaseService.instance;
             if (widget.isWarmup) {
@@ -1297,8 +1308,7 @@ class _SubItemFormState extends State<_SubItemForm> {
             }
             if (!context.mounted) return;
             Navigator.pop(context, true);
-          },
-        ),
+          }, child: Text('Add')),
       ],
     );
   }
@@ -1497,9 +1507,7 @@ class _ExerciseFormState extends State<_ExerciseForm> {
           ),
         ),
         const SizedBox(height: 16),
-        JinatraButton(
-          label: widget.isNew ? 'ADD TO DAY' : 'SAVE CHANGES',
-          onPressed: () async {
+        FilledButton(onPressed: () async {
             final minReps =
                 int.tryParse(_repsMinCtrl.text) ?? ex.targetRepsMin;
             var maxReps =
@@ -1531,18 +1539,15 @@ class _ExerciseFormState extends State<_ExerciseForm> {
             if (!context.mounted) return;
             Navigator.pop(context, true);
           },
+          child: Text(widget.isNew ? 'Add to day' : 'Save changes'),
         ),
         if (!widget.isNew) ...[
           const SizedBox(height: 10),
-          JinatraButton(
-            label: 'REMOVE EXERCISE',
-            isSignal: true,
-            onPressed: () async {
+          FilledButton.tonal(onPressed: () async {
               await DatabaseService.instance.deleteExercise(ex.id);
               if (!context.mounted) return;
               Navigator.pop(context, true);
-            },
-          ),
+            }, child: Text('Remove exercise')),
         ],
       ],
     );

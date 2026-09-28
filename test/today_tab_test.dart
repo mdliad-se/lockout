@@ -144,7 +144,7 @@ void main() {
       await tester.tap(find.text('LOG SET'));
       await settle(tester, maxPumps: 4);
 
-      await tester.tap(find.text('FINISH SESSION & SAVE'));
+      await tester.tap(find.text('Finish session & save'));
       await settle(tester);
 
       // Back on the hub: the session was saved (proved by the assertion

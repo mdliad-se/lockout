@@ -10,7 +10,6 @@ import '../theme/app_palette.dart';
 import '../theme/jinatra_tokens.dart';
 import '../widgets/calm_row.dart';
 import '../widgets/day_block.dart';
-import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import '../widgets/jinatra_input.dart';
 
@@ -341,7 +340,7 @@ class SettingsBodyState extends State<SettingsBody> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: JinatraTokens.sweetCream,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           side: BorderSide(color: JinatraTokens.ink, width: 3),
           borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
@@ -434,12 +433,12 @@ class SettingsBodyState extends State<SettingsBody> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       // Null when hosted as the Profile tab: that screen owns the title, and
       // a pushed route is the only presentation with something to pop back to.
       appBar: widget.showAppBar
           ? AppBar(
-              backgroundColor: JinatraTokens.sweetCream,
+              backgroundColor: Theme.of(context).colorScheme.surface,
               elevation: 0,
               iconTheme: IconThemeData(color: JinatraTokens.ink),
               shape: Border(
@@ -729,9 +728,7 @@ class SettingsBodyState extends State<SettingsBody> {
             value: _foodTabEnabled,
             onChanged: (val) => setState(() => _foodTabEnabled = val),
           ),
-          JinatraButton(
-            label: 'SAVE SETTINGS',
-            onPressed: () async {
+          FilledButton(onPressed: () async {
               final db = DatabaseService.instance;
               final cm = _resolveHeightCm();
 
@@ -745,8 +742,7 @@ class SettingsBodyState extends State<SettingsBody> {
 
               widget.onSettingsUpdated();
               _toast('Saved - height ${Units.formatHeight(cm, _heightUnit)}');
-            },
-          ),
+            }, child: Text('Save settings')),
         ],
       ),
     );
@@ -933,10 +929,7 @@ class SettingsBodyState extends State<SettingsBody> {
           ),
           const SizedBox(height: 14),
 
-          JinatraButton(
-            label: 'CALCULATE MY TARGET',
-            onPressed: _saveGoalAndRecalculate,
-          ),
+          FilledButton(onPressed: _saveGoalAndRecalculate, child: Text('Calculate my target')),
 
           if (plan != null) ...[
             const SizedBox(height: 14),
@@ -1048,15 +1041,10 @@ class SettingsBodyState extends State<SettingsBody> {
               value: _streakAlertsEnabled,
               onChanged: _toggleStreakAlerts,
             ),
-            JinatraButton(
-              label: 'SEND TEST NOTIFICATION',
-              background: JinatraTokens.paper,
-              textColor: JinatraTokens.ink,
-              onPressed: () async {
+            FilledButton(onPressed: () async {
                 await NotificationService.instance.showTestNotification();
                 _toast('Test notification sent.');
-              },
-            ),
+              }, child: Text('Send test notification')),
           ],
         ],
       ),
@@ -1078,15 +1066,14 @@ class SettingsBodyState extends State<SettingsBody> {
             style: JinatraTokens.bodyText(fontSize: 13),
           ),
           const SizedBox(height: 16),
-          JinatraButton(
-            label: _busy ? 'WORKING...' : 'EXPORT BACKUP JSON',
-            onPressed: _busy ? () {} : _export,
+          FilledButton(
+            onPressed: _busy ? null : _export,
+            child: Text(_busy ? 'Working…' : 'Export backup JSON'),
           ),
           const SizedBox(height: 10),
-          JinatraButton(
-            label: _busy ? 'WORKING...' : 'IMPORT BACKUP JSON',
-            isSignal: true,
-            onPressed: _busy ? () {} : _import,
+          FilledButton.tonal(
+            onPressed: _busy ? null : _import,
+            child: Text(_busy ? 'Working…' : 'Import backup JSON'),
           ),
         ],
       ),
