@@ -4,7 +4,7 @@ import '../theme/jinatra_tokens.dart';
 import 'bottom_nav.dart';
 
 /// Shows a dismissible "MESSAGE — UNDO" banner for [duration], above
-/// *everything* currently on screen, including an open [showJinatraSheet]
+/// *everything* currently on screen, including an open [showLockoutSheet]
 /// modal.
 ///
 /// Shared by BODY's body-log delete and FOOD's food-entry delete (Ruling F)

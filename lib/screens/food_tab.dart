@@ -82,7 +82,7 @@ class FoodTabState extends State<FoodTab> {
     final picked = await showFoodPicker(context);
     if (picked == null || !mounted) return;
 
-    final saved = await showJinatraSheet<bool>(
+    final saved = await showLockoutSheet<bool>(
       context: context,
       title: 'LOG MEAL ITEM',
       builder: (ctx) => _LogMealForm(picked: picked, defaultSlot: _defaultSlot),
@@ -222,7 +222,7 @@ String _num(double v) => v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(1
 //
 // Owns its own controllers/state as a `StatefulWidget` rather than a builder
 // closure fed hoisted `TextEditingController`s — see the doc block at
-// routines_tab.dart:807-827 for why: `showJinatraSheet`'s `builder` is
+// routines_tab.dart:807-827 for why: `showLockoutSheet`'s `builder` is
 // re-invoked on every drag-driven rebuild of the sheet's own state, so a
 // controller created inside the builder gets silently recreated (losing
 // typed input), and a controller hoisted into the calling method and

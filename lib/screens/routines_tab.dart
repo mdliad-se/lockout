@@ -124,7 +124,7 @@ class RoutinesTabState extends State<RoutinesTab> {
   /// than hoisting, is what keeps typed state alive across a non-dismissing
   /// drag without also reintroducing a use-after-dispose).
   Future<void> _openCreateRoutineSheet() async {
-    final saved = await showJinatraSheet<bool>(
+    final saved = await showLockoutSheet<bool>(
       context: context,
       title: 'CREATE NEW ROUTINE',
       builder: (ctx) => _CreateRoutineForm(),
@@ -139,7 +139,7 @@ class RoutinesTabState extends State<RoutinesTab> {
   /// detail sheet, on an edit) can tell a save apart from a dismiss.
   Future<bool?> _openDayFormSheet(String routineId, {TrainingDay? existing}) {
     final dayCount = (_routineDays[routineId] ?? []).length;
-    return showJinatraSheet<bool>(
+    return showLockoutSheet<bool>(
       context: context,
       title: existing == null ? 'ADD TRAINING DAY' : 'EDIT DAY',
       builder: (ctx) => _DayForm(
@@ -159,7 +159,7 @@ class RoutinesTabState extends State<RoutinesTab> {
     required bool isWarmup,
     required int index,
   }) {
-    return showJinatraSheet<bool>(
+    return showLockoutSheet<bool>(
       context: context,
       title: isWarmup ? 'ADD WARM-UP ITEM' : 'ADD FINISHER ITEM',
       builder: (ctx) => _SubItemForm(
@@ -197,7 +197,7 @@ class RoutinesTabState extends State<RoutinesTab> {
   /// Resolves `true` if the exercise was saved or removed — either way the
   /// caller's list is stale and must refresh.
   Future<bool?> _openExerciseSheet(ExerciseDef ex, {bool isNew = false}) {
-    return showJinatraSheet<bool>(
+    return showLockoutSheet<bool>(
       context: context,
       title: isNew ? 'ADD EXERCISE' : 'EDIT EXERCISE',
       builder: (ctx) => _ExerciseForm(
@@ -260,7 +260,7 @@ class RoutinesTabState extends State<RoutinesTab> {
   /// The routine list was three levels of bordered box deep; a sheet gives
   /// the detail the whole screen and leaves the week scannable behind it.
   Future<void> _openDaySheet(Routine routine, TrainingDay day) async {
-    await showJinatraSheet<void>(
+    await showLockoutSheet<void>(
       context: context,
       title: '${day.tag} - ${day.name}',
       builder: (ctx) => StatefulBuilder(
@@ -784,7 +784,7 @@ class RoutinesTabState extends State<RoutinesTab> {
 // --- FORM WIDGETS ---
 //
 // Each of the four sheet forms below is its own `StatefulWidget` rather than
-// a builder function fed hoisted controllers/locals. `showJinatraSheet`'s
+// a builder function fed hoisted controllers/locals. `showLockoutSheet`'s
 // `builder` is re-invoked on every rebuild of the sheet's own drag-handling
 // state (`_BottomSheetState._handleDragStart`/`_handleDragEnd`, both call
 // `setState`), but re-invoking a builder only recreates the `Widget`
@@ -793,7 +793,7 @@ class RoutinesTabState extends State<RoutinesTab> {
 // `StatefulBuilder`'s closure state used to. The difference is disposal:
 // `State.dispose()` runs when the widget is actually removed from the tree,
 // which for a modal route is when its exit animation finishes — not when
-// `showJinatraSheet`'s returned Future completes, which fires when the pop
+// `showLockoutSheet`'s returned Future completes, which fires when the pop
 // *starts* (`Route.didPop` -> `didComplete`), roughly 200ms earlier while
 // the sheet is still mounted and rebuilding. Disposing controllers in a
 // `finally` around that `await` (the previous fix wave's approach) tore them

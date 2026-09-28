@@ -32,7 +32,7 @@ class BodyTabState extends State<BodyTab> {
   List<BodyEntry> _bodyLogs = [];
   // `_HistoryList` inside an already-open LOG HISTORY sheet reads this
   // directly rather than the plain `_bodyLogs` field above (Finding 1):
-  // `showJinatraSheet`'s modal route lives in the root `Overlay`, a sibling
+  // `showLockoutSheet`'s modal route lives in the root `Overlay`, a sibling
   // of this State's own Element subtree rather than a descendant of it, so
   // `setState` here cannot reach back into an already-built sheet. A
   // `ValueNotifier` does, because `ValueListenableBuilder` subscribes to
@@ -83,7 +83,7 @@ class BodyTabState extends State<BodyTab> {
   }
 
   Future<void> _openMeasurementSheet() async {
-    await showJinatraSheet<void>(
+    await showLockoutSheet<void>(
       context: context,
       title: 'LOG BODY METRICS',
       builder: (ctx) => _MeasurementForm(),
@@ -276,7 +276,7 @@ class BodyTabState extends State<BodyTab> {
           CalmRow(
             icon: Icons.flag,
             title: 'GOAL PROGRESS',
-            onTap: () => showJinatraSheet<void>(
+            onTap: () => showLockoutSheet<void>(
               context: context,
               title: 'GOAL PROGRESS',
               builder: (ctx) => _buildGoalCard(),
@@ -285,7 +285,7 @@ class BodyTabState extends State<BodyTab> {
           CalmRow(
             icon: Icons.insights,
             title: 'RECOMMENDED PLAN',
-            onTap: () => showJinatraSheet<void>(
+            onTap: () => showLockoutSheet<void>(
               context: context,
               title: 'RECOMMENDED TRAINING PLAN',
               builder: (ctx) => _buildPlanCard(ctx),
@@ -294,7 +294,7 @@ class BodyTabState extends State<BodyTab> {
           CalmRow(
             icon: Icons.straighten,
             title: 'HOW THIS BMI IS CALCULATED',
-            onTap: () => showJinatraSheet<void>(
+            onTap: () => showLockoutSheet<void>(
               context: context,
               title: 'BMI',
               builder: (ctx) => _buildBmiCard(),
@@ -304,7 +304,7 @@ class BodyTabState extends State<BodyTab> {
             icon: Icons.history,
             title: 'LOG HISTORY',
             value: '${_bodyLogs.length}',
-            onTap: () => showJinatraSheet<void>(
+            onTap: () => showLockoutSheet<void>(
               context: context,
               title: 'LOG HISTORY',
               builder: (ctx) => _HistoryList(
@@ -648,7 +648,7 @@ class BodyTabState extends State<BodyTab> {
 //
 // Owns its own controllers as a `StatefulWidget` rather than a builder
 // closure fed hoisted `TextEditingController`s — see the doc block at
-// routines_tab.dart:807-827 for why: `showJinatraSheet`'s `builder` is
+// routines_tab.dart:807-827 for why: `showLockoutSheet`'s `builder` is
 // re-invoked on every drag-driven rebuild of the sheet's own state, so a
 // controller created inside the builder gets silently recreated (losing
 // typed input), and a controller hoisted into the calling method and
@@ -804,7 +804,7 @@ class _MeasurementFormState extends State<_MeasurementForm> {
 //
 // A `ValueListenableBuilder` over `BodyTabState._bodyLogsNotifier` rather
 // than a plain builder fed a `List<BodyEntry>` snapshot (Finding 1):
-// `showJinatraSheet`'s modal route lives in the root `Overlay`, a sibling of
+// `showLockoutSheet`'s modal route lives in the root `Overlay`, a sibling of
 // `BodyTabState`'s own Element subtree rather than a descendant of it, so
 // that State's `setState` cannot reach back into an already-open sheet — a
 // snapshot taken when the sheet opened would still read 1 row after an

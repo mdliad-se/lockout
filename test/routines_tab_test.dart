@@ -17,11 +17,11 @@ import 'test_helpers.dart';
 /// guard, the EDIT DAY sheet-pop, and the drag-does-not-reset-typed-state
 /// regression from Task 8's review (every sheet form used to build its
 /// `TextEditingController`s and local form state inside the builder passed
-/// to `showJinatraSheet`, so a drag that only rebuilt the sheet's own
+/// to `showLockoutSheet`, so a drag that only rebuilt the sheet's own
 /// drag-handling state — without dismissing it — silently reset them).
 ///
 /// A second review wave found that fix's disposal half was backwards: it
-/// disposed every controller in a `finally` around the `showJinatraSheet`
+/// disposed every controller in a `finally` around the `showLockoutSheet`
 /// await, which resolves when the sheet's pop *starts*, not when its exit
 /// animation finishes — so any sheet that had been typed into threw a
 /// use-after-dispose the moment it closed. The four
@@ -85,7 +85,8 @@ void main() {
     await tester.tap(find.text('Push Day'));
     await tester.pumpAndSettle();
 
-    final sheetTitle = find.text('${day.tag} - ${day.name}'.toUpperCase());
+    // SheetScaffold no longer shouts its title.
+    final sheetTitle = find.text('${day.tag} - ${day.name}');
     expect(sheetTitle, findsOneWidget);
     expect(find.text('Bench Press'), findsOneWidget);
 
@@ -117,7 +118,9 @@ void main() {
 
     await tester.tap(find.text('Push Day'));
     await tester.pumpAndSettle();
-    expect(find.text('${day.tag} - ${day.name}'.toUpperCase()), findsOneWidget);
+    // SheetScaffold no longer shouts its title: all-caps is retired
+    // outside small metadata labels and the weekday rail.
+    expect(find.text('${day.tag} - ${day.name}'), findsOneWidget);
 
     await tester.tap(find.text('EDIT DAY'));
     await tester.pumpAndSettle();
@@ -156,7 +159,7 @@ void main() {
     // dismiss-drag `GestureDetector`. A modest drag — well short of the
     // distance needed to dismiss — still triggers `_BottomSheetState`'s
     // `setState` (`_handleDragStart`/`_handleDragEnd`), which re-invokes the
-    // builder passed to `showJinatraSheet`. Before the fix, that
+    // builder passed to `showLockoutSheet`. Before the fix, that
     // re-invocation created a fresh (empty) TextEditingController and the
     // typed name vanished while the sheet stayed open.
     await tester.drag(find.text('CREATE NEW ROUTINE'), const Offset(0, 40));
@@ -171,7 +174,7 @@ void main() {
 
   // Second review wave: the first fix wave hoisted controllers out of the
   // rebuilt builder (fixing the drag-state-loss bug above) but disposed them
-  // in a `finally` around `showJinatraSheet`'s await, which resolves when
+  // in a `finally` around `showLockoutSheet`'s await, which resolves when
   // the sheet's pop *starts* — not when its exit animation finishes and the
   // sheet is actually removed from the tree. Any field that had been
   // focused/edited was still wired to `EditableText` via

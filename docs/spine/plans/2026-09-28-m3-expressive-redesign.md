@@ -2593,13 +2593,18 @@ Future<T?> showLockoutSheet<T>({
 
 Keep every timing and lifecycle detail. Replace only the neubrutalist decoration with `Theme.of(context)` reads and the shape with `LockoutTheme.radiusButton`. Do not convert it to a bare `SnackBar` in this task — it positions itself against `BottomNav.lastRenderedHeight`, and that interaction has its own tests.
 
-- [ ] **Step 7: Delete the old widget files and update call sites**
+- [ ] **Step 7: Rename the sheet helper; DEFER the card/button/input deletion**
+
+**Correction applied during execution.** `showJinatraSheet` is renamed to `showLockoutSheet` now, because Task 8 changes that function's own file and the tree must compile. But `jinatra_card.dart`, `jinatra_button.dart` and `jinatra_input.dart` are **kept alive until Task 15**.
+
+Reason: the three widgets have ~80 call sites across the six screens that Tasks 9–14 rewrite anyway, and their parameters do not map one-to-one (`JinatraCard` carries `margin`, `shadowOffset` and `radius`; `LockoutCard` deliberately carries none of them, since M3 puts margin on the parent and elevation in the theme). Migrating them here would mean mechanically rewriting 80 call sites in screens that are about to be rebuilt, producing a large risky diff twice over. Each screen task migrates its own call sites as part of rebuilding that screen; Task 15's grep-for-`Jinatra` proof is what guarantees none survive.
 
 ```bash
-git rm lib/widgets/jinatra_card.dart lib/widgets/jinatra_button.dart lib/widgets/jinatra_input.dart
+# Deferred to Task 15:
+# git rm lib/widgets/jinatra_card.dart lib/widgets/jinatra_button.dart lib/widgets/jinatra_input.dart
 ```
 
-Replace every `JinatraCard(` with `LockoutCard(`, every `JinatraButton(label: X, onPressed: Y)` with `FilledButton(onPressed: Y, child: Text(X))`, every `JinatraButton(..., isSignal: true)` with `FilledButton.tonal(...)`, and every `JinatraInput(` with `LockoutField(`. Run the analyzer to find them all:
+Per screen task, replace `JinatraCard(` with `LockoutCard(`, `JinatraButton(label: X, onPressed: Y)` with `FilledButton(onPressed: Y, child: Text(X))`, `JinatraButton(..., isSignal: true)` with `FilledButton.tonal(...)`, and `JinatraInput(` with `LockoutField(`. Run the analyzer to find them all:
 
 Run: `C:\src\flutter\bin\flutter.bat analyze`
 Expected: zero errors before moving on.

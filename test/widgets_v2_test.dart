@@ -38,13 +38,16 @@ void main() {
       ));
     }
 
+    // The outer wrapper is a Padding rather than a Container now that colour
+    // and radius come from BottomSheetThemeData; the keyboard-inset
+    // behaviour it guards is unchanged.
     await pumpWithInset(240);
-    var container = tester.widget<Container>(find.byType(Container).first);
-    expect(container.padding, const EdgeInsets.only(bottom: 240));
+    var padding = tester.widget<Padding>(find.byType(Padding).first);
+    expect(padding.padding, const EdgeInsets.only(bottom: 240));
 
     await pumpWithInset(0);
-    container = tester.widget<Container>(find.byType(Container).first);
-    expect(container.padding, EdgeInsets.zero);
+    padding = tester.widget<Padding>(find.byType(Padding).first);
+    expect(padding.padding, EdgeInsets.zero);
   });
 
   testWidgets('HeroCard renders eyebrow, title, subtitle and actions',
@@ -184,7 +187,7 @@ void main() {
       home: Scaffold(
         body: Builder(
           builder: (ctx) => GestureDetector(
-            onTap: () => showJinatraSheet<void>(
+            onTap: () => showLockoutSheet<void>(
               context: ctx,
               title: 'Create New Routine',
               builder: (_) => const SizedBox(height: 1200, child: Text('tall')),
@@ -203,7 +206,7 @@ void main() {
         greaterThanOrEqualTo(48.0));
   });
 
-  testWidgets('showJinatraSheet presents a titled sheet and returns a value',
+  testWidgets('showLockoutSheet presents a titled sheet and returns a value',
       (tester) async {
     String? result;
 
@@ -212,7 +215,7 @@ void main() {
         body: Builder(
           builder: (ctx) => TextButton(
             onPressed: () async {
-              result = await showJinatraSheet<String>(
+              result = await showLockoutSheet<String>(
                 context: ctx,
                 title: 'LOG FOOD',
                 builder: (sheetCtx) => TextButton(

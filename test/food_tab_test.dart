@@ -534,7 +534,7 @@ void main() {
 
   // These model the shape of `routines_tab_test.dart`'s sheet regression
   // tests — Task 8 shipped a Critical twice in exactly this area (a form's
-  // controllers built inside `showJinatraSheet`'s re-invoked builder, then
+  // controllers built inside `showLockoutSheet`'s re-invoked builder, then
   // a second wave disposed them in a `finally` before the sheet's exit
   // animation finished). Task 9 converted FOOD's confirm sheet the same
   // way `routines_tab.dart` was already fixed, but shipped with no
