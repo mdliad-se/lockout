@@ -14,18 +14,47 @@ import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
 import '../widgets/jinatra_input.dart';
 
-class SettingsScreen extends StatefulWidget {
+/// The settings content, independent of how it is presented.
+///
+/// Split from its route so the Profile tab can host the same body without an
+/// `AppBar`: a tab has nothing to pop back to, and a tab that grew its own bar
+/// would sit a bar taller than its neighbours.
+class SettingsBody extends StatefulWidget {
   final VoidCallback onSettingsUpdated;
 
+  /// False when hosted as the Profile tab, where the surrounding screen owns
+  /// the title and there is no route to pop.
+  final bool showAppBar;
+
   // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  SettingsBody({
+    super.key,
+    required this.onSettingsUpdated,
+    this.showAppBar = true,
+  });
+
+  @override
+  State<SettingsBody> createState() => SettingsBodyState();
+}
+
+/// The pushed-route form of settings.
+///
+/// Kept so anything that still navigates to a settings page - a notification
+/// tap, a deep link, an older test - lands somewhere with a back button, even
+/// though the primary entry point is now the Profile tab.
+class SettingsScreen extends StatelessWidget {
+  final VoidCallback onSettingsUpdated;
+
   // ignore: prefer_const_constructors_in_immutables
   SettingsScreen({super.key, required this.onSettingsUpdated});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  Widget build(BuildContext context) =>
+      SettingsBody(onSettingsUpdated: onSettingsUpdated, showAppBar: true);
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class SettingsBodyState extends State<SettingsBody> {
   final _heightCmCtrl = TextEditingController();
   final _heightFtCtrl = TextEditingController();
   final _heightInCtrl = TextEditingController();
@@ -67,6 +96,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _weeksCtrl.dispose();
     super.dispose();
   }
+
+  /// Re-reads every setting. Public so `ProfileTab` can refresh the hosted
+  /// body the same way the other tabs are refreshed on the way in.
+  Future<void> reload() => _loadSettings();
 
   Future<void> _loadSettings() async {
     final db = DatabaseService.instance;
@@ -402,17 +435,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: JinatraTokens.sweetCream,
-      appBar: AppBar(
-        backgroundColor: JinatraTokens.sweetCream,
-        elevation: 0,
-        iconTheme: IconThemeData(color: JinatraTokens.ink),
-        shape: Border(
-          bottom: BorderSide(
-              color: JinatraTokens.ink, width: JinatraTokens.borderControl),
-        ),
-        title:
-            Text('SETTINGS', style: JinatraTokens.sectionHeader(fontSize: 18)),
-      ),
+      // Null when hosted as the Profile tab: that screen owns the title, and
+      // a pushed route is the only presentation with something to pop back to.
+      appBar: widget.showAppBar
+          ? AppBar(
+              backgroundColor: JinatraTokens.sweetCream,
+              elevation: 0,
+              iconTheme: IconThemeData(color: JinatraTokens.ink),
+              shape: Border(
+                bottom: BorderSide(
+                    color: JinatraTokens.ink,
+                    width: JinatraTokens.borderControl),
+              ),
+              title: Text('SETTINGS',
+                  style: JinatraTokens.sectionHeader(fontSize: 18)),
+            )
+          : null,
       body: AbsorbPointer(
         absorbing: _busy,
         child: SingleChildScrollView(
