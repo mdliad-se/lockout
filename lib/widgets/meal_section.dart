@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
+
 import '../models/models.dart';
-import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_theme.dart';
 
 int mealSubtotalKcal(List<FoodEntry> entries) =>
     entries.fold<int>(0, (sum, e) => sum + e.kcal);
 
-/// One decimal place, trimmed to a whole number when exact — enough
-/// precision that a logged 0.4g doesn't silently round down to a measured
-/// zero, without manufacturing false precision on values that are exact.
+/// One decimal place, trimmed to a whole number when exact — enough precision
+/// that a logged 0.4g doesn't silently round down to a measured zero, without
+/// manufacturing false precision on values that are exact.
 String _formatMacro(double v) =>
     v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
 
-/// One meal's entries under a labelled rule with a subtotal.
+/// One meal's entries under a labelled heading with a subtotal.
 ///
 /// v1 showed the day as one flat list, so "how much was lunch" could not be
 /// answered without adding rows up by eye. An empty meal renders nothing
@@ -21,9 +22,7 @@ class MealSection extends StatelessWidget {
   final List<FoodEntry> entries;
   final void Function(FoodEntry) onDelete;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
-  // ignore: prefer_const_constructors_in_immutables
-  MealSection({
+  const MealSection({
     super.key,
     required this.title,
     required this.entries,
@@ -34,99 +33,88 @@ class MealSection extends StatelessWidget {
   Widget build(BuildContext context) {
     if (entries.isEmpty) return const SizedBox.shrink();
 
+    final theme = Theme.of(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 8),
+          padding: const EdgeInsets.fromLTRB(
+            LockoutTheme.spaceXs,
+            LockoutTheme.spaceMd,
+            LockoutTheme.spaceXs,
+            LockoutTheme.spaceSm,
+          ),
           child: Row(
             children: [
-              Text(
-                title.toUpperCase(),
-                style: JinatraTokens.monoData(fontSize: 11),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Container(
-                  height: 2,
-                  color: JinatraTokens.ink.withValues(alpha: 0.18),
-                ),
-              ),
-              const SizedBox(width: 8),
+              Expanded(child: Text(title, style: theme.textTheme.titleSmall)),
               Text(
                 '${mealSubtotalKcal(entries)} kcal',
-                style: JinatraTokens.monoData(
-                  fontSize: 11,
-                  color: JinatraTokens.ink,
+                style: LockoutTheme.numeric(
+                  context,
+                  size: 12,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
         ),
-        ...entries.map((e) => _row(e)),
-        const SizedBox(height: 8),
+        for (final entry in entries) _MealRow(entry: entry, onDelete: onDelete),
       ],
     );
   }
+}
 
-  Widget _row(FoodEntry e) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: JinatraTokens.cardDecoration(
-        borderWidth: JinatraTokens.borderDivider,
-        shadowOffset: JinatraTokens.shadowSm,
-        radius: JinatraTokens.radiusTile,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(e.name, style: JinatraTokens.bodyText(fontSize: 14)),
-                const SizedBox(height: 2),
-                Text(
-                  'P ${_formatMacro(e.proteinG)}  '
-                  'C ${_formatMacro(e.carbG)}  '
-                  'F ${_formatMacro(e.fatG)}',
-                  style: JinatraTokens.monoData(
-                    fontSize: 9,
-                    color: JinatraTokens.ink.withValues(alpha: 0.6),
-                  ),
+class _MealRow extends StatelessWidget {
+  final FoodEntry entry;
+  final void Function(FoodEntry) onDelete;
+
+  const _MealRow({required this.entry, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
+      child: Material(
+        color: theme.colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+        child: Padding(
+          padding: const EdgeInsets.only(left: LockoutTheme.spaceMd),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(entry.name, style: theme.textTheme.bodyLarge),
+                    const SizedBox(height: 2),
+                    Text(
+                      'P ${_formatMacro(entry.proteinG)}  '
+                      'C ${_formatMacro(entry.carbG)}  '
+                      'F ${_formatMacro(entry.fatG)}',
+                      style: theme.textTheme.labelSmall,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          Text(
-            '${e.kcal} kcal',
-            style: JinatraTokens.monoData(fontSize: 13),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () => onDelete(e),
-            behavior: HitTestBehavior.opaque,
-            // Padding lives *inside* the detector so the tappable area grows
-            // to a 40dp square without enlarging the visible glyph —
-            // `HitTestBehavior.opaque` alone only makes the existing 16x16
-            // box register taps everywhere within it, it does not resize
-            // that box. Matches BODY's delete affordance
-            // (`body_tab.dart`, `EdgeInsets.all(12)` around the same 16dp
-            // glyph) so the two delete flows feel identical (third-round
-            // review, Finding 8) — this used to be `EdgeInsets.all(10)`,
-            // ~36dp. This is the screen's only delete path with no upfront
-            // confirmation, but (Ruling F) `showUndoBanner` gives a few
-            // seconds to reverse it, same as BODY.
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Icon(
-                Icons.close,
-                size: 16,
-                color: JinatraTokens.ink.withValues(alpha: 0.5),
               ),
-            ),
+              Text(
+                '${entry.kcal} kcal',
+                style: LockoutTheme.numeric(context, size: 13),
+              ),
+              // The 48dp target comes from IconButton's own theme now, rather
+              // than padding hand-wrapped around a 16dp glyph. This is the
+              // screen's only delete path with no upfront confirmation, but
+              // `showUndoBanner` gives a few seconds to reverse it, same as
+              // Progress.
+              IconButton(
+                onPressed: () => onDelete(entry),
+                icon: const Icon(Icons.close, size: 18, semanticLabel: 'Delete'),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

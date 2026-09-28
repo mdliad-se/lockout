@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_theme.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/numeric_guard.dart';
 import '../services/goal_service.dart';
 import '../widgets/food_picker.dart';
-import '../widgets/jinatra_input.dart';
+import '../widgets/lockout_field.dart';
 import '../widgets/meal_section.dart';
 import '../widgets/progress_hero.dart';
 import '../widgets/sheet_scaffold.dart';
@@ -120,7 +120,7 @@ class FoodTabState extends State<FoodTab> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Center(
-          child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
+          child: CircularProgressIndicator());
     }
 
     final eaten = _totalKcal;
@@ -141,38 +141,36 @@ class FoodTabState extends State<FoodTab> {
           children: [
           ProgressHero(
             eyebrow: 'TODAY',
-            title: '$eaten / $target KCAL',
-            subtitle: left >= 0 ? '$left LEFT' : '${left.abs()} OVER',
+            title: '$eaten / $target kcal',
+            subtitle: left >= 0 ? '$left left' : '${left.abs()} over',
             progress: target <= 0 ? 0.0 : eaten / target,
-            // v1 painted both the number and the bar in the signal colour
-            // once the day went over budget; an over-budget day otherwise
-            // reads identically to an on-track one except for the 11px
-            // subtitle. `ProgressHero` resolves its own foreground from
-            // whatever background it is given (`onAccentColor`), so this
-            // stays legible across every palette without hardcoding.
-            background:
-                left < 0 ? JinatraTokens.signal : JinatraTokens.accentAt(0),
+            // The bar turns to the error role once the day is over budget.
+            // Without it an over-budget day reads identically to an on-track
+            // one except for the supporting line.
+            accent: left < 0
+                ? Theme.of(context).colorScheme.error
+                : Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
                 child: StatTile(
-                  label: 'PROTEIN',
+                  label: 'Protein',
                   value: '${_num(_totalProtein)} g',
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: StatTile(
-                  label: 'CARBS',
+                  label: 'Carbs',
                   value: '${_num(_totalCarb)} g',
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: StatTile(
-                  label: 'FAT',
+                  label: 'Fat',
                   value: '${_num(_totalFat)} g',
                 ),
               ),
@@ -186,11 +184,12 @@ class FoodTabState extends State<FoodTab> {
               padding: const EdgeInsets.only(top: 24),
               child: Center(
                 child: Text(
-                  'NO FOOD LOGGED TODAY\nTap "LOG FOOD" and pick from the catalog.',
+                  'Nothing logged today.\nTap "Log food" and pick from the '
+                  'catalog.',
                   textAlign: TextAlign.center,
-                  style: JinatraTokens.monoData(
-                    color: JinatraTokens.ink.withValues(alpha: 0.6),
-                  ),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
               ),
             ),
@@ -312,49 +311,36 @@ class _LogMealFormState extends State<_LogMealForm> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('MEAL', style: JinatraTokens.monoData(fontSize: 12)),
-        const SizedBox(height: 8),
+        Text('Meal', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        // ChoiceChip rather than a hand-rolled toggle: it carries the
+        // selected state to accessibility services, which a tappable
+        // Container never did.
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: FoodTabState.mealSlots.map((s) {
-            final active = s == _slot;
-            return GestureDetector(
-              onTap: () => setState(() => _slot = s),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: JinatraTokens.cardDecoration(
-                  background:
-                      active ? JinatraTokens.deepTeal : JinatraTokens.paper,
-                  borderWidth: JinatraTokens.borderDivider,
-                  hasShadow: !active,
-                  shadowOffset: JinatraTokens.shadowSm,
-                  radius: JinatraTokens.radiusPill,
-                ),
-                child: Text(
-                  s.toUpperCase(),
-                  style: JinatraTokens.monoData(
-                    fontSize: 11,
-                    color:
-                        active ? JinatraTokens.onPrimary : JinatraTokens.ink,
-                  ),
-                ),
+          spacing: LockoutTheme.spaceSm,
+          runSpacing: LockoutTheme.spaceSm,
+          children: [
+            for (final slot in FoodTabState.mealSlots)
+              ChoiceChip(
+                label: Text(slot),
+                selected: slot == _slot,
+                onSelected: (_) => setState(() => _slot = slot),
               ),
-            );
-          }).toList(),
+          ],
         ),
         const SizedBox(height: 16),
-        JinatraInput(label: 'Food Name', controller: _nameCtrl),
-        JinatraInput(
+        LockoutField(label: 'Food name', controller: _nameCtrl),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        LockoutField(
           label: 'Calories (kcal)',
           controller: _kcalCtrl,
           keyboardType: TextInputType.number,
         ),
+        const SizedBox(height: LockoutTheme.spaceMd),
         Row(
           children: [
             Expanded(
-              child: JinatraInput(
+              child: LockoutField(
                 label: 'Protein (g)',
                 controller: _proteinCtrl,
                 keyboardType:
@@ -363,7 +349,7 @@ class _LogMealFormState extends State<_LogMealForm> {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: JinatraInput(
+              child: LockoutField(
                 label: 'Carbs (g)',
                 controller: _carbCtrl,
                 keyboardType:
@@ -372,7 +358,7 @@ class _LogMealFormState extends State<_LogMealForm> {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: JinatraInput(
+              child: LockoutField(
                 label: 'Fat (g)',
                 controller: _fatCtrl,
                 keyboardType:
@@ -381,7 +367,14 @@ class _LogMealFormState extends State<_LogMealForm> {
             ),
           ],
         ),
-        FilledButton(onPressed: _save, child: Text('Save entry')),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: _save,
+            child: const Text('Save entry'),
+          ),
+        ),
       ],
     );
   }

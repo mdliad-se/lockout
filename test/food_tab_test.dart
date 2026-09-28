@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:lockout/models/models.dart';
+import 'package:lockout/theme/schemes.dart';
 import 'package:lockout/screens/food_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/theme/app_palette.dart';
@@ -55,20 +56,21 @@ void main() {
     testWidgets('renders its text and clamps an over-target progress',
         (tester) async {
       await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
         home: Scaffold(
           body: ProgressHero(
             eyebrow: 'TODAY',
-            title: '1240 / 1850 KCAL',
-            subtitle: '610 LEFT',
+            title: '1240 / 1850 kcal',
+            subtitle: '610 left',
             progress: 1.8,
-            background: Colors.orange,
+            accent: Colors.orange,
           ),
         ),
       ));
 
       expect(find.text('TODAY'), findsOneWidget);
-      expect(find.text('1240 / 1850 KCAL'), findsOneWidget);
-      expect(find.text('610 LEFT'), findsOneWidget);
+      expect(find.text('1240 / 1850 kcal'), findsOneWidget);
+      expect(find.text('610 left'), findsOneWidget);
 
       final bar = tester.widget<LinearProgressIndicator>(
         find.byType(LinearProgressIndicator),
@@ -78,13 +80,14 @@ void main() {
 
     testWidgets('a negative progress clamps to zero', (tester) async {
       await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
         home: Scaffold(
           body: ProgressHero(
             eyebrow: 'TODAY',
-            title: '0 / 1850 KCAL',
-            subtitle: '1850 LEFT',
+            title: '0 / 1850 kcal',
+            subtitle: '1850 left',
             progress: -3.0,
-            background: Colors.orange,
+            accent: Colors.orange,
           ),
         ),
       ));
@@ -111,7 +114,7 @@ void main() {
         ),
       ));
 
-      expect(find.text('BREAKFAST'), findsOneWidget);
+      expect(find.text('Breakfast'), findsOneWidget);
       expect(find.text('579 kcal'), findsOneWidget);
       expect(find.text('Paratha'), findsOneWidget);
       expect(find.text('Cheese Omelette'), findsOneWidget);
@@ -216,10 +219,10 @@ void main() {
   group('FoodTab', () {
     testWidgets('empty state: shows guidance when nothing is logged today',
         (tester) async {
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
-      expect(find.textContaining('NO FOOD LOGGED TODAY'), findsOneWidget);
+      expect(find.textContaining('Nothing logged today'), findsOneWidget);
       // Every meal slot still gets a `MealSection` instance (the empty-list
       // shrink is internal to each one), so the guidance text plus the
       // absence of any delete affordance is what proves nothing rendered.
@@ -239,7 +242,7 @@ void main() {
         kcal: 800,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
       final hero = tester.widget<ProgressHero>(find.byType(ProgressHero));
@@ -248,13 +251,13 @@ void main() {
       // configured in a freshly-wiped/reseeded DB, so no nutrition plan
       // exists to override it.
       expect(hero.progress, closeTo(800 / 2200, 0.0001));
-      expect(hero.background, equals(JinatraTokens.accentAt(0)));
-      expect(find.textContaining('LEFT'), findsOneWidget);
+      expect(hero.accent, equals(LockoutScheme.graphite.colors.primary));
+      expect(find.textContaining('left'), findsOneWidget);
     });
 
     testWidgets(
-        'Ruling E: an over-budget day paints the hero with the signal '
-        'colour and shows OVER, not just the accent every day gets',
+        'Ruling E: an over-budget day paints the bar in the error role and '
+        'says over, not just the accent every day gets',
         (tester) async {
       final db = DatabaseService.instance;
       final today = DateTime.now().toIso8601String().split('T').first;
@@ -266,12 +269,12 @@ void main() {
         kcal: 2500,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
       final hero = tester.widget<ProgressHero>(find.byType(ProgressHero));
-      expect(hero.background, equals(JinatraTokens.signal));
-      expect(find.textContaining('OVER'), findsOneWidget);
+      expect(hero.accent, equals(LockoutScheme.graphite.colors.error));
+      expect(find.textContaining('over'), findsOneWidget);
     });
 
     testWidgets(
@@ -287,10 +290,10 @@ void main() {
         kcal: 300,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
-      expect(find.text('OTHER'), findsOneWidget);
+      expect(find.text('Other'), findsOneWidget);
       expect(find.text('Cold Pizza'), findsOneWidget);
     });
 
@@ -310,7 +313,7 @@ void main() {
         fatG: 0.0,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
       expect(find.text('0.4 g'), findsOneWidget);
@@ -318,7 +321,7 @@ void main() {
 
     testWidgets('the Log food button carries its plus as an icon, not text',
         (tester) async {
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
       // The '+' is an Icon on FilledButton.icon now, so it can never be
@@ -354,7 +357,7 @@ void main() {
         fatG: 14.0,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
       expect(find.text('Paratha'), findsOneWidget);
@@ -424,7 +427,7 @@ void main() {
         kcal: 300,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
       final rowFinder = find.descendant(
@@ -487,7 +490,7 @@ void main() {
         kcal: 374,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
       await tester.tap(find.byIcon(Icons.close));
@@ -528,7 +531,7 @@ void main() {
         'fat_g': 5.0,
       });
 
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull);
@@ -558,7 +561,7 @@ void main() {
     /// screen's only other path (an existing dish) goes through one more
     /// sheet this suite has no reason to also drive.
     Future<void> openLogForm(WidgetTester tester, String customName) async {
-      await tester.pumpWidget(MaterialApp(home: FoodTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: FoodTab()));
       await settle(tester);
 
       await tester.tap(find.text('Log food'));
