@@ -9,9 +9,13 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'test_helpers.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
+  // The no-isolate factory against an in-memory path, matching every other
+  // suite here. The isolate-backed factory arms a 10s transaction timeout
+  // inside fake_async that a bounded pump never lives long enough to cancel.
+  setUpAll(() {
+    databaseFactory = databaseFactoryFfiNoIsolate;
+    DatabaseService.testDatabasePath = inMemoryDatabasePath;
+  });
 
   setUp(() async {
     await wipeDatabaseAndReseed(DatabaseService.instance);
