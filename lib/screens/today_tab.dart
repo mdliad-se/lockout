@@ -183,6 +183,13 @@ class TodayTabState extends State<TodayTab> {
 
   // --- SESSION LIFECYCLE ---
 
+  /// Starts today's scheduled session.
+  ///
+  /// Public so the Workout tab's featured-day card can start the session the
+  /// user is looking at, rather than sending them to Home to press a second
+  /// button. `MainScreen` owns the wiring; this stays the only implementation.
+  Future<void> startScheduledSession() => _startScheduledSession();
+
   Future<void> _startScheduledSession() async {
     final sched = _scheduled;
     if (sched == null) return;

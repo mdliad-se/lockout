@@ -4,7 +4,10 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/routines_tab.dart';
+import 'package:lockout/widgets/today_day_card.dart';
+import 'package:lockout/widgets/week_day_row.dart';
 import 'package:lockout/services/database_service.dart';
+import 'package:lockout/services/schedule_service.dart';
 import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/day_block.dart';
 import 'package:lockout/widgets/jinatra_input.dart';
@@ -32,6 +35,13 @@ import 'test_helpers.dart';
 ///
 /// `settle` (in-memory-DB seam, bounded-pump helper) is shared with
 /// `today_tab_test.dart` via `test_helpers.dart`.
+/// A weekday code guaranteed to differ from today's, for tests that need a
+/// day the routine card will NOT feature.
+String _aWeekdayThatIsNotToday() {
+  final today = ScheduleService.weekdayCode(DateTime.now());
+  return ScheduleService.weekdayPickerOrder.firstWhere((c) => c != today);
+}
+
 void main() {
   setUpAll(() {
     databaseFactory = databaseFactoryFfiNoIsolate;
@@ -57,7 +67,10 @@ void main() {
       id: 'd1',
       routineId: 'r1',
       name: 'Push Day',
-      tag: 'MON',
+      // Today's own weekday, so the day is the featured one whatever day the
+      // suite runs on. A hardcoded MON would make every assertion below pass
+      // only on Mondays now that the card leads with today.
+      tag: ScheduleService.weekdayCode(DateTime.now()),
       orderIndex: 0,
     );
     await db.insertDay(day.toMap());
@@ -78,7 +91,7 @@ void main() {
       targetRepsMax: 12,
     ).toMap());
 
-    await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+    await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
     await settle(tester);
 
     // Open the day-detail sheet.
@@ -113,7 +126,7 @@ void main() {
   testWidgets('EDIT DAY saves and pops the day-detail sheet', (tester) async {
     final day = await seedRoutineWithDay();
 
-    await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+    await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
     await settle(tester);
 
     await tester.tap(find.text('Push Day'));
@@ -139,7 +152,7 @@ void main() {
       (tester) async {
     await seedRoutineWithDay();
 
-    await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+    await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
     await settle(tester);
 
     await tester.tap(find.text('+ NEW'));
@@ -195,7 +208,7 @@ void main() {
         (tester) async {
       await seedRoutineWithDay();
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
       await tester.tap(find.text('Push Day'));
       await tester.pumpAndSettle();
@@ -223,7 +236,7 @@ void main() {
         amt: 'x15',
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
       await tester.tap(find.text('Push Day'));
       await tester.pumpAndSettle();
@@ -251,7 +264,7 @@ void main() {
         targetRepsMax: 12,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
       await tester.tap(find.text('Push Day'));
       await tester.pumpAndSettle();
@@ -278,14 +291,20 @@ void main() {
         id: 'd1',
         routineId: 'r1',
         name: 'Rest Day',
-        tag: 'SUN',
+        // Deliberately NOT today: this test is about the day sheet, so the
+        // day is reached through the collapsed week rather than the featured
+        // card, and the assertions below cannot be satisfied by the card's
+        // own rest-day copy.
+        tag: _aWeekdayThatIsNotToday(),
         orderIndex: 0,
         isRestDay: true,
       ).toMap());
       await db.setActiveRoutine('r1');
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
+      await tester.tap(find.textContaining('Full week'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Rest Day'));
       await tester.pumpAndSettle();
 
@@ -308,7 +327,7 @@ void main() {
         amt: '3 rounds',
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
       await tester.tap(find.text('Push Day'));
       await tester.pumpAndSettle();
@@ -334,7 +353,7 @@ void main() {
   // START FROM now starts unticked and SAVE waits for a real choice.
   group('START FROM has no pre-selected default', () {
     Future<void> openCreateForm(WidgetTester tester) async {
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
       await tester.tap(find.text('+ NEW'));
       await tester.pumpAndSettle();
@@ -403,7 +422,7 @@ void main() {
 
   group('typing into a form then closing the sheet does not throw', () {
     testWidgets('create-routine form: type, then SAVE ROUTINE', (tester) async {
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
 
       await tester.tap(find.text('+ NEW'));
@@ -426,10 +445,15 @@ void main() {
         (tester) async {
       await seedRoutineWithDay();
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
 
-      await tester.tap(find.text('+ ADD DAY'));
+      // Add day lives inside the collapsed week now: building a routine
+      // means opening the week, rather than the week staying permanently
+      // expanded for the sake of one button.
+      await tester.tap(find.textContaining('Full week'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add day'));
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -447,7 +471,7 @@ void main() {
         (tester) async {
       await seedRoutineWithDay();
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
 
       await tester.tap(find.text('Push Day'));
@@ -479,7 +503,7 @@ void main() {
         targetRepsMax: 12,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
 
       await tester.tap(find.text('Push Day'));
@@ -523,7 +547,7 @@ void main() {
         targetWeightKg: 60,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
 
       await tester.tap(find.text('Push Day'));
@@ -572,7 +596,7 @@ void main() {
         targetRepsMax: 12,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: RoutinesTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
       await settle(tester);
       await tester.tap(find.text('Push Day'));
       await tester.pumpAndSettle();
@@ -596,4 +620,218 @@ void main() {
       expect((rows.single['target_weight_kg'] as num).toDouble(), 62.5);
     });
   });
+
+  group('the routine card leads with one day', () {
+    testWidgets('an active routine features today and collapses the week',
+        (tester) async {
+      await seedRoutineWithDay();
+
+      await tester.pumpWidget(
+        MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()),
+      );
+      await settle(tester);
+
+      expect(find.byType(TodayDayCard), findsOneWidget);
+      expect(
+        find.byType(WeekDayRow),
+        findsNothing,
+        reason: 'the week must start collapsed; that is the whole change',
+      );
+      expect(find.textContaining('Full week'), findsOneWidget);
+    });
+
+    testWidgets('expanding reveals the days and the add-day action',
+        (tester) async {
+      await seedRoutineWithDay();
+
+      await tester.pumpWidget(
+        MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()),
+      );
+      await settle(tester);
+
+      await tester.tap(find.textContaining('Full week'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WeekDayRow), findsWidgets);
+      expect(find.text('Add day'), findsOneWidget);
+    });
+
+    testWidgets('the expander reports how many days the week holds',
+        (tester) async {
+      await seedRoutineWithDay();
+      await DatabaseService.instance.insertDay(TrainingDay(
+        id: 'd2',
+        routineId: 'r1',
+        name: 'Pull Day',
+        tag: _aWeekdayThatIsNotToday(),
+        orderIndex: 1,
+      ).toMap());
+
+      await tester.pumpWidget(
+        MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()),
+      );
+      await settle(tester);
+
+      expect(find.text('Full week (2)'), findsOneWidget);
+    });
+
+    testWidgets('an inactive routine features no day at all', (tester) async {
+      await seedRoutineWithDay();
+      // A second, newer routine takes over as the active one. Clearing
+      // active_routine_id would not work: getActiveRoutine falls back to the
+      // most recently created routine, so with a single routine nothing can
+      // be inactive.
+      await DatabaseService.instance.insertRoutine(Routine(
+        id: 'r2',
+        name: 'Other Routine',
+        schedulingMode: SchedulingMode.weekday,
+        createdAt: '2026-06-01T00:00:00.000',
+      ).toMap());
+      await DatabaseService.instance.setActiveRoutine('r2');
+
+      await tester.pumpWidget(
+        MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()),
+      );
+      await settle(tester);
+
+      expect(
+        find.byType(TodayDayCard),
+        findsNothing,
+        reason: 'the inactive routine must not feature a day',
+      );
+      expect(find.textContaining('Full week (1)'), findsOneWidget);
+    });
+
+    testWidgets('a gap in the week says so rather than featuring nothing',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.insertRoutine(Routine(
+        id: 'r1',
+        name: 'Push Pull Legs',
+        schedulingMode: SchedulingMode.weekday,
+        createdAt: '2026-01-01T00:00:00.000',
+      ).toMap());
+      await db.insertDay(TrainingDay(
+        id: 'd1',
+        routineId: 'r1',
+        name: 'Push Day',
+        tag: _aWeekdayThatIsNotToday(),
+        orderIndex: 0,
+      ).toMap());
+      await db.setActiveRoutine('r1');
+
+      await tester.pumpWidget(
+        MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()),
+      );
+      await settle(tester);
+
+      expect(find.text('Nothing scheduled today'), findsOneWidget);
+      expect(find.byType(TodayDayCard), findsNothing);
+      expect(find.textContaining('Full week'), findsOneWidget);
+    });
+
+    testWidgets('a rest day today is featured with no start button',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.insertRoutine(Routine(
+        id: 'r1',
+        name: 'Push Pull Legs',
+        schedulingMode: SchedulingMode.weekday,
+        createdAt: '2026-01-01T00:00:00.000',
+      ).toMap());
+      await db.insertDay(TrainingDay(
+        id: 'd1',
+        routineId: 'r1',
+        name: 'Recovery',
+        tag: ScheduleService.weekdayCode(DateTime.now()),
+        orderIndex: 0,
+        isRestDay: true,
+      ).toMap());
+      await db.setActiveRoutine('r1');
+
+      await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
+        home: RoutinesTab(onStartToday: () {}),
+      ));
+      await settle(tester);
+
+      expect(find.byType(TodayDayCard), findsOneWidget);
+      expect(find.text('Recovery'), findsOneWidget);
+      expect(find.text('Start session'), findsNothing);
+      expect(find.text('Recovery is part of the plan.'), findsOneWidget);
+    });
+
+    testWidgets('a scheduled day with no exercises yet offers no start',
+        (tester) async {
+      await seedRoutineWithDay();
+
+      await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
+        home: RoutinesTab(onStartToday: () {}),
+      ));
+      await settle(tester);
+
+      expect(find.byType(TodayDayCard), findsOneWidget);
+      expect(
+        find.text('Start session'),
+        findsNothing,
+        reason: 'starting a day with zero exercises opens an empty session',
+      );
+    });
+
+    testWidgets('a populated day today starts the session', (tester) async {
+      final day = await seedRoutineWithDay();
+      await DatabaseService.instance.insertExercise(ExerciseDef(
+        id: 'e1',
+        dayId: day.id,
+        name: 'Bench Press',
+        targetSets: 3,
+        targetRepsMin: 8,
+        targetRepsMax: 10,
+        orderIndex: 0,
+      ).toMap());
+
+      var started = false;
+      await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
+        home: RoutinesTab(onStartToday: () => started = true),
+      ));
+      await settle(tester);
+
+      expect(find.text('Start session'), findsOneWidget);
+      await tester.tap(find.text('Start session'));
+      await tester.pump();
+
+      expect(started, isTrue);
+    });
+
+    testWidgets('a rotating routine labels its featured day NEXT, not TODAY',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.insertRoutine(Routine(
+        id: 'r1',
+        name: 'Rotation',
+        schedulingMode: SchedulingMode.rotating,
+        createdAt: '2026-01-01T00:00:00.000',
+      ).toMap());
+      await db.insertDay(TrainingDay(
+        id: 'd1',
+        routineId: 'r1',
+        name: 'Day A',
+        tag: 'A',
+        orderIndex: 0,
+      ).toMap());
+      await db.setActiveRoutine('r1');
+
+      await tester.pumpWidget(
+        MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()),
+      );
+      await settle(tester);
+
+      expect(find.byType(TodayDayCard), findsOneWidget);
+      expect(find.textContaining('NEXT'), findsOneWidget);
+      expect(find.textContaining('TODAY'), findsNothing);
+    });
+  });
+
 }

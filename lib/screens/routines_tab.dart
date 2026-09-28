@@ -5,10 +5,15 @@ import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/numeric_guard.dart';
 import '../services/routine_factory.dart';
+import '../services/routine_focus.dart';
 import '../services/schedule_service.dart';
 import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_semantics.dart';
+import '../theme/lockout_theme.dart';
 import '../widgets/day_block.dart';
-import '../widgets/day_row.dart';
+import '../widgets/lockout_card.dart';
+import '../widgets/today_day_card.dart';
+import '../widgets/week_day_row.dart';
 import '../widgets/exercise_picker.dart';
 import '../widgets/jinatra_button.dart';
 import '../widgets/jinatra_card.dart';
@@ -26,11 +31,19 @@ typedef RefreshAfter = Future<void> Function(Future<bool?> Function() action);
 String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
 
 class RoutinesTab extends StatefulWidget {
+  /// Starts today's scheduled session from the featured-day card.
+  ///
+  /// `MainScreen` wires this to the Home tab's own session starter, so the
+  /// user presses Start once here instead of being sent to Home to press a
+  /// second button. Null when the tab is pumped standalone (widget tests), in
+  /// which case the card simply offers no Start.
+  final VoidCallback? onStartToday;
+
   // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
   // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
   // rebuild would strand it in the old palette for the process lifetime.
   // ignore: prefer_const_constructors_in_immutables
-  RoutinesTab({super.key});
+  RoutinesTab({super.key, this.onStartToday});
 
   @override
   State<RoutinesTab> createState() => RoutinesTabState();
@@ -701,60 +714,146 @@ class RoutinesTabState extends State<RoutinesTab> {
             ],
           ),
           const Divider(height: 22, thickness: 2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('TRAINING WEEK', style: JinatraTokens.monoData(fontSize: 12)),
-              GestureDetector(
-                onTap: () async {
-                  final saved = await _openDayFormSheet(routine.id);
-                  if (saved == true && mounted) await reload();
-                },
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: JinatraTokens.cardDecoration(
-                    background: JinatraTokens.deepTeal,
-                    borderWidth: JinatraTokens.borderControl,
-                    radius: JinatraTokens.radiusPill,
-                    shadowOffset: JinatraTokens.shadowSm,
-                  ),
-                  child: Text('+ ADD DAY',
-                      style: JinatraTokens.monoData(
-                          color: JinatraTokens.onPrimary, fontSize: 10)),
-                ),
-              ),
-            ],
-          ),
+
           const SizedBox(height: 12),
           if (days.isEmpty)
             Text(
-              'No training days yet. Tap "+ ADD DAY" to pin a workout to a weekday.',
-              style: JinatraTokens.bodyText(
-                fontSize: 12,
-                color: JinatraTokens.ink.withValues(alpha: 0.6),
-              ),
+              'No training days yet. Open the week and tap "Add day" to pin a '
+              'workout to a weekday.',
+              style: Theme.of(context).textTheme.bodySmall,
             )
           else
-            // One assignment per routine: the uniqueness rule is only
-            // meaningful across the whole week.
+            // One colour assignment per routine: the uniqueness rule is only
+            // meaningful across the whole week, so it is computed once here
+            // and shared by the featured card and the collapsed rows.
             ...(() {
               final colours = DayColours.assign(days);
-              return days.map((d) {
-                final hydrated = _hydrated(d);
-                return DayRow(
-                  day: hydrated,
-                  accent: colours[d.id] ?? DayColours.restColour,
-                  summary: dayRowSummary(hydrated),
-                  isToday: isActive &&
-                      routine.schedulingMode == SchedulingMode.weekday &&
-                      d.tag.toUpperCase() == todayCode,
-                  onTap: () => _openDaySheet(routine, d),
-                );
-              }).toList();
+              final focus = RoutineFocus.resolve(
+                routine: routine,
+                days: days,
+                now: DateTime.now(),
+                isActive: isActive,
+              );
+
+              return [
+                if (focus != null) ...[
+                  if (focus.day == null)
+                    _buildNothingScheduledCard(focus.kind)
+                  else
+                    _buildFeaturedDay(routine, focus, colours),
+                  const SizedBox(height: LockoutTheme.spaceMd),
+                ],
+                _buildWeekExpander(routine, days, colours, todayCode, isActive),
+              ];
             })(),
         ],
       ),
+    );
+  }
+
+  /// The featured day: the one the routine is actually on right now.
+  Widget _buildFeaturedDay(
+    Routine routine,
+    RoutineFocusResult focus,
+    Map<String, Color> colours,
+  ) {
+    final day = focus.day!;
+    final hydrated = _hydrated(day);
+    // A rest day has nothing to start, and neither does a day whose exercises
+    // have not been added yet — offering START SESSION there would open a
+    // session with zero exercises.
+    final startable = !hydrated.isRestDay && hydrated.exercises.isNotEmpty;
+
+    return TodayDayCard(
+      day: hydrated,
+      accent: colours[day.id] ?? LockoutSemantics.of(context).restDay,
+      summary: dayRowSummary(hydrated),
+      kind: focus.kind,
+      onTap: () => _openDaySheet(routine, day),
+      onStart: startable ? widget.onStartToday : null,
+    );
+  }
+
+  /// Shown when the routine is the active one but has nothing scheduled right
+  /// now — a gap in the week, or a rotation that has not started yet.
+  Widget _buildNothingScheduledCard(FeaturedDayKind kind) {
+    final theme = Theme.of(context);
+
+    return LockoutCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            kind == FeaturedDayKind.today ? 'TODAY' : 'NEXT',
+            style: theme.textTheme.labelSmall,
+          ),
+          const SizedBox(height: LockoutTheme.spaceXs),
+          Text('Nothing scheduled today', style: theme.textTheme.titleLarge),
+          const SizedBox(height: LockoutTheme.spaceXs),
+          Text(
+            'Open the week to add a day, or train off-plan.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The rest of the week, collapsed by default.
+  ///
+  /// The expansion state is deliberately NOT persisted: reopening the tab
+  /// returns to the focused view, which is the entire point of featuring one
+  /// day. `+ Add day` lives inside, so building a routine means opening the
+  /// week rather than the week being permanently open for the sake of one
+  /// button.
+  Widget _buildWeekExpander(
+    Routine routine,
+    List<TrainingDay> days,
+    Map<String, Color> colours,
+    String todayCode,
+    bool isActive,
+  ) {
+    final theme = Theme.of(context);
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+    );
+
+    return ExpansionTile(
+      shape: shape,
+      collapsedShape: shape,
+      tilePadding: const EdgeInsets.symmetric(
+        horizontal: LockoutTheme.spaceSm,
+      ),
+      childrenPadding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
+      title: Text(
+        'Full week (${days.length})',
+        style: theme.textTheme.titleSmall,
+      ),
+      children: [
+        for (final d in days)
+          WeekDayRow(
+            day: _hydrated(d),
+            accent: colours[d.id] ?? LockoutSemantics.of(context).restDay,
+            summary: dayRowSummary(_hydrated(d)),
+            isToday: isActive &&
+                routine.schedulingMode == SchedulingMode.weekday &&
+                d.tag.trim().toUpperCase() == todayCode,
+            onTap: () => _openDaySheet(routine, d),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () async {
+              final saved = await _openDayFormSheet(routine.id);
+              if (saved == true && mounted) await reload();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Add day'),
+          ),
+        ),
+      ],
     );
   }
 

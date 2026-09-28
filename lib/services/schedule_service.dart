@@ -68,8 +68,8 @@ class ScheduleService {
     final days = dayRows.map(TrainingDay.fromMap).toList();
 
     final TrainingDay? match = routine.schedulingMode == SchedulingMode.weekday
-        ? _matchByWeekday(days, date)
-        : _matchByRotation(days, routine, date);
+        ? matchByWeekday(days, date)
+        : matchByRotation(days, routine, date);
 
     if (match == null) return null;
 
@@ -83,7 +83,10 @@ class ScheduleService {
 
   static Future<ScheduledDay?> resolveToday() => resolveFor(DateTime.now());
 
-  static TrainingDay? _matchByWeekday(List<TrainingDay> days, DateTime date) {
+  /// Public so `RoutineFocus` can decide which day a routine card leads with
+  /// using the same rule the session actually opens. A card that featured a
+  /// different day than START SESSION would start is worse than no card.
+  static TrainingDay? matchByWeekday(List<TrainingDay> days, DateTime date) {
     final code = weekdayCode(date);
     for (final d in days) {
       if (d.tag.trim().toUpperCase() == code) return d;
@@ -91,7 +94,8 @@ class ScheduleService {
     return null;
   }
 
-  static TrainingDay? _matchByRotation(
+  /// Public for the same reason as [matchByWeekday].
+  static TrainingDay? matchByRotation(
     List<TrainingDay> days,
     Routine routine,
     DateTime date,
@@ -154,7 +158,7 @@ class ScheduleService {
   /// [currentStreakDays] alone did not need a mutable field: an optional
   /// `{int Function(DateTime) calendar = dayNumber}` would do, since both
   /// production call sites pass their dates positionally. The field exists
-  /// because the other consumer, [_matchByRotation], is reached through
+  /// because the other consumer, [matchByRotation], is reached through
   /// [resolveFor], so parameterising it would mean threading a calendar
   /// through the public resolution API for the sake of a test.
   @visibleForTesting

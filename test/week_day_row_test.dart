@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lockout/models/models.dart';
-import 'package:lockout/theme/app_palette.dart';
-import 'package:lockout/widgets/day_row.dart';
+import 'package:lockout/widgets/week_day_row.dart';
+
+import 'test_helpers.dart';
 
 TrainingDay _day({
   String id = 'mon',
@@ -31,32 +32,28 @@ ExerciseDef _ex(String name, int sets) => ExerciseDef(
     );
 
 void main() {
-  setUpAll(() {
-    AppPalette.apply(AppPalette.paperPress);
-  });
-
   group('dayRowSummary', () {
-    test('a rest day says REST', () {
-      expect(dayRowSummary(_day(name: 'Off', rest: true)), 'REST');
+    test('a rest day says Rest', () {
+      expect(dayRowSummary(_day(name: 'Off', rest: true)), 'Rest');
     });
 
-    test('a rest day says REST even if exercise rows are still attached',
+    test('a rest day says Rest even if exercise rows are still attached',
         () {
-      // REST is checked before EMPTY in dayRowSummary; a rest day built with
-      // an empty exercise list (as above) can't tell REST from EMPTY on its
-      // own — only a rest day that also carries exercises proves REST wins.
+      // Rest is checked before Empty in dayRowSummary; a rest day built with
+      // an empty exercise list (as above) can't tell Rest from Empty on its
+      // own — only a rest day that also carries exercises proves Rest wins.
       expect(
         dayRowSummary(_day(
           name: 'Off',
           rest: true,
           exercises: [_ex('Leg Press', 4)],
         )),
-        'REST',
+        'Rest',
       );
     });
 
-    test('a training day with no exercises says EMPTY', () {
-      expect(dayRowSummary(_day()), 'EMPTY');
+    test('a training day with no exercises says Empty', () {
+      expect(dayRowSummary(_day()), 'Empty');
     });
 
     test('a populated day counts exercises and sets', () {
@@ -64,18 +61,26 @@ void main() {
         _ex('Leg Press', 4),
         _ex('Leg Curl', 3),
       ]);
-      expect(dayRowSummary(day), '2 EX - 7 SETS');
+      expect(dayRowSummary(day), '2 exercises · 7 sets');
     });
   });
 
-  group('DayRow', () {
+  test('a single exercise is not pluralised', () {
+    expect(
+      dayRowSummary(_day(exercises: [_ex('Leg Press', 4)])),
+      '1 exercise · 4 sets',
+    );
+  });
+
+  group('WeekDayRow', () {
     testWidgets('shows the weekday tag, name and summary', (tester) async {
       await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
         home: Scaffold(
-          body: DayRow(
+          body: WeekDayRow(
             day: _day(exercises: [_ex('Leg Press', 4)]),
             accent: Colors.green,
-            summary: '1 EX - 4 SETS',
+            summary: '1 exercise · 4 sets',
             isToday: false,
             onTap: () {},
           ),
@@ -84,18 +89,19 @@ void main() {
 
       expect(find.text('MON'), findsOneWidget);
       expect(find.text('Legs'), findsOneWidget);
-      expect(find.text('1 EX - 4 SETS'), findsOneWidget);
+      expect(find.text('1 exercise · 4 sets'), findsOneWidget);
       expect(find.text('TODAY'), findsNothing);
     });
 
     testWidgets('marks today and reports a tap', (tester) async {
       var tapped = false;
       await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
         home: Scaffold(
-          body: DayRow(
+          body: WeekDayRow(
             day: _day(),
             accent: Colors.green,
-            summary: 'EMPTY',
+            summary: 'Empty',
             isToday: true,
             onTap: () => tapped = true,
           ),
@@ -103,7 +109,7 @@ void main() {
       ));
 
       expect(find.text('TODAY'), findsOneWidget);
-      await tester.tap(find.byType(DayRow));
+      await tester.tap(find.byType(WeekDayRow));
       expect(tapped, isTrue);
     });
   });

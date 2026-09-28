@@ -72,7 +72,10 @@ class _MainScreenState extends State<MainScreen> {
             onNavigate: _goToTab,
             foodTabEnabled: _foodTabEnabled,
           ),
-        NavTab.workout => RoutinesTab(key: _routinesKey),
+        NavTab.workout => RoutinesTab(
+            key: _routinesKey,
+            onStartToday: _startTodaySession,
+          ),
         NavTab.progress => ProgressTab(key: _progressKey),
         NavTab.food => FoodTab(key: _foodKey),
         NavTab.profile => ProfileTab(
@@ -119,6 +122,19 @@ class _MainScreenState extends State<MainScreen> {
         (_) => _progressKey.currentState?.showSegment(segment),
       );
     }
+  }
+
+  /// Starts today's session from the Workout tab's featured-day card.
+  ///
+  /// The session engine lives in `TodayTab`, so this switches to Home and
+  /// hands off rather than keeping a second copy of the start logic. The
+  /// post-frame callback is what makes the hand-off safe: the tab must be
+  /// mounted before its `GlobalKey` resolves.
+  void _startTodaySession() {
+    _goToTab('home');
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _todayKey.currentState?.startScheduledSession(),
+    );
   }
 
   @override
