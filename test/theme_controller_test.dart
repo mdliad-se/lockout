@@ -231,4 +231,82 @@ void main() {
       );
     }
   });
+
+  test('storing platform schemes does not notify while an authored theme is '
+      'selected', () async {
+    await ThemeController.instance.load();
+    expect(ThemeController.instance.selectedKey, 'graphite');
+
+    var notifications = 0;
+    void listener() => notifications++;
+    ThemeController.instance.addListener(listener);
+    addTearDown(() => ThemeController.instance.removeListener(listener));
+
+    ThemeController.instance.setDynamicSchemes(
+      light: const ColorScheme.light(),
+      dark: const ColorScheme.dark(),
+    );
+
+    // The app root publishes these from a post-frame callback inside the
+    // DynamicColorBuilder that also rebuilds on notify. Notifying for schemes
+    // that cannot change what is on screen rebuilds the whole tree for
+    // nothing, and on a device that supplies a palette it feeds straight back
+    // into the callback that published them.
+    expect(
+      notifications,
+      0,
+      reason: 'graphite is selected; platform schemes change nothing on screen',
+    );
+    expect(ThemeController.instance.dynamicAvailable, isTrue);
+  });
+
+  test('the picker still gains dynamic once schemes arrive, without a '
+      'notification storm', () async {
+    await ThemeController.instance.load();
+
+    var notifications = 0;
+    void listener() => notifications++;
+    ThemeController.instance.addListener(listener);
+    addTearDown(() => ThemeController.instance.removeListener(listener));
+
+    for (var i = 0; i < 5; i++) {
+      ThemeController.instance.setDynamicSchemes(
+        light: const ColorScheme.light(),
+        dark: const ColorScheme.dark(),
+      );
+    }
+
+    expect(notifications, 0);
+    expect(
+      ThemeController.instance.pickerKeys.contains(LockoutScheme.dynamicKey),
+      isTrue,
+    );
+  });
+
+  test('a dynamic selection does notify, because the screen changes',
+      () async {
+    await ThemeController.instance.load();
+    ThemeController.instance.setDynamicSchemes(
+      light: const ColorScheme.light(),
+      dark: const ColorScheme.dark(),
+    );
+    await ThemeController.instance.select(LockoutScheme.dynamicKey);
+
+    var notifications = 0;
+    void listener() => notifications++;
+    ThemeController.instance.addListener(listener);
+    addTearDown(() => ThemeController.instance.removeListener(listener));
+
+    ThemeController.instance.setDynamicSchemes(
+      light: const ColorScheme.light(primary: Color(0xFF00FF00)),
+      dark: const ColorScheme.dark(),
+    );
+
+    expect(
+      notifications,
+      1,
+      reason: 'the wallpaper changed and dynamic is what is on screen',
+    );
+  });
+
 }

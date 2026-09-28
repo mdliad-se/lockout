@@ -128,14 +128,23 @@ class ThemeController extends ChangeNotifier {
   /// Called by `DynamicColorBuilder` at the app root whenever the platform
   /// palette changes.
   ///
-  /// A no-op when nothing actually changed: that builder rebuilds far more
-  /// often than the wallpaper changes, and notifying every time would rebuild
-  /// `MaterialApp` on every frame.
+  /// Notifies only when the new schemes can actually change what is on screen
+  /// — that is, when Dynamic is the selected theme. Storing them while an
+  /// authored scheme is selected still updates [pickerKeys], but rebuilding
+  /// the whole app for a value nobody is painting is waste at best: the app
+  /// root publishes these from a post-frame callback inside the very
+  /// `DynamicColorBuilder` that a notification rebuilds, so on a device that
+  /// supplies a palette it fed straight back into itself and the first
+  /// seconds after launch went to rebuilding `MaterialApp` instead of
+  /// answering input.
   void setDynamicSchemes({ColorScheme? light, ColorScheme? dark}) {
     if (light == _dynamicLight && dark == _dynamicDark) return;
+
+    final wasUsingDynamic = _usingDynamic;
     _dynamicLight = light;
     _dynamicDark = dark;
-    notifyListeners();
+
+    if (wasUsingDynamic || _usingDynamic) notifyListeners();
   }
 
   /// Returns the controller to its fresh-install state.
