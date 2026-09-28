@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lockout/theme/app_palette.dart';
-import 'package:lockout/theme/jinatra_tokens.dart';
+import 'package:lockout/theme/schemes.dart';
 import 'package:lockout/widgets/action_grid.dart';
 import 'package:lockout/widgets/calm_row.dart';
 import 'package:lockout/widgets/day_block.dart';
@@ -9,9 +9,16 @@ import 'package:lockout/widgets/hero_card.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
 import 'package:lockout/widgets/stat_tile.dart';
 
+import 'test_helpers.dart';
+
 Widget _host(Widget child) => MaterialApp(
+      theme: lockoutTestTheme(),
       home: Scaffold(body: SingleChildScrollView(child: child)),
     );
+
+/// The ramp the rebuilt widgets identify with, replacing the palette accents
+/// the neubrutalist versions took.
+Color _ramp(int i) => LockoutScheme.graphite.semantics.categoryAt(i);
 
 void main() {
   setUpAll(() {
@@ -56,7 +63,7 @@ void main() {
       eyebrow: 'TODAY - MON',
       title: 'LEGS',
       subtitle: '4 EX - 12 SETS',
-      background: JinatraTokens.accentAt(0),
+      accent: _ramp(0),
       actions: [
         ElevatedButton(onPressed: () {}, child: const Text('START')),
       ],
@@ -76,7 +83,7 @@ void main() {
       (i) => ActionItem(
         label: 'ACT$i',
         icon: Icons.circle,
-        color: JinatraTokens.accentAt(i),
+        color: _ramp(i),
         onTap: () => tapped = 'ACT$i',
       ),
     );

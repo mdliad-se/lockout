@@ -1,80 +1,100 @@
 import 'package:flutter/material.dart';
-import '../theme/jinatra_tokens.dart';
 
-/// The single saturated block a screen is allowed.
+import '../theme/lockout_theme.dart';
+import 'lockout_card.dart';
+
+/// The one card a screen leads with.
 ///
-/// v1 gave several blocks per screen a filled accent, which is why the app
+/// v1 gave several blocks per screen a saturated fill, which is why the app
 /// read as noisy: nothing was clearly the most important thing. Exactly one
-/// HeroCard per screen is the rule the rest of the layout hangs off.
+/// HeroCard per screen is still the rule, but it now leads through elevation,
+/// type scale and a single accent rail rather than by flooding a rectangle
+/// with colour — a filled block that size fights the calm the design calls for
+/// and forces every label inside it onto a contrast knife-edge.
 class HeroCard extends StatelessWidget {
-  /// Small mono label above the title — context, not content.
+  /// Small label above the title — context, not content. One of the few
+  /// places all-caps survives, because it is scanned rather than read.
   final String eyebrow;
 
   /// The one thing this screen is about.
   final String title;
 
-  /// Optional mono detail line under the title.
+  /// Optional detail line under the title.
   final String? subtitle;
 
-  /// Saturated fill, normally `JinatraTokens.accentAt(n)`.
-  final Color background;
+  /// The identifying accent, normally from `LockoutSemantics.categoryAt(n)`.
+  /// Used for the rail and the eyebrow, never as a fill.
+  final Color accent;
 
-  /// Pill actions laid out in a wrap under the text.
+  /// Actions laid out in a wrap under the text.
   final List<Widget> actions;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
-  // ignore: prefer_const_constructors_in_immutables
-  HeroCard({
+  const HeroCard({
     super.key,
     required this.eyebrow,
     required this.title,
     this.subtitle,
-    required this.background,
+    required this.accent,
     this.actions = const [],
   });
 
   @override
   Widget build(BuildContext context) {
-    final on = JinatraTokens.onAccentColor(background);
+    final text = Theme.of(context).textTheme;
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(18),
-      decoration: JinatraTokens.cardDecoration(
-        background: background,
-        shadowOffset: JinatraTokens.shadowLg,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            eyebrow.toUpperCase(),
-            style: JinatraTokens.monoData(
-              fontSize: 11,
-              color: on.withValues(alpha: 0.85),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            title.toUpperCase(),
-            style: JinatraTokens.displayHeader(fontSize: 30, color: on),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              subtitle!,
-              style: JinatraTokens.monoData(
-                fontSize: 12,
-                color: on.withValues(alpha: 0.85),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: LockoutTheme.spaceMd),
+      child: LockoutCard(
+        elevated: true,
+        // IntrinsicHeight, because the rail below stretches to the row's
+        // height and has no height of its own: inside a scroll view that
+        // resolves to an infinite constraint and fails layout. The cost is one
+        // extra measuring pass on a single card per screen.
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+            // The accent identifies the day without colouring the card.
+              Container(
+                width: 4,
+                margin: const EdgeInsets.only(right: LockoutTheme.spaceMd),
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: BorderRadius.circular(LockoutTheme.radiusPill),
+                ),
               ),
-            ),
-          ],
-          if (actions.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Wrap(spacing: 10, runSpacing: 10, children: actions),
-          ],
-        ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      eyebrow,
+                      style: text.labelSmall?.copyWith(
+                        color: accent,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: LockoutTheme.spaceXs),
+                    Text(title, style: text.headlineSmall),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: LockoutTheme.spaceXs),
+                      Text(subtitle!, style: text.bodyMedium),
+                    ],
+                    if (actions.isNotEmpty) ...[
+                      const SizedBox(height: LockoutTheme.spaceMd),
+                      Wrap(
+                        spacing: LockoutTheme.spaceSm,
+                        runSpacing: LockoutTheme.spaceSm,
+                        children: actions,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

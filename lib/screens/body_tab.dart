@@ -222,7 +222,7 @@ class BodyTabState extends State<BodyTab> {
                 ? 'LOG A SECOND WEIGHT TO SEE A TREND'
                 : '${delta > 0 ? '+' : ''}${delta.toStringAsFixed(1)} KG '
                     'SINCE LAST ENTRY',
-            background: JinatraTokens.accentAt(2),
+            accent: JinatraTokens.accentAt(2),
             actions: [
               JinatraButton(
                 label: '+ LOG MEASUREMENT',

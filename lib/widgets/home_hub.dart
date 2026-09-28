@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/models.dart';
-import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_theme.dart';
 import 'action_grid.dart';
 import 'calm_row.dart';
 import 'hero_card.dart';
@@ -79,13 +79,13 @@ class HomeHub extends StatelessWidget {
 
   String get _intakeValue {
     final target = summary.kcalTarget;
-    if (target == null) return 'SET A GOAL';
+    if (target == null) return 'Set a goal';
     return '${summary.kcalEaten} / $target kcal';
   }
 
   String get _weightValue {
     final w = summary.weightKg;
-    if (w == null) return 'LOG A WEIGHT';
+    if (w == null) return 'Log a weight';
     final delta = summary.weightDeltaKg;
     if (delta == null) return '${w.toStringAsFixed(1)} kg';
     final sign = delta > 0 ? '+' : '';
@@ -94,14 +94,14 @@ class HomeHub extends StatelessWidget {
 
   String get _burnValue {
     final b = summary.burnedTodayKcal;
-    if (b == null) return 'NO SESSION YET';
+    if (b == null) return 'No session yet';
     // Reuses SessionLog's formatter rather than re-deriving the "~123 kcal"
     // format here; it returns '' for a non-positive value. That is a
     // *different* state from null: a session was logged (b is non-null) but
     // no estimate could be made for it, so this must not say "NO SESSION
-    // YET" — that would deny a session the user just saved.
+    // yet" — that would deny a session the user just saved.
     final label = SessionLog.formatKcal(b);
-    return label.isEmpty ? 'ESTIMATE UNAVAILABLE' : label;
+    return label.isEmpty ? 'Estimate unavailable' : label;
   }
 
   @override
@@ -113,41 +113,38 @@ class HomeHub extends StatelessWidget {
           eyebrow: eyebrow,
           title: title,
           subtitle: subtitle,
-          background: heroColor,
+          accent: heroColor,
           actions: heroActions,
         ),
         if (foodTabEnabled)
           CalmRow(
             icon: Icons.restaurant,
-            title: 'CALORIES',
+            title: 'Calories',
             value: _intakeValue,
             onTap: onOpenFood,
           ),
         CalmRow(
           icon: Icons.monitor_weight,
-          title: 'BODYWEIGHT',
+          title: 'Bodyweight',
           value: _weightValue,
           onTap: onOpenBody,
         ),
         CalmRow(
           icon: Icons.local_fire_department,
-          title: 'BURNED TODAY',
+          title: 'Burned today',
           value: _burnValue,
           onTap: onOpenLog,
         ),
         if (actions.isNotEmpty) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: LockoutTheme.spaceMd),
           Text(
             'QUICK ACTIONS',
-            style: JinatraTokens.monoData(
-              fontSize: 11,
-              color: JinatraTokens.ink.withValues(alpha: 0.7),
-            ),
+            style: Theme.of(context).textTheme.labelSmall,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: LockoutTheme.spaceSm),
           ActionGrid(items: actions),
         ],
-        const SizedBox(height: 28),
+        const SizedBox(height: LockoutTheme.spaceXl),
       ],
     );
   }

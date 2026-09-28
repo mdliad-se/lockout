@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
-import '../theme/jinatra_tokens.dart';
+
+import '../theme/lockout_theme.dart';
 
 /// One destination in the quick-action grid.
 class ActionItem {
   final String label;
   final IconData icon;
+
+  /// The identifying colour, normally from `LockoutSemantics.categoryAt(n)`.
   final Color color;
   final VoidCallback onTap;
 
@@ -16,20 +19,17 @@ class ActionItem {
   });
 }
 
-/// A grid of coloured tiles.
+/// A grid of quick destinations.
 ///
-/// The one place many saturated colours are allowed at once: this is a menu,
-/// not content, so colour identifies rather than competes for attention.
+/// This is a menu, not content, so colour here identifies rather than competes
+/// for attention. v1 flooded each tile with its accent; the accent now tints
+/// only the icon and its container, which keeps eight of them on screen at
+/// once from reading as a paint chart.
 class ActionGrid extends StatelessWidget {
   final List<ActionItem> items;
   final int columns;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. The
-  // reason here is transitive: `build` reads no token itself, but a const
-  // call site would canonicalise this widget and `Element.updateChild`
-  // would then skip its `ActionTile` children, which do read tokens.
-  // ignore: prefer_const_constructors_in_immutables
-  ActionGrid({super.key, required this.items, this.columns = 4});
+  const ActionGrid({super.key, required this.items, this.columns = 4});
 
   @override
   Widget build(BuildContext context) {
@@ -37,68 +37,66 @@ class ActionGrid extends StatelessWidget {
       crossAxisCount: columns,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      childAspectRatio: 0.92,
-      children: items.map((i) => ActionTile(item: i)).toList(),
+      crossAxisSpacing: LockoutTheme.spaceSm,
+      mainAxisSpacing: LockoutTheme.spaceSm,
+      childAspectRatio: 0.85,
+      children: [for (final item in items) ActionTile(item: item)],
     );
   }
 }
 
-/// A single tile. Stateful only to carry the press-in shadow collapse that
-/// every neubrutalist control in this app shares.
-class ActionTile extends StatefulWidget {
+/// A single quick-action tile.
+class ActionTile extends StatelessWidget {
   final ActionItem item;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
-  // ignore: prefer_const_constructors_in_immutables
-  ActionTile({super.key, required this.item});
-
-  @override
-  State<ActionTile> createState() => _ActionTileState();
-}
-
-class _ActionTileState extends State<ActionTile> {
-  bool _pressed = false;
+  const ActionTile({super.key, required this.item});
 
   @override
   Widget build(BuildContext context) {
-    final on = JinatraTokens.onAccentColor(widget.item.color);
+    final theme = Theme.of(context);
 
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTapUp: (_) {
-        setState(() => _pressed = false);
-        widget.item.onTap();
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 60),
-        transform: Matrix4.translationValues(
-          _pressed ? 3.0 : 0.0,
-          _pressed ? 3.0 : 0.0,
-          0.0,
-        ),
-        decoration: JinatraTokens.cardDecoration(
-          background: widget.item.color,
-          shadowOffset: _pressed ? 0.0 : JinatraTokens.shadowSm,
-          radius: JinatraTokens.radiusTile,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(widget.item.icon, size: 24, color: on),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                widget.item.label.toUpperCase(),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                style: JinatraTokens.monoData(fontSize: 9, color: on),
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+      child: InkWell(
+        onTap: item.onTap,
+        borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minWidth: LockoutTheme.minTouchTarget,
+            minHeight: LockoutTheme.minTouchTarget,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  // A low-alpha wash of the identifying colour rather than a
+                  // full fill: legible against every scheme's surface without
+                  // needing a per-colour foreground calculation.
+                  color: item.color.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(LockoutTheme.radiusPill),
+                ),
+                child: Icon(item.icon, size: 20, color: item.color),
               ),
-            ),
-          ],
+              const SizedBox(height: LockoutTheme.spaceSm),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: LockoutTheme.spaceXs,
+                ),
+                child: Text(
+                  item.label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

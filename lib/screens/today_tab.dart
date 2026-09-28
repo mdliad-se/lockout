@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'progress_tab.dart' show ProgressSegment;
+import '../theme/lockout_semantics.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/energy_estimator.dart';
@@ -455,7 +456,7 @@ class TodayTabState extends State<TodayTab> {
       backgroundColor: JinatraTokens.sweetCream,
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: _sessionActive ? _buildActiveSession() : _buildPreSession(),
+        child: _sessionActive ? _buildActiveSession() : _buildPreSession(context),
       ),
       // Kept visible while the exercise list scrolls, rather than inline in
       // the body. This is TodayTab's own Scaffold (nested inside MainScreen's
@@ -467,7 +468,7 @@ class TodayTabState extends State<TodayTab> {
 
   // --- PRE-SESSION (the HOME hub) ---
 
-  Widget _buildPreSession() {
+  Widget _buildPreSession(BuildContext context) {
     final sched = _scheduled;
     final code = ScheduleService.weekdayCode(DateTime.now());
     final isRest = sched == null;
@@ -479,25 +480,24 @@ class TodayTabState extends State<TodayTab> {
 
     return SingleChildScrollView(
       child: HomeHub(
-        eyebrow: 'TODAY - $code',
-        title: isRest ? 'REST DAY' : sched.day.name,
+        eyebrow: 'TODAY · $code',
+        title: isRest ? 'Rest day' : sched.day.name,
         subtitle: isRest
             ? 'Nothing scheduled. Train off-plan or take the day.'
             : isEmptyDay
                 ? 'This training day has no exercises yet. Add them on the '
                     'Routines tab, then come back to start the session.'
                 : _scheduleSubtitle(sched),
-        heroColor: JinatraTokens.accentAt(isRest ? 7 : 0),
+        heroColor: LockoutSemantics.of(context).categoryAt(isRest ? 7 : 0),
         heroActions: [
           if (!isRest && !isEmptyDay)
-            JinatraButton(
-              label: 'START SESSION',
+            FilledButton(
               onPressed: _startScheduledSession,
+              child: const Text('Start session'),
             ),
-          JinatraButton(
-            label: 'CUSTOM SESSION',
-            isSignal: true,
+          FilledButton.tonal(
             onPressed: _startCustomSession,
+            child: const Text('Custom session'),
           ),
         ],
         summary: _summary,
@@ -509,17 +509,18 @@ class TodayTabState extends State<TodayTab> {
             widget.onNavigate?.call('progress', segment: ProgressSegment.weight),
         onOpenLog: () =>
             widget.onNavigate?.call('progress', segment: ProgressSegment.history),
-        actions: _quickActions(),
+        actions: _quickActions(context),
       ),
     );
   }
 
   String _scheduleSubtitle(ScheduledDay sched) {
     final sets = sched.exercises.fold<int>(0, (s, e) => s + e.targetSets);
-    return '${sched.exercises.length} EX - $sets SETS';
+    final plural = sched.exercises.length == 1 ? 'exercise' : 'exercises';
+    return '${sched.exercises.length} $plural · $sets sets';
   }
 
-  List<ActionItem> _quickActions() {
+  List<ActionItem> _quickActions(BuildContext context) {
     final go = widget.onNavigate;
     return [
       // Hidden entirely when the Food tab is off, rather than left as a
@@ -527,51 +528,51 @@ class TodayTabState extends State<TodayTab> {
       // tab id, so a visible "LOG FOOD" tile would silently do nothing.
       if (widget.foodTabEnabled)
         ActionItem(
-          label: 'LOG FOOD',
+          label: 'Log food',
           icon: Icons.restaurant,
-          color: JinatraTokens.accentAt(0),
+          color: LockoutSemantics.of(context).categoryAt(0),
           onTap: () => go?.call('food'),
         ),
       ActionItem(
-        label: 'WEIGH IN',
+        label: 'Weigh in',
         icon: Icons.monitor_weight,
-        color: JinatraTokens.accentAt(1),
+        color: LockoutSemantics.of(context).categoryAt(1),
         onTap: () => go?.call('progress', segment: ProgressSegment.weight),
       ),
       ActionItem(
-        label: 'ROUTINES',
+        label: 'Workout',
         icon: Icons.fitness_center,
-        color: JinatraTokens.accentAt(2),
+        color: LockoutSemantics.of(context).categoryAt(2),
         onTap: () => go?.call('workout'),
       ),
       ActionItem(
-        label: 'HISTORY',
+        label: 'History',
         icon: Icons.calendar_month,
-        color: JinatraTokens.accentAt(3),
+        color: LockoutSemantics.of(context).categoryAt(3),
         onTap: () => go?.call('progress', segment: ProgressSegment.history),
       ),
       ActionItem(
-        label: 'CUSTOM',
+        label: 'Custom',
         icon: Icons.add,
-        color: JinatraTokens.accentAt(4),
+        color: LockoutSemantics.of(context).categoryAt(4),
         onTap: _startCustomSession,
       ),
       ActionItem(
-        label: 'STREAK',
+        label: 'Streak',
         icon: Icons.local_fire_department,
-        color: JinatraTokens.accentAt(5),
+        color: LockoutSemantics.of(context).categoryAt(5),
         onTap: () => go?.call('progress', segment: ProgressSegment.history),
       ),
       ActionItem(
-        label: 'PLAN',
+        label: 'Plan',
         icon: Icons.insights,
-        color: JinatraTokens.accentAt(6),
+        color: LockoutSemantics.of(context).categoryAt(6),
         onTap: () => go?.call('progress', segment: ProgressSegment.weight),
       ),
       ActionItem(
-        label: 'EXERCISES',
+        label: 'Exercises',
         icon: Icons.list,
-        color: JinatraTokens.accentAt(7),
+        color: LockoutSemantics.of(context).categoryAt(7),
         onTap: () => go?.call('workout'),
       ),
     ];
@@ -589,7 +590,7 @@ class TodayTabState extends State<TodayTab> {
           title: _elapsedLabel,
           subtitle:
               '$_sessionCompletedSets / $_sessionTotalSets SETS - ${_fmtWeight(_sessionVolumeKg)} KG',
-          background: JinatraTokens.accentAt(0),
+          accent: JinatraTokens.accentAt(0),
         ),
 
         Expanded(

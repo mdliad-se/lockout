@@ -67,11 +67,11 @@ void main() {
       // Deliberately no exercises inserted for 'd1'.
       await db.setActiveRoutine('r1');
 
-      await tester.pumpWidget(MaterialApp(home: TodayTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: TodayTab()));
       await settle(tester);
 
-      expect(find.text('START SESSION'), findsNothing);
-      expect(find.text('CUSTOM SESSION'), findsOneWidget);
+      expect(find.text('Start session'), findsNothing);
+      expect(find.text('Custom session'), findsOneWidget);
       expect(
         find.textContaining('Add them on the Routines tab'),
         findsOneWidget,
@@ -85,17 +85,18 @@ void main() {
         'the null onNavigate does not crash when a tile is tapped',
         (tester) async {
       await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
         home: TodayTab(foodTabEnabled: false),
       ));
       await settle(tester);
 
-      expect(find.text('CALORIES'), findsNothing);
-      expect(find.text('LOG FOOD'), findsNothing);
+      expect(find.text('Calories'), findsNothing);
+      expect(find.text('Log food'), findsNothing);
 
       // onNavigate is null (the default for a tab pumped on its own). The
-      // WEIGH IN tile's onTap is `() => go?.call('body')`, which must no-op
-      // rather than throw when `go` is null.
-      await tester.tap(find.text('WEIGH IN'));
+      // Weigh in tile's onTap is `() => go?.call('progress', ...)`, which must
+      // no-op rather than throw when `go` is null.
+      await tester.tap(find.text('Weigh in'));
       await settle(tester, maxPumps: 2);
       expect(tester.takeException(), isNull);
     });
@@ -132,12 +133,12 @@ void main() {
       // No bodyweight logged and no target weight configured, so
       // EnergyEstimator.estimate() cannot produce a figure.
 
-      await tester.pumpWidget(MaterialApp(home: TodayTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: TodayTab()));
       await settle(tester);
 
-      expect(find.text('NO SESSION YET'), findsOneWidget);
+      expect(find.text('No session yet'), findsOneWidget);
 
-      await tester.tap(find.text('START SESSION'));
+      await tester.tap(find.text('Start session'));
       await settle(tester);
 
       await tester.tap(find.text('LOG SET'));
@@ -148,8 +149,8 @@ void main() {
 
       // Back on the hub: the session was saved (proved by the assertion
       // below), but with no bodyweight on record no estimate could be made.
-      expect(find.text('ESTIMATE UNAVAILABLE'), findsOneWidget);
-      expect(find.text('NO SESSION YET'), findsNothing);
+      expect(find.text('Estimate unavailable'), findsOneWidget);
+      expect(find.text('No session yet'), findsNothing);
 
       final saved = await db.getSessionLogsForDate(today);
       expect(saved.length, 1);
@@ -215,14 +216,14 @@ void main() {
         kcalBurned: 300.0,
       ).toMap());
 
-      await tester.pumpWidget(MaterialApp(home: TodayTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: TodayTab()));
       await settle(tester);
 
       // A single weigh-in: a value, but no delta yet.
       expect(find.text('LOG A WEIGHT'), findsNothing);
       expect(find.text('80.0 kg'), findsOneWidget);
-      expect(find.text('NO SESSION YET'), findsNothing);
-      expect(find.text('ESTIMATE UNAVAILABLE'), findsNothing);
+      expect(find.text('No session yet'), findsNothing);
+      expect(find.text('Estimate unavailable'), findsNothing);
       expect(find.text('~300 kcal'), findsOneWidget);
 
       // Verifying the two loads race-free in the single frame right after
@@ -269,13 +270,13 @@ void main() {
         'kcal_burned': 'loads',
       });
 
-      await tester.pumpWidget(MaterialApp(home: TodayTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: TodayTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull);
       // The session still happened, so the row must not claim otherwise —
       // only its unreadable estimate is lost.
-      expect(find.text('NO SESSION YET'), findsNothing);
+      expect(find.text('No session yet'), findsNothing);
     });
   });
 }

@@ -1,5 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lockout/services/database_service.dart';
+import 'package:lockout/theme/lockout_theme.dart';
+import 'package:lockout/theme/schemes.dart';
 
 /// Drives a bounded number of timed frames rather than `pumpAndSettle`.
 ///
@@ -124,3 +127,12 @@ int _endOfStringLiteral(String source, int start) {
   }
   return source.length;
 }
+
+/// The app's real `ThemeData`, for any test that pumps a widget which reads
+/// `LockoutSemantics`.
+///
+/// `LockoutSemantics.of` asserts rather than falling back, so a bare
+/// `MaterialApp()` fails loudly instead of silently painting framework
+/// defaults. This is the one-liner that satisfies it.
+ThemeData lockoutTestTheme([LockoutScheme scheme = LockoutScheme.graphite]) =>
+    LockoutTheme.build(colors: scheme.colors, semantics: scheme.semantics);
