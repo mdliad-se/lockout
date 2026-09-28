@@ -136,7 +136,10 @@ void main() {
       await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: TodayTab()));
       await settle(tester);
 
-      expect(find.text('No session yet'), findsOneWidget);
+      // Burn now rides on the day card's own subtitle rather than a
+      // standalone row, so "no session today" is the absence of any burn
+      // figure, not a sentence of its own.
+      expect(find.textContaining('kcal'), findsNothing);
 
       await tester.tap(find.text('Start session'));
       await settle(tester);
@@ -149,8 +152,7 @@ void main() {
 
       // Back on the hub: the session was saved (proved by the assertion
       // below), but with no bodyweight on record no estimate could be made.
-      expect(find.text('Estimate unavailable'), findsOneWidget);
-      expect(find.text('No session yet'), findsNothing);
+      expect(find.textContaining('Estimate unavailable'), findsOneWidget);
 
       final saved = await db.getSessionLogsForDate(today);
       expect(saved.length, 1);
@@ -220,11 +222,13 @@ void main() {
       await settle(tester);
 
       // A single weigh-in: a value, but no delta yet.
-      expect(find.text('LOG A WEIGHT'), findsNothing);
-      expect(find.text('80.0 kg'), findsOneWidget);
-      expect(find.text('No session yet'), findsNothing);
-      expect(find.text('Estimate unavailable'), findsNothing);
-      expect(find.text('~300 kcal'), findsOneWidget);
+      expect(find.text('Log a weight'), findsNothing);
+      // The weight card states the figure and its unit separately, so the
+      // number can carry the display type scale.
+      expect(find.text('80.0'), findsOneWidget);
+      expect(find.text('kg'), findsOneWidget);
+      expect(find.textContaining('Estimate unavailable'), findsNothing);
+      expect(find.textContaining('~300 kcal'), findsOneWidget);
 
       // Verifying the two loads race-free in the single frame right after
       // `_isLoading` clears would need a controlled clock around the two

@@ -138,8 +138,8 @@ class TodayTabState extends State<TodayTab> {
     setState(() => _scheduled = resolved);
   }
 
-  /// Resolves the three calm-row values. Every one of them can legitimately
-  /// be unknown, and the hub renders a prompt for a null rather than a zero.
+  /// Resolves everything the hub shows. Every value can legitimately be
+  /// unknown, and the hub renders a prompt for a null rather than a zero.
   Future<void> _loadSummary() async {
     final today = ScheduleService.dateKey(DateTime.now());
     final db = DatabaseService.instance;
@@ -148,6 +148,13 @@ class TodayTabState extends State<TodayTab> {
     final eaten = foodRows.fold<int>(
       0,
       (sum, row) => sum + (NumericGuard.readInt(row['kcal']) ?? 0),
+    );
+    // Guarded like the kcal sum above: a hand-edited backup can put a
+    // non-numeric protein_g in the table, and an unguarded fold would put a
+    // NaN straight into a progress bar.
+    final proteinEaten = foodRows.fold<double>(
+      0.0,
+      (sum, row) => sum + (NumericGuard.read(row['protein_g']) ?? 0.0),
     );
 
     // snapshot() already fetches body logs for currentWeightKg and resolves
@@ -176,8 +183,33 @@ class TodayTabState extends State<TodayTab> {
         weightKg: snapshot.currentWeightKg,
         weightDeltaKg: delta,
         burnedTodayKcal: burnedToday,
+        // A target weight of 0 means "not configured" in the stored profile,
+        // so it maps to null rather than a goal of zero kilos.
+        targetWeightKg: snapshot.profile.targetWeightKg > 0
+            ? snapshot.profile.targetWeightKg
+            : null,
+        proteinEatenG: proteinEaten,
+        proteinTargetG: snapshot.nutrition?.proteinG,
+        weightSeries: _weightSeries(snapshot.bodyLogs),
       );
     });
+  }
+
+  /// The last few weigh-ins, oldest first, for the trend line.
+  ///
+  /// Capped because the card draws a fixed-width sparkline: past a couple of
+  /// dozen points the line stops reading as a direction and starts reading as
+  /// noise. Unreadable rows are dropped rather than defaulted — a 0.0 would
+  /// put a false cliff in the trend.
+  static List<double> _weightSeries(List<Map<String, dynamic>> bodyLogs) {
+    final weights = <double>[];
+    for (final row in bodyLogs) {
+      final w = NumericGuard.read(row['weight_kg']);
+      if (w != null && w > 0) weights.add(w);
+    }
+    final recent = weights.length > 30 ? weights.sublist(0, 30) : weights;
+    // getBodyLogs returns newest first; a trend line reads oldest to newest.
+    return recent.reversed.toList();
   }
 
   // --- SESSION LIFECYCLE ---
