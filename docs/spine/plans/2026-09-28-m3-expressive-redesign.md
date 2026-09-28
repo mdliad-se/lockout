@@ -3688,3 +3688,54 @@ one widget at a time."
 | 7.6 Profile | 6, 14 |
 | 8 Component migration map | 8, 11, 15 |
 | 10 Testing, device QA | every task; 15 for the sweep |
+
+---
+
+## Execution state — paused at `2f41ef4`
+
+545 tests pass serially. Analyzer clean apart from one pre-existing lint
+(`day_colours_test.dart:106`). Branch `feat/ui-v2`, tree clean.
+
+### Complete
+Tasks 1-9, 11, 12, 13, plus two unplanned fixes (themed page grounds + per-tab
+top insets; the theme-controller notification loop).
+
+### Remaining
+Task 10 (live session), task 14 (Settings), task 15 (delete the old layer),
+and the sheets/forms inside the already-migrated screens. Remaining `Jinatra`
+references by file:
+
+| File | Refs | What |
+|---|---|---|
+| `routines_tab.dart` | 120 | the four sheet forms; the card itself is done |
+| `settings_screen.dart` | 101 | all of it — task 14 |
+| `food_picker.dart` | 69 | |
+| `today_tab.dart` | 56 | the live session — task 10 |
+| `body_tab.dart` | 48 | the BMI / goal / plan sheets |
+| `exercise_picker.dart` | 32 | |
+| `exercise_video_screen.dart` | 23 | |
+| `log_tab.dart` | 20 | |
+| `day_block.dart` | 14 | `DayColours` + `SectionHeading`/`SubItemRow`/`AddLink` |
+| `jinatra_input.dart` | 10 | dead once its last call sites go |
+
+Most of the remaining volume is sheets and forms rather than screens.
+
+### Corrections already folded into this plan
+* No `pageTransitionsTheme` override (see task 3).
+* `jinatra_card`/`_button`/`_input` deletion deferred from task 8 to task 15;
+  `jinatra_button.dart` is already gone.
+* `test/no_legacy_theme_test.dart` exists ahead of task 15 and already enforces
+  "no hardcoded `Color` outside `lib/theme`" and "no LIAD string". The
+  grep-for-`Jinatra` assertion is what task 15 adds last.
+
+### Harness lessons (do not relearn)
+* New widget suites must use `databaseFactoryFfiNoIsolate` +
+  `inMemoryDatabasePath`. The isolate factory arms a 10s sqflite timeout inside
+  `fake_async` that a bounded `settle` never cancels.
+* Assert theme changes after `pumpAndSettle`; `MaterialApp` animates them.
+* `lockoutTestTheme()` is required for anything reading `LockoutSemantics`.
+
+### Startup timing — measured, not a regression
+Release on `lockout_qa`: 22.8s cold / 13.5s warm. The pre-branch
+`lockout-c0e0509-release.apk` on the same emulator: 23.4s cold / 17.5s warm.
+The emulator is slow; this branch is faster than what it replaces.
