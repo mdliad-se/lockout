@@ -7,7 +7,6 @@ import 'package:lockout/widgets/action_grid.dart';
 import 'package:lockout/widgets/hero_card.dart';
 import 'package:lockout/widgets/home_hub.dart';
 
-import 'test_helpers.dart';
 
 // What this file covers, and what it does not:
 //
