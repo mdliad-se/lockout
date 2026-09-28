@@ -1075,7 +1075,7 @@ class LockoutTheme {
 }
 ```
 
-If `FadeForwardsPageTransitionsBuilder` is not present in this SDK, use `PredictiveBackPageTransitionsBuilder()` instead and note the substitution in the commit body. Do not silently drop the `pageTransitionsTheme`.
+**Correction applied during execution: do NOT set `pageTransitionsTheme` at all.** Flutter 3.47's default for Android is already `PredictiveBackPageTransitionsBuilder`, which runs the predictive-back preview only while a real back gesture is in progress and delegates every other navigation to `FadeForwardsPageTransitionsBuilder` — the Expressive motion this plan wanted. Pinning `FadeForwards` directly buys nothing and costs the back gesture. The test asserts the outcome (not Zoom, and the Expressive transition duration) rather than one specific class.
 
 - [ ] **Step 4: Run the test**
 
