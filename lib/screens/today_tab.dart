@@ -446,7 +446,9 @@ class TodayTabState extends State<TodayTab> {
         ),
         title: Text('DISCARD SESSION?', style: JinatraTokens.sectionHeader(fontSize: 16)),
         content: Text(
-          'No sets were logged, so there is nothing to archive. End the session?',
+          _sessionCompletedSets > 0
+              ? '$_sessionCompletedSets logged sets will be lost. Discard them?'
+              : 'No sets were logged, so there is nothing to archive. End the session?',
           style: JinatraTokens.bodyText(fontSize: 13),
         ),
         actions: [
@@ -707,10 +709,21 @@ class TodayTabState extends State<TodayTab> {
   /// exercise-completion bar beneath it — see `_FinishSummarySheet` for what
   /// tapping Finish opens.
   Widget _buildSessionHeader(double exerciseProgress) {
+    final theme = Theme.of(context);
     return LockoutCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // v1's `HeroCard` stated "IN SESSION - $_sessionTitle" so a live
+          // session always named which day was running; the rebuilt header
+          // otherwise never paints `_sessionTitle` anywhere on screen.
+          Text(
+            _sessionTitle,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: LockoutTheme.spaceXs),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -870,15 +883,24 @@ class TodayTabState extends State<TodayTab> {
   ) {
     final theme = Theme.of(context);
     final semantics = LockoutSemantics.of(context);
-    // Two lines, not one: SET + PREVIOUS + delete on top, the steppers and
-    // the complete tick beneath. A single `Row` carrying all of it needs
+    // Two lines, not one: SET + PREVIOUS + delete + the complete tick on top,
+    // the two steppers beneath. A single `Row` carrying all of it needs
     // ~332dp of non-shrinkable children (set number, both steppers, the
     // filled complete button) before the row's own padding, which overflows
-    // a 360-390dp phone. Splitting the steppers onto their own line, and
-    // giving each an `Expanded` + `Flexible`/`FittedBox` value label instead
-    // of a fixed-width box, means the only children that cannot shrink are
-    // the four 48dp icon buttons plus the complete tick — 240dp, which fits
-    // even the narrowest common width with room for the numbers.
+    // a 360-390dp phone.
+    //
+    // The tick lives on the *first* line rather than sitting beside the
+    // steppers: that line only otherwise carries a 24dp set number and a
+    // 48dp delete button, with an ellipsised label taking whatever is left,
+    // so a fifth 48dp control fits it without pressure. That leaves the
+    // second line for the two steppers alone — each `Expanded` half gets
+    // ~140dp at 360dp width, of which each stepper's own two 48dp buttons
+    // take 96dp, leaving ~44dp for the value text. Putting the tick beside
+    // the steppers instead (the previous layout) left the value only ~20dp,
+    // which forced `FittedBox` to shrink a multi-digit weight far below the
+    // reps column's single digit — the two columns visibly changed scale
+    // against each other, which is what `LockoutTheme.numeric` exists to
+    // prevent.
     final rowContent = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: LockoutTheme.spaceSm,
@@ -911,6 +933,26 @@ class TodayTabState extends State<TodayTab> {
                     ? () => setState(() => ex.sets.removeAt(setIndex))
                     : null,
               ),
+              IconButton.filled(
+                key: ValueKey('set-complete-$exerciseIndex-$setIndex'),
+                tooltip: set.completed
+                    ? 'Mark set incomplete'
+                    : 'Mark set complete',
+                style: IconButton.styleFrom(
+                  backgroundColor: set.completed
+                      ? semantics.success
+                      : theme.colorScheme.surfaceContainerHighest,
+                  foregroundColor: set.completed
+                      ? semantics.onSuccess
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+                icon: const Icon(Icons.check),
+                onPressed: () {
+                  final wasDone = set.completed;
+                  setState(() => set.completed = !wasDone);
+                  if (!wasDone) _beginRest(ex.restSeconds);
+                },
+              ),
             ],
           ),
           Row(
@@ -938,26 +980,6 @@ class TodayTabState extends State<TodayTab> {
                   },
                   onPlus: () => setState(() => set.reps++),
                 ),
-              ),
-              IconButton.filled(
-                key: ValueKey('set-complete-$exerciseIndex-$setIndex'),
-                tooltip: set.completed
-                    ? 'Mark set incomplete'
-                    : 'Mark set complete',
-                style: IconButton.styleFrom(
-                  backgroundColor: set.completed
-                      ? semantics.success
-                      : theme.colorScheme.surfaceContainerHighest,
-                  foregroundColor: set.completed
-                      ? theme.colorScheme.onPrimary
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-                icon: const Icon(Icons.check),
-                onPressed: () {
-                  final wasDone = set.completed;
-                  setState(() => set.completed = !wasDone);
-                  if (!wasDone) _beginRest(ex.restSeconds);
-                },
               ),
             ],
           ),
@@ -1183,7 +1205,17 @@ class _SessionStat extends StatelessWidget {
       children: [
         Text(label, style: theme.textTheme.labelSmall),
         const SizedBox(height: LockoutTheme.spaceXs),
-        Text(value, style: LockoutTheme.numeric(context, size: 20)),
+        // `maxLines: 1` + ellipsis rather than letting it soft-wrap: a
+        // four-digit volume (a routine mid-session figure, e.g. "1234.5 kg")
+        // otherwise wraps to a second line at ~390dp and still overflows its
+        // `Expanded` column, which clips silently with no exception and no
+        // ellipsis. Ellipsis makes that truncation visible instead of mute.
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: LockoutTheme.numeric(context, size: 20),
+        ),
       ],
     );
   }

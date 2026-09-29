@@ -13,6 +13,13 @@ class LockoutSemantics extends ThemeExtension<LockoutSemantics> {
   /// A completed set, a hit target, a finished session.
   final Color success;
 
+  /// The foreground painted on top of [success] — e.g. the check glyph on a
+  /// filled "set complete" button. Stated explicitly rather than reusing
+  /// `ColorScheme.onPrimary`: `success` is not `primary` in every scheme, and
+  /// borrowing `onPrimary` for it only worked by coincidence (every current
+  /// scheme happens to put `success` at the same luminance as `primary`).
+  final Color onSuccess;
+
   /// The leg-safety notice and anything else advisory.
   final Color warning;
 
@@ -41,6 +48,7 @@ class LockoutSemantics extends ThemeExtension<LockoutSemantics> {
 
   const LockoutSemantics({
     required this.success,
+    required this.onSuccess,
     required this.warning,
     required this.danger,
     required this.restDay,
@@ -72,6 +80,7 @@ class LockoutSemantics extends ThemeExtension<LockoutSemantics> {
   @override
   LockoutSemantics copyWith({
     Color? success,
+    Color? onSuccess,
     Color? warning,
     Color? danger,
     Color? restDay,
@@ -81,6 +90,7 @@ class LockoutSemantics extends ThemeExtension<LockoutSemantics> {
   }) {
     return LockoutSemantics(
       success: success ?? this.success,
+      onSuccess: onSuccess ?? this.onSuccess,
       warning: warning ?? this.warning,
       danger: danger ?? this.danger,
       restDay: restDay ?? this.restDay,
@@ -95,6 +105,7 @@ class LockoutSemantics extends ThemeExtension<LockoutSemantics> {
     if (other == null) return this;
     return LockoutSemantics(
       success: Color.lerp(success, other.success, t)!,
+      onSuccess: Color.lerp(onSuccess, other.onSuccess, t)!,
       warning: Color.lerp(warning, other.warning, t)!,
       danger: Color.lerp(danger, other.danger, t)!,
       restDay: Color.lerp(restDay, other.restDay, t)!,

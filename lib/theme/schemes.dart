@@ -78,6 +78,9 @@ class LockoutScheme {
     ),
     semantics: LockoutSemantics(
       success: Color(0xFFA3E86D),
+      // Matches this scheme's `onPrimary`: `success` sits at `primary`'s
+      // luminance here, same as every other authored scheme today.
+      onSuccess: Color(0xFF101419),
       warning: Color(0xFFFFC857),
       danger: Color(0xFFFF7777),
       restDay: Color(0xFF9BA5B1),
@@ -136,6 +139,7 @@ class LockoutScheme {
     ),
     semantics: LockoutSemantics(
       success: Color(0xFF9FD980),
+      onSuccess: Color(0xFF2B1703),
       warning: Color(0xFFFFC857),
       danger: Color(0xFFFF7777),
       restDay: Color(0xFFB0A79C),
@@ -194,6 +198,7 @@ class LockoutScheme {
     ),
     semantics: LockoutSemantics(
       success: Color(0xFF8FD98F),
+      onSuccess: Color(0xFF0B142B),
       warning: Color(0xFFFFC857),
       danger: Color(0xFFFF7777),
       restDay: Color(0xFFA3ACBF),
@@ -258,6 +263,7 @@ class LockoutScheme {
     ),
     semantics: LockoutSemantics(
       success: Color(0xFF2E7D32),
+      onSuccess: Color(0xFFFFFFFF),
       warning: Color(0xFF8A6100),
       danger: Color(0xFFB3261E),
       restDay: Color(0xFF5E6368),
@@ -316,6 +322,7 @@ class LockoutScheme {
     ),
     semantics: LockoutSemantics(
       success: Color(0xFF2E7D32),
+      onSuccess: Color(0xFFFFFFFF),
       warning: Color(0xFF8A6100),
       danger: Color(0xFFB3261E),
       restDay: Color(0xFF6E665B),
@@ -374,6 +381,7 @@ class LockoutScheme {
     ),
     semantics: LockoutSemantics(
       success: Color(0xFF2E7D32),
+      onSuccess: Color(0xFFFFFFFF),
       warning: Color(0xFF8A6100),
       danger: Color(0xFFB3261E),
       restDay: Color(0xFF5A646E),

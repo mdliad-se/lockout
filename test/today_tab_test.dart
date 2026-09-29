@@ -22,7 +22,7 @@ Widget hostedTodayTab() =>
 /// Seeds one active weekday routine with a training day scheduled for today
 /// and a single exercise, so `_startScheduledSession` has something to start.
 /// Shared by every live-session test below rather than repeated per test.
-Future<void> seedActiveWeekdayRoutineForToday() async {
+Future<void> seedActiveWeekdayRoutineForToday({double targetWeightKg = 0}) async {
   final db = DatabaseService.instance;
   await db.insertRoutine(Routine(
     id: 'r1',
@@ -44,6 +44,7 @@ Future<void> seedActiveWeekdayRoutineForToday() async {
     targetSets: 2,
     targetRepsMin: 8,
     targetRepsMax: 8,
+    targetWeightKg: targetWeightKg,
   ).toMap());
   await db.setActiveRoutine('r1');
 }
@@ -416,20 +417,33 @@ void main() {
     // The default test viewport is 800x600 — wide enough that a set row's
     // fixed-width children never come close to overflowing, which is why the
     // suite stayed green while the row genuinely overflowed on a real phone.
-    // 360dp is the narrowest common Android width.
+    // 360dp is the narrowest common Android width. Seeded with a multi-digit
+    // weight (102.5kg, not the default 0) — a single-character value never
+    // exercises `FittedBox`'s scale-down path, which is exactly how this test
+    // missed the previous round's column-shimmer regression.
     testWidgets(
-        'the set row does not overflow at a 360dp phone width',
+        'the set row does not overflow at a 360dp phone width, and a '
+        'multi-digit weight renders at the same scale as the reps column',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      await seedActiveWeekdayRoutineForToday();
+      await seedActiveWeekdayRoutineForToday(targetWeightKg: 102.5);
       await tester.pumpWidget(hostedTodayTab());
       await settle(tester);
       await tester.tap(find.text('Start session'));
       await settle(tester);
 
       expect(tester.takeException(), isNull);
+
+      // Both values render through the same `LockoutTheme.numeric(size: 14)`
+      // style. If the weight cell's `FittedBox` were forced to shrink while
+      // the reps cell's was not, their rendered heights would diverge — the
+      // "a digit does not change width between 1 and 8" contract
+      // `LockoutTheme.numeric` documents applies across columns too.
+      final weightSize = tester.getSize(find.text('102.5').first);
+      final repsSize = tester.getSize(find.text('8').first);
+      expect(weightSize.height, closeTo(repsSize.height, 0.5));
     });
 
     testWidgets('the rest bar adjusts in both directions', (tester) async {
@@ -498,6 +512,12 @@ void main() {
       await settle(tester);
 
       expect(find.text('DISCARD SESSION?'), findsOneWidget);
+      // The copy must name what is actually lost — a session with a logged
+      // set is real data, not the empty-draft case the dialog also serves.
+      expect(
+        find.text('1 logged sets will be lost. Discard them?'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('KEEP GOING'));
       await settle(tester);
