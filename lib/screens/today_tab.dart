@@ -449,7 +449,7 @@ class TodayTabState extends State<TodayTab> {
           _sessionCompletedSets > 0
               ? '$_sessionCompletedSets logged '
                   '${_sessionCompletedSets == 1 ? 'set' : 'sets'} will be '
-                  'lost. Discard them?'
+                  'lost. Discard ${_sessionCompletedSets == 1 ? 'it' : 'them'}?'
               : 'No sets were logged, so there is nothing to archive. End the session?',
           style: JinatraTokens.bodyText(fontSize: 13),
         ),
@@ -1006,7 +1006,7 @@ class TodayTabState extends State<TodayTab> {
         ? semantics.success.withValues(alpha: 0.12)
         : Colors.transparent;
     return TweenAnimationBuilder<Color?>(
-      key: ValueKey('set-tween-$exerciseIndex-$setIndex'),
+      key: ObjectKey(set),
       tween: ColorTween(end: targetColor),
       duration: Durations.medium1,
       curve: Easing.standard,
@@ -1047,23 +1047,20 @@ class TodayTabState extends State<TodayTab> {
         // previous uncapped `Flexible` grew or shrank with viewport *and*
         // sibling layout together, so it could match the reps column's
         // scale by coincidence at one combination and diverge from it at
-        // the next (round-2 finding B). `LockoutTheme.spaceXl + spaceSm`
-        // (40dp) is what is actually left once each stepper's own two
-        // 48dp buttons are subtracted from its ~140dp `Expanded` half at
-        // 360dp width (140 - 96 = 44; 40dp keeps a 4dp margin rather than
-        // claiming the exact remainder). A five-character value at
-        // `numeric(size: 14)` needs ~43dp at the default text scale, so
-        // this budget is *not* comfortable even there — the `FittedBox`
-        // is doing real, expected work at 1.0 scale, and more at a larger
-        // system font scale or a sub-360dp viewport. It still shrinks
-        // further than 40dp if a neighbour (e.g. the complete tick,
-        // wrongly sharing this line) leaves less room than that — capping
-        // the budget states the assumption; it does not remove the
-        // squeeze.
+        // the next (round-2 finding B). `LockoutTheme.spaceXl + spaceMd`
+        // (48dp) is the budget: each stepper's own two 48dp buttons leave
+        // ~44dp of its ~140dp `Expanded` half at 360dp width (140 - 96 =
+        // 44), and a five-character value at `numeric(size: 14)` needs
+        // ~43dp at the default text scale, so 48dp fits it at 1.0 scale
+        // with a small margin rather than forcing `FittedBox` to shrink it
+        // below the reps column's scale. It still shrinks below 48dp if a
+        // neighbour (e.g. the complete tick, wrongly sharing this line)
+        // leaves less room than that — capping the budget states the
+        // assumption; it does not remove the squeeze.
         Flexible(
           child: ConstrainedBox(
             constraints: const BoxConstraints(
-              maxWidth: LockoutTheme.spaceXl + LockoutTheme.spaceSm,
+              maxWidth: LockoutTheme.spaceXl + LockoutTheme.spaceMd,
             ),
             child: FittedBox(
               fit: BoxFit.scaleDown,

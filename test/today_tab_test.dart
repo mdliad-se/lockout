@@ -501,6 +501,42 @@ void main() {
       expect(lastDelete.onPressed, isNull);
     });
 
+    // Round-4 finding A: keying the completion tint's `TweenAnimationBuilder`
+    // by loop position (`set-tween-$exerciseIndex-$setIndex`) is a no-op —
+    // deleting a set renumbers the survivors, so `Element.updateChildren`
+    // hands the surviving row the *old* completed row's animated element and
+    // it flashes the success tint down to transparent over
+    // `Durations.medium1` before settling on the colour it already held.
+    // `ObjectKey(set)` fixes it by keying on the set's own identity instead
+    // of its position.
+    testWidgets('deleting a completed set does not tint the surviving row',
+        (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      await tester.tap(find.byKey(const ValueKey('set-complete-0-0')));
+      // Let the completion tint finish animating in (Durations.medium1 is
+      // 250ms) before deleting it. `settle`'s bounded pumps are safe here
+      // even though marking a set complete also starts the rest countdown.
+      await settle(tester, maxPumps: 6);
+
+      // Deletes the now-completed set 0, leaving the never-logged set 1 as
+      // the sole, surviving row (renumbered to position 0).
+      await tester.tap(find.byIcon(Icons.close).first);
+      // A single, zero-duration frame — not `settle`/`pumpAndSettle` — so a
+      // 250ms false-"completed" flash on the surviving row is caught rather
+      // than left to finish and hide.
+      await tester.pump();
+
+      final decoration = tester
+          .widget<DecoratedBox>(find.byKey(const ValueKey('set-row-0-0')))
+          .decoration as BoxDecoration;
+      expect(decoration.color, Colors.transparent);
+    });
+
     // The finish sheet's Discard used to end a session with logged sets on
     // a single tap. It must now route through the same "DISCARD SESSION?"
     // gate a zero-set session already gets from `_finishSession`.
@@ -525,7 +561,7 @@ void main() {
       // The copy must name what is actually lost — a session with a logged
       // set is real data, not the empty-draft case the dialog also serves.
       expect(
-        find.text('1 logged set will be lost. Discard them?'),
+        find.text('1 logged set will be lost. Discard it?'),
         findsOneWidget,
       );
 
