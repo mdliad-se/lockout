@@ -9,8 +9,44 @@ import 'package:lockout/screens/today_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/schedule_service.dart';
 import 'package:lockout/theme/app_palette.dart';
+import 'package:lockout/theme/lockout_theme.dart';
 
 import 'test_helpers.dart';
+
+/// Hosts `TodayTab` under the app's real theme — every test below opens a
+/// live session, which reads `LockoutSemantics`/`LockoutTheme`, so a bare
+/// `MaterialApp` is not enough.
+Widget hostedTodayTab() =>
+    MaterialApp(theme: lockoutTestTheme(), home: TodayTab());
+
+/// Seeds one active weekday routine with a training day scheduled for today
+/// and a single exercise, so `_startScheduledSession` has something to start.
+/// Shared by every live-session test below rather than repeated per test.
+Future<void> seedActiveWeekdayRoutineForToday() async {
+  final db = DatabaseService.instance;
+  await db.insertRoutine(Routine(
+    id: 'r1',
+    name: 'Split',
+    schedulingMode: SchedulingMode.weekday,
+    createdAt: '2026-01-01T00:00:00.000',
+  ).toMap());
+  await db.insertDay(TrainingDay(
+    id: 'd1',
+    routineId: 'r1',
+    name: 'Legs',
+    tag: ScheduleService.weekdayCode(DateTime.now()),
+    orderIndex: 0,
+  ).toMap());
+  await db.insertExercise(ExerciseDef(
+    id: 'e1',
+    dayId: 'd1',
+    name: 'Back Squat',
+    targetSets: 2,
+    targetRepsMin: 8,
+    targetRepsMax: 8,
+  ).toMap());
+  await db.setActiveRoutine('r1');
+}
 
 /// Direct coverage for the `TodayTab` wiring the two fix waves touched:
 /// Ruling B's empty-day guard, the `foodTabEnabled` null-callback path, the
@@ -144,10 +180,12 @@ void main() {
       await tester.tap(find.text('Start session'));
       await settle(tester);
 
-      await tester.tap(find.text('LOG SET'));
+      await tester.tap(find.byKey(const ValueKey('set-complete-0-0')));
       await settle(tester, maxPumps: 4);
 
-      await tester.tap(find.text('Finish session & save'));
+      await tester.tap(find.text('Finish'));
+      await settle(tester);
+      await tester.tap(find.text('Save'));
       await settle(tester);
 
       // Back on the hub: the session was saved (proved by the assertion
@@ -281,6 +319,112 @@ void main() {
       // The session still happened, so the row must not claim otherwise —
       // only its unreadable estimate is lost.
       expect(find.text('No session yet'), findsNothing);
+    });
+  });
+
+  group('the live session screen', () {
+    testWidgets('session header shows elapsed time and exercise progress',
+        (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      expect(find.byType(LinearProgressIndicator), findsWidgets);
+      expect(find.byIcon(Icons.check), findsWidgets);
+    });
+
+    testWidgets('weight and rep steppers meet the 48dp touch target',
+        (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      for (final icon in [Icons.remove, Icons.add]) {
+        for (final element in find.byIcon(icon).evaluate()) {
+          final size = tester.getSize(find.byWidget(
+            element.findAncestorWidgetOfExactType<IconButton>()!,
+          ));
+          expect(size.width, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+          expect(size.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+        }
+      }
+    });
+
+    testWidgets('the leg-safety notice renders in the warning role',
+        (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      expect(find.textContaining('Pain-free movement only'), findsOneWidget);
+    });
+
+    testWidgets('numeric columns use the mono family so digits align',
+        (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      final setNumber = tester.widget<Text>(find.text('1').first);
+      expect(setNumber.style?.fontFamily, 'JetBrainsMono');
+    });
+
+    testWidgets('the header states duration, volume and sets', (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      expect(find.text('Duration'), findsOneWidget);
+      expect(find.text('Volume'), findsOneWidget);
+      expect(find.text('Sets'), findsOneWidget);
+      expect(find.text('Finish'), findsOneWidget);
+    });
+
+    testWidgets('completing a set tints the whole row, not just the tick',
+        (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      Color? rowColour() {
+        final box = tester.widget<DecoratedBox>(
+          find.byKey(const ValueKey('set-row-0-0')),
+        );
+        return (box.decoration as BoxDecoration).color;
+      }
+
+      final before = rowColour();
+      await tester.tap(find.byKey(const ValueKey('set-complete-0-0')));
+      await tester.pumpAndSettle();
+
+      expect(rowColour(), isNot(before));
+    });
+
+    testWidgets('the rest bar adjusts in both directions', (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+      await tester.tap(find.byKey(const ValueKey('set-complete-0-0')));
+      await tester.pump();
+
+      expect(find.text('-15s'), findsOneWidget);
+      expect(find.text('+15s'), findsOneWidget);
+      expect(find.text('Skip'), findsOneWidget);
     });
   });
 }
