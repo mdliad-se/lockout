@@ -83,7 +83,7 @@ class BodyTabState extends State<BodyTab> {
   Future<void> _openMeasurementSheet() async {
     await showLockoutSheet<void>(
       context: context,
-      title: 'LOG BODY METRICS',
+      title: 'Log body metrics',
       builder: (ctx) => _MeasurementForm(),
     );
     if (!mounted) return;
@@ -358,7 +358,7 @@ class BodyTabState extends State<BodyTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('HOW THIS BMI IS CALCULATED',
+                Text('How this BMI is calculated',
                     style: theme.textTheme.labelSmall
                         ?.copyWith(color: colors.onTertiaryContainer)),
                 const SizedBox(height: LockoutTheme.spaceXs),
@@ -437,12 +437,13 @@ class BodyTabState extends State<BodyTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // No heading here: the sheet is already titled 'Goal progress'
+          // directly above this card (`showLockoutSheet`'s own title bar),
+          // so repeating it in all-caps just under that title would shout
+          // the same three words back rather than add anything (Finding 3).
           Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Expanded(
-                child:
-                    Text('GOAL PROGRESS', style: theme.textTheme.titleSmall),
-              ),
               Chip(
                 label: Text(plan.directionLabel),
                 visualDensity: VisualDensity.compact,
@@ -464,11 +465,15 @@ class BodyTabState extends State<BodyTab> {
             child: LinearProgressIndicator(value: progress),
           ),
           const SizedBox(height: LockoutTheme.spaceSm),
+          // This is the sheet's headline figure — `bodyMedium` (14/w400,
+          // `onSurface`) rather than the aside's dimmed `bodySmall` below it,
+          // so the two are differentiated again instead of reading as two
+          // equally-weighted footnotes 4dp apart (Finding 4).
           Text(
             '${(progress * 100).round()}% of the way. Planned pace '
             '${plan.weeklyRatePct.toStringAsFixed(2)}% bodyweight/week over '
             '${plan.weeks} weeks.',
-            style: theme.textTheme.bodySmall,
+            style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: LockoutTheme.spaceXs),
           Text(
@@ -477,34 +482,61 @@ class BodyTabState extends State<BodyTab> {
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: LockoutTheme.spaceMd),
-          LockoutCard(
-            color: colors.tertiaryContainer,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('DAILY INTAKE TARGET',
+          // `SizedBox(width: double.infinity)`: `LockoutCard` renders a
+          // `Card`, which sizes to its child, and this Column's
+          // `crossAxisAlignment: .start` gives it loose constraints — so
+          // without the wrapper this shrink-wraps to the width of its
+          // shortest line ('P 180g - C 250g - F 70g') instead of staying
+          // full-bleed like the rest of the sheet (Finding 1).
+          SizedBox(
+            width: double.infinity,
+            child: LockoutCard(
+              color: colors.tertiaryContainer,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('DAILY INTAKE TARGET',
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(color: colors.onTertiaryContainer)),
+                  const SizedBox(height: LockoutTheme.spaceXs),
+                  Text('${plan.targetKcal} kcal',
+                      style: theme.textTheme.headlineSmall
+                          ?.copyWith(color: colors.onTertiaryContainer)),
+                  const SizedBox(height: LockoutTheme.spaceXs),
+                  Text(
+                    'P ${plan.proteinG}g  -  C ${plan.carbG}g  -  F ${plan.fatG}g',
                     style: theme.textTheme.labelSmall
-                        ?.copyWith(color: colors.onTertiaryContainer)),
-                const SizedBox(height: LockoutTheme.spaceXs),
-                Text('${plan.targetKcal} kcal',
-                    style: theme.textTheme.headlineSmall
-                        ?.copyWith(color: colors.onTertiaryContainer)),
-                const SizedBox(height: LockoutTheme.spaceXs),
-                Text(
-                  'P ${plan.proteinG}g  -  C ${plan.carbG}g  -  F ${plan.fatG}g',
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: colors.onTertiaryContainer),
-                ),
-              ],
+                        ?.copyWith(color: colors.onTertiaryContainer),
+                  ),
+                ],
+              ),
             ),
           ),
           if (plan.warning != null) ...[
             const SizedBox(height: LockoutTheme.spaceSm),
+            // Same `tertiaryContainer` fill as the intake box above it, so
+            // this still reads as a rate-cap/floor *notice* rather than a
+            // second info panel identical to it: the leading warning glyph
+            // (matching `today_tab.dart`'s leg-safety notice) is what
+            // differentiates them, not the fill (Finding 2 — `warning` is a
+            // content colour with no `onWarning` pair, so it belongs on the
+            // glyph, never repainting the card). `Row`'s default
+            // `mainAxisSize.max` also spans this full width without needing
+            // its own `SizedBox` wrapper.
             LockoutCard(
               color: colors.tertiaryContainer,
-              child: Text(plan.warning!,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: colors.onTertiaryContainer)),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.warning_amber, color: colors.onTertiaryContainer),
+                  const SizedBox(width: LockoutTheme.spaceSm),
+                  Expanded(
+                    child: Text(plan.warning!,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: colors.onTertiaryContainer)),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
@@ -530,23 +562,33 @@ class BodyTabState extends State<BodyTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('RECOMMENDED TRAINING PLAN', style: theme.textTheme.titleSmall),
-          const SizedBox(height: LockoutTheme.spaceMd),
-          LockoutCard(
-            color: colors.primaryContainer,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(rec.template.name,
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(color: colors.onPrimaryContainer)),
-                const SizedBox(height: LockoutTheme.spaceXs),
-                Text(
-                  '${rec.daysPerWeek} days/week  -  ${rec.template.days.length} sessions',
-                  style: theme.textTheme.labelMedium
-                      ?.copyWith(color: colors.onPrimaryContainer),
-                ),
-              ],
+          // No heading here: the sheet is already titled 'Recommended
+          // training plan' directly above this card, so an all-caps repeat
+          // of it would shout the same words back rather than add anything
+          // (Finding 3).
+          //
+          // `SizedBox(width: double.infinity)`: without it this hero
+          // shrink-wraps to the width of '4 days/week - 4 sessions', the
+          // same `Card`-sizes-to-its-child / loose-Column cause as the
+          // intake box above (Finding 1).
+          SizedBox(
+            width: double.infinity,
+            child: LockoutCard(
+              color: colors.primaryContainer,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(rec.template.name,
+                      style: theme.textTheme.titleLarge
+                          ?.copyWith(color: colors.onPrimaryContainer)),
+                  const SizedBox(height: LockoutTheme.spaceXs),
+                  Text(
+                    '${rec.daysPerWeek} days/week  -  ${rec.template.days.length} sessions',
+                    style: theme.textTheme.labelMedium
+                        ?.copyWith(color: colors.onPrimaryContainer),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: LockoutTheme.spaceMd),
@@ -554,9 +596,16 @@ class BodyTabState extends State<BodyTab> {
           _advice('HOW TO LOAD IT', rec.loadingAdvice),
           _advice('CARDIO', rec.cardioAdvice),
           const SizedBox(height: LockoutTheme.spaceXs),
-          FilledButton(
-            onPressed: () => _createRecommendedRoutine(sheetContext),
-            child: const Text('Create this routine'),
+          // Full-width, matching the tab-level primary action at :225-232
+          // and `food_picker.dart`'s footer button — a bare `FilledButton`
+          // here would render left-aligned at intrinsic width instead
+          // (Finding 5).
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => _createRecommendedRoutine(sheetContext),
+              child: const Text('Create this routine'),
+            ),
           ),
         ],
       ),
@@ -724,13 +773,20 @@ class _MeasurementFormState extends State<_MeasurementForm> {
         // stops a second tap from reaching `_save` at all (belt-and-braces
         // with the guard inside it), and the dimmed opacity plus relabel
         // make that state visible instead of just structurally prevented.
-        Opacity(
-          opacity: _saving ? 0.6 : 1.0,
-          child: IgnorePointer(
-            ignoring: _saving,
-            child: FilledButton(
-              onPressed: _save,
-              child: Text(_saving ? 'Saving…' : 'Save measurement'),
+        // Full-width for the same reason as `_buildPlanCard`'s primary
+        // action (Finding 5): a bare `FilledButton` here renders left-aligned
+        // at intrinsic width instead of matching the tab-level primary
+        // action's `SizedBox(width: double.infinity)`.
+        SizedBox(
+          width: double.infinity,
+          child: Opacity(
+            opacity: _saving ? 0.6 : 1.0,
+            child: IgnorePointer(
+              ignoring: _saving,
+              child: FilledButton(
+                onPressed: _save,
+                child: Text(_saving ? 'Saving…' : 'Save measurement'),
+              ),
             ),
           ),
         ),

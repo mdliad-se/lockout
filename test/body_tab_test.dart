@@ -297,6 +297,46 @@ void main() {
       expect(bar.value, closeTo(0.5, 0.0001));
     });
 
+    // Task 15c review, Finding 1: `LockoutCard` renders a `Card`, which sizes
+    // to its child, and inside a `Column(crossAxisAlignment: .start)` the
+    // incoming constraints are loose — so the tinted DAILY INTAKE TARGET
+    // callout silently shrink-wrapped to roughly the width of its shortest
+    // line ('P 180g - C 250g - F 70g') instead of staying full-bleed like the
+    // rest of the sheet. `LinearProgressIndicator` (a couple of widgets
+    // above it in the same Column) is a reliable full-width reference: its
+    // `Container` sets `minWidth: double.infinity`, so it always fills the
+    // Column's available width regardless of looseness.
+    testWidgets(
+        'the DAILY INTAKE TARGET callout spans the same width as the '
+        'progress bar above it, not just its own shortest line',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '70.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Goal progress'));
+      await tester.pumpAndSettle();
+
+      final barWidth =
+          tester.getSize(find.byType(LinearProgressIndicator)).width;
+
+      final intakeCard = find
+          .ancestor(
+            of: find.text('DAILY INTAKE TARGET'),
+            matching: find.byType(Card),
+          )
+          .first;
+      final cardWidth = tester.getSize(intakeCard).width;
+
+      expect(cardWidth, closeTo(barWidth, 0.5),
+          reason: 'the intake callout must span full width like the rest '
+              'of the sheet, not shrink-wrap to its shortest line');
+    });
+
     testWidgets(
         'logging a measurement through the hero sheet inserts it and the '
         'grid picks it up', (tester) async {
@@ -305,7 +345,7 @@ void main() {
 
       await tester.tap(find.text('Log measurement'));
       await tester.pumpAndSettle();
-      expect(find.text('LOG BODY METRICS'), findsOneWidget);
+      expect(find.text('Log body metrics'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField).first, '77.5');
       await tester.pump();
@@ -337,11 +377,11 @@ void main() {
       await tester.pump();
       expect(find.text(typed), findsOneWidget);
 
-      await tester.drag(find.text('LOG BODY METRICS'), const Offset(0, 40));
+      await tester.drag(find.text('Log body metrics'), const Offset(0, 40));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('LOG BODY METRICS'), findsOneWidget,
+      expect(find.text('Log body metrics'), findsOneWidget,
           reason: 'the small drag must not have dismissed the sheet');
       expect(find.text(typed), findsOneWidget,
           reason: 'the typed weight must survive a non-dismissing drag');
@@ -722,7 +762,10 @@ void main() {
 
       await tester.tap(find.text('Recommended plan'));
       await tester.pumpAndSettle();
-      expect(find.text('RECOMMENDED TRAINING PLAN'), findsWidgets);
+      // Task 15c, Finding 3: the in-sheet heading that used to repeat this
+      // in all-caps was removed as pure duplication of the sheet's own
+      // title bar, so this now pins that title bar text instead.
+      expect(find.text('Recommended training plan'), findsWidgets);
 
       await tester.tap(find.text('Create this routine'));
       await tester.pumpAndSettle();
