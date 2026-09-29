@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../data/food_library.dart';
 import '../data/food_search.dart';
-import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_theme.dart';
+import 'lockout_card.dart';
+import 'sheet_scaffold.dart';
 
 /// Result of the food picker. [servings] scales the catalog entry's macros;
 /// a custom entry comes back with zeroed macros for the user to fill in.
@@ -40,15 +42,8 @@ class PickedFood {
 }
 
 Future<PickedFood?> showFoodPicker(BuildContext context) {
-  return showModalBottomSheet<PickedFood>(
+  return showLockoutRawSheet<PickedFood>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: Theme.of(context).colorScheme.surface,
-    // Keeps a full-height picker off the status bar; see sheet_scaffold.dart.
-    useSafeArea: true,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
-    ),
     builder: (_) => _FoodPickerSheet(),
   );
 }
@@ -96,153 +91,9 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
 
   /// Serving-size step before the item is logged, so "2 rotis" is one entry.
   Future<void> _pickServings(LibraryFood food) async {
-    var servings = 1.0;
-
-    final result = await showModalBottomSheet<PickedFood>(
+    final result = await showLockoutRawSheet<PickedFood>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      // Keeps a full-height picker off the status bar; see sheet_scaffold.dart.
-      useSafeArea: true,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheet) {
-          final scaled = PickedFood.fromLibrary(food, servings);
-          return Padding(
-            padding: EdgeInsets.only(
-              top: 24,
-              left: 20,
-              right: 20,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(food.name.toUpperCase(),
-                    style: JinatraTokens.sectionHeader(fontSize: 17)),
-                const SizedBox(height: 4),
-                Text(
-                  'PER SERVING: ${food.serving}',
-                  style: JinatraTokens.monoData(
-                    fontSize: 10,
-                    color: JinatraTokens.ink.withValues(alpha: 0.65),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: JinatraTokens.paper,
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('MADE WITH',
-                          style: JinatraTokens.monoData(fontSize: 10)),
-                      const SizedBox(height: 4),
-                      Text(food.ingredients,
-                          style: JinatraTokens.bodyText(fontSize: 12)),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Figures assume this. Swap the oil or the cut and they move — every field stays editable on the next screen.',
-                        style: JinatraTokens.bodyText(
-                          fontSize: 10,
-                          color: JinatraTokens.ink.withValues(alpha: 0.6),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                Text('SERVINGS', style: JinatraTokens.monoData(fontSize: 12)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _stepBtn('-', () {
-                      if (servings > 0.25) {
-                        setSheet(() => servings -= 0.25);
-                      }
-                    }),
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          PickedFood._trim(servings),
-                          style: JinatraTokens.displayHeader(fontSize: 26),
-                        ),
-                      ),
-                    ),
-                    _stepBtn('+', () => setSheet(() => servings += 0.25)),
-                  ],
-                ),
-                const SizedBox(height: 18),
-
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: JinatraTokens.mistTeal,
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('CALORIES',
-                              style: JinatraTokens.monoData(fontSize: 12)),
-                          Text('${scaled.kcal} kcal',
-                              style: JinatraTokens.monoData(
-                                  fontSize: 16, fontWeight: FontWeight.w900)),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Text('P ${scaled.proteinG}g',
-                              style: JinatraTokens.monoData(fontSize: 12)),
-                          Text('C ${scaled.carbG}g',
-                              style: JinatraTokens.monoData(fontSize: 12)),
-                          Text('F ${scaled.fatG}g',
-                              style: JinatraTokens.monoData(fontSize: 12)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-
-                GestureDetector(
-                  onTap: () => Navigator.pop(ctx, scaled),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      color: JinatraTokens.deepTeal,
-                      border: Border.all(
-                          color: JinatraTokens.ink,
-                          width: JinatraTokens.borderControl),
-                      boxShadow: [JinatraTokens.hardShadow(offset: 3)],
-                    ),
-                    child: Center(
-                      child: Text(
-                        'ADD TO LOG',
-                        style: JinatraTokens.monoData(
-                            color: JinatraTokens.onPrimary, fontSize: 13),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+      builder: (_) => _ServingsSheet(food: food),
     );
 
     if (result != null && mounted) {
@@ -250,23 +101,9 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
     }
   }
 
-  Widget _stepBtn(String glyph, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(
-          color: JinatraTokens.paper,
-          border: Border.all(color: JinatraTokens.ink, width: 2),
-          boxShadow: [JinatraTokens.hardShadow(offset: 2)],
-        ),
-        child: Text(glyph, style: JinatraTokens.monoData(fontSize: 18)),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final (:items, :matchNotes) = _results;
     final results = items;
     final cats = ['All', ...FoodLibrary.categories];
@@ -279,129 +116,97 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              padding: const EdgeInsets.fromLTRB(
+                LockoutTheme.screenPadding,
+                LockoutTheme.spaceSm,
+                LockoutTheme.screenPadding,
+                0,
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('PICK FOOD', style: JinatraTokens.sectionHeader()),
-                  Text(
-                    '${results.length} FOUND',
-                    style: JinatraTokens.monoData(
-                      fontSize: 11,
-                      color: JinatraTokens.ink.withValues(alpha: 0.6),
-                    ),
-                  ),
+                  Text('Pick food', style: theme.textTheme.titleLarge),
+                  Text('${results.length} found',
+                      style: theme.textTheme.labelMedium),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: LockoutTheme.spaceMd),
 
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: JinatraTokens.paper,
-                  border: Border.all(
-                      color: JinatraTokens.ink,
-                      width: JinatraTokens.borderControl),
-                ),
-                child: TextField(
-                  controller: _searchCtrl,
-                  style: JinatraTokens.bodyText(fontWeight: FontWeight.w600),
-                  onChanged: (v) => setState(() => _query = v),
-                  decoration: InputDecoration(
-                    hintText: 'Search dish, cuisine or ingredient...',
-                    hintStyle: JinatraTokens.bodyText(
-                      color: JinatraTokens.ink.withValues(alpha: 0.45),
-                    ),
-                    prefixIcon:
-                        Icon(Icons.search, color: JinatraTokens.ink, size: 20),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: Icon(Icons.close,
-                                size: 18, color: JinatraTokens.ink),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() => _query = '');
-                            },
-                          ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: LockoutTheme.screenPadding),
+              child: TextField(
+                controller: _searchCtrl,
+                style: theme.textTheme.bodyLarge,
+                onChanged: (v) => setState(() => _query = v),
+                decoration: InputDecoration(
+                  hintText: 'Search dish, cuisine or ingredient...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.close,
+                              semanticLabel: 'Clear search'),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: LockoutTheme.spaceMd),
 
             SizedBox(
-              height: 38,
+              height: 40,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: LockoutTheme.screenPadding),
                 itemCount: cats.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) =>
+                    const SizedBox(width: LockoutTheme.spaceSm),
                 itemBuilder: (_, i) {
                   final c = cats[i];
-                  final active = c == _category;
-                  return GestureDetector(
-                    onTap: () => setState(() => _category = c),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: active
-                            ? JinatraTokens.deepTeal
-                            : JinatraTokens.paper,
-                        border: Border.all(color: JinatraTokens.ink, width: 2),
-                        boxShadow:
-                            active ? null : [JinatraTokens.hardShadow(offset: 2)],
-                      ),
-                      child: Text(
-                        c.toUpperCase(),
-                        style: JinatraTokens.monoData(
-                          fontSize: 11,
-                          color: active
-                              ? JinatraTokens.onPrimary
-                              : JinatraTokens.ink,
-                        ),
-                      ),
-                    ),
+                  return ChoiceChip(
+                    label: Text(c),
+                    selected: c == _category,
+                    onSelected: (_) => setState(() => _category = c),
                   );
                 },
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: LockoutTheme.spaceMd),
 
             if (_canAddCustom)
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                child: GestureDetector(
+                padding: const EdgeInsets.fromLTRB(
+                  LockoutTheme.screenPadding,
+                  0,
+                  LockoutTheme.screenPadding,
+                  LockoutTheme.spaceMd,
+                ),
+                child: LockoutCard(
+                  color: theme.colorScheme.tertiaryContainer,
                   onTap: () => Navigator.pop(
                     context,
                     PickedFood.custom(_searchCtrl.text.trim()),
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: JinatraTokens.signal,
-                      border: Border.all(color: JinatraTokens.ink, width: 2),
-                      boxShadow: [JinatraTokens.hardShadow(offset: 3)],
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.add, size: 18, color: JinatraTokens.onAccent),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'ADD CUSTOM: "${_searchCtrl.text.trim()}"',
-                            style: JinatraTokens.monoData(
-                                fontSize: 11, color: JinatraTokens.onAccent),
-                            overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    children: [
+                      Icon(Icons.add, color: theme.colorScheme.onTertiaryContainer),
+                      const SizedBox(width: LockoutTheme.spaceSm),
+                      Expanded(
+                        child: Text(
+                          'Add custom: "${_searchCtrl.text.trim()}"',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: theme.colorScheme.onTertiaryContainer,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -410,94 +215,226 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
               child: results.isEmpty
                   ? Center(
                       child: Text(
-                        'NO MATCH IN CATALOG\nType a name to add it as custom.',
+                        'No match in catalog.\nType a name to add it as custom.',
                         textAlign: TextAlign.center,
-                        style: JinatraTokens.monoData(
-                          color: JinatraTokens.ink.withValues(alpha: 0.6),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(
+                        LockoutTheme.screenPadding,
+                        0,
+                        LockoutTheme.screenPadding,
+                        LockoutTheme.screenPadding,
+                      ),
                       itemCount: results.length,
+                      separatorBuilder: (_, _) =>
+                          const SizedBox(height: LockoutTheme.spaceSm),
                       itemBuilder: (_, i) {
                         final f = results[i];
-                        return GestureDetector(
+                        return _FoodRow(
+                          food: f,
+                          matchNote: matchNotes[f.name],
                           onTap: () => _pickServings(f),
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: JinatraTokens.paper,
-                              border: Border.all(
-                                  color: JinatraTokens.ink, width: 2),
-                              boxShadow: [JinatraTokens.hardShadow(offset: 3)],
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        f.name,
-                                        style: JinatraTokens.bodyText(
-                                            fontWeight: FontWeight.w700),
-                                      ),
-                                      if (matchNotes[f.name] != null)
-                                        Text(
-                                          '~ matched "${matchNotes[f.name]}"',
-                                          style: JinatraTokens.monoData(
-                                            fontSize: 9,
-                                            color: JinatraTokens.ink
-                                                .withValues(alpha: 0.55),
-                                          ),
-                                        ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        '${f.serving}  -  P${f.proteinG} C${f.carbG} F${f.fatG}',
-                                        style: JinatraTokens.monoData(
-                                          fontSize: 9,
-                                          color: JinatraTokens.ink
-                                              .withValues(alpha: 0.6),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        f.ingredients,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: JinatraTokens.bodyText(
-                                          fontSize: 10,
-                                          color: JinatraTokens.ink
-                                              .withValues(alpha: 0.55),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: JinatraTokens.mistTeal,
-                                    border: Border.all(
-                                        color: JinatraTokens.ink, width: 1),
-                                  ),
-                                  child: Text('${f.kcal} kcal',
-                                      style: JinatraTokens.monoData(
-                                          fontSize: 10)),
-                                ),
-                              ],
-                            ),
-                          ),
                         );
                       },
                     ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FoodRow extends StatelessWidget {
+  final LibraryFood food;
+  final String? matchNote;
+  final VoidCallback onTap;
+
+  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  _FoodRow({required this.food, required this.matchNote, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(LockoutTheme.cardPadding),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      food.name,
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    if (matchNote != null)
+                      Text('~ matched "$matchNote"',
+                          style: theme.textTheme.labelSmall),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${food.serving} – P${food.proteinG} '
+                      'C${food.carbG} F${food.fatG}',
+                      style: theme.textTheme.labelSmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      food.ingredients,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: LockoutTheme.spaceSm),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(LockoutTheme.radiusPill),
+                ),
+                child: Text(
+                  '${food.kcal} kcal',
+                  style: LockoutTheme.numeric(
+                    context,
+                    size: 11,
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The serving-size confirmation step between picking a catalog entry and
+/// logging it. Its own sheet (rather than inline in [_FoodPickerSheet]) so
+/// the servings stepper can own its state independently of the search list
+/// underneath it.
+class _ServingsSheet extends StatefulWidget {
+  final LibraryFood food;
+
+  const _ServingsSheet({required this.food});
+
+  @override
+  State<_ServingsSheet> createState() => _ServingsSheetState();
+}
+
+class _ServingsSheetState extends State<_ServingsSheet> {
+  double _servings = 1.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final food = widget.food;
+    final scaled = PickedFood.fromLibrary(food, _servings);
+
+    return SheetScaffold(
+      title: food.name,
+      footer: FilledButton(
+        onPressed: () => Navigator.pop(context, scaled),
+        child: const Text('Add to log'),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Per serving: ${food.serving}', style: theme.textTheme.bodyMedium),
+          const SizedBox(height: LockoutTheme.spaceMd),
+          LockoutCard(
+            color: theme.colorScheme.surfaceContainerHigh,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Made with', style: theme.textTheme.labelMedium),
+                const SizedBox(height: LockoutTheme.spaceXs),
+                Text(food.ingredients, style: theme.textTheme.bodyMedium),
+                const SizedBox(height: LockoutTheme.spaceSm),
+                Text(
+                  'Figures assume this. Swap the oil or the cut and they '
+                  'move — every field stays editable on the next screen.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: LockoutTheme.spaceLg),
+
+          Text('Servings', style: theme.textTheme.labelMedium),
+          const SizedBox(height: LockoutTheme.spaceSm),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                onPressed: _servings > 0.25
+                    ? () => setState(() => _servings -= 0.25)
+                    : null,
+                icon: const Icon(Icons.remove, semanticLabel: 'Fewer servings'),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    PickedFood._trim(_servings),
+                    style: theme.textTheme.headlineSmall,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => setState(() => _servings += 0.25),
+                icon: const Icon(Icons.add, semanticLabel: 'More servings'),
+              ),
+            ],
+          ),
+          const SizedBox(height: LockoutTheme.spaceLg),
+
+          LockoutCard(
+            color: theme.colorScheme.secondaryContainer,
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Calories', style: theme.textTheme.labelMedium),
+                    Text(
+                      '${scaled.kcal} kcal',
+                      style: LockoutTheme.numeric(context, size: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: LockoutTheme.spaceSm),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Text('P ${scaled.proteinG}g',
+                        style: LockoutTheme.numeric(context, size: 13)),
+                    Text('C ${scaled.carbG}g',
+                        style: LockoutTheme.numeric(context, size: 13)),
+                    Text('F ${scaled.fatG}g',
+                        style: LockoutTheme.numeric(context, size: 13)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

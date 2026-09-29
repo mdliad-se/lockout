@@ -573,7 +573,7 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.textContaining('ADD CUSTOM'));
+      await tester.tap(find.textContaining('Add custom'));
       await tester.pumpAndSettle();
 
       expect(find.text('LOG MEAL ITEM'), findsOneWidget);
