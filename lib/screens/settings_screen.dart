@@ -188,6 +188,9 @@ class SettingsBodyState extends State<SettingsBody> {
   Future<void> _setActivity(ActivityLevel activity) async {
     setState(() => _activity = activity);
     await DatabaseService.instance.saveSetting('activity_level', activity.name);
+    final snap = await GoalService.instance.snapshot();
+    if (!mounted) return;
+    setState(() => _plan = snap.nutrition);
   }
 
   /// Persists only the height fields. Split from the food/nutrition save
@@ -325,6 +328,18 @@ class SettingsBodyState extends State<SettingsBody> {
 
   /// `key` is a [LockoutScheme.key], or [LockoutScheme.dynamicKey].
   Future<void> _applyTheme(String key) => ThemeController.instance.select(key);
+
+  /// Tap handler for a theme swatch. `_applyTheme` persists the selection;
+  /// a throw there (bad key, storage failure) must not vanish as a silent,
+  /// unhandled async error — surface it the same way every other write on
+  /// this screen does.
+  Future<void> _selectTheme(String key) async {
+    try {
+      await _applyTheme(key);
+    } catch (_) {
+      _toast('Could not apply theme.', warn: true);
+    }
+  }
 
   // --- REMINDERS ---
 
@@ -562,14 +577,14 @@ class SettingsBodyState extends State<SettingsBody> {
                     colors: null,
                     icon: Icons.palette,
                     selected: controller.selectedKey == LockoutScheme.dynamicKey,
-                    onTap: () async => await _applyTheme(LockoutScheme.dynamicKey),
+                    onTap: () => _selectTheme(LockoutScheme.dynamicKey),
                   )
                 else
                   _ThemeSwatch(
                     name: LockoutScheme.byKey(key).name,
                     colors: LockoutScheme.byKey(key).colors,
                     selected: controller.selectedKey == key,
-                    onTap: () async => await _applyTheme(key),
+                    onTap: () => _selectTheme(key),
                   ),
             ],
           ),

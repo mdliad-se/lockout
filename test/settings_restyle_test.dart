@@ -615,6 +615,62 @@ void main() {
     });
   });
 
+  group('activity radio refreshes the displayed plan without a reload', () {
+    /// `_setActivity` used to persist `activity_level` and stop there.
+    /// `_plan` was only ever assigned in `_loadSettings` and
+    /// `_saveGoalAndRecalculate`, so `GoalSnapshot.calorieTarget` — and every
+    /// tab that reads it — recomputed against the new multiplier the instant
+    /// the radio was tapped, while this screen's own "Daily target" block
+    /// kept showing the pre-tap figure until something reloaded it: a
+    /// same-screen contradiction.
+    testWidgets(
+        'tapping a different activity radio updates "Daily target" in place',
+        (tester) async {
+      await seedCalculablePlan();
+      var updated = false;
+      tester.view.physicalSize = const Size(800, 6000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: lockoutTestTheme(),
+          home: SettingsScreen(onSettingsUpdated: () => updated = true),
+        ),
+      );
+      await settle(tester);
+
+      // The one Text in the tree of the shape "<int> kcal" is the headline
+      // figure inside the "Daily target" container; `_calorieCtrl`'s field
+      // is labelled "Daily calorie target (kcal)" and never matches this.
+      final kcalFinder = find.byWidgetPredicate(
+        (w) => w is Text && RegExp(r'^\d+ kcal$').hasMatch(w.data ?? ''),
+      );
+      expect(kcalFinder, findsOneWidget);
+      final before = tester.widget<Text>(kcalFinder).data!;
+
+      // Default activity is Moderately Active; choose a different one.
+      await tester.tap(find.text(ActivityLevel.high.label));
+      await settle(tester);
+
+      final after = tester.widget<Text>(kcalFinder).data!;
+      expect(
+        after,
+        isNot(before),
+        reason: 'the "Daily target" figure did not follow the new activity '
+            'multiplier without a reload',
+      );
+      expect(
+        updated,
+        isFalse,
+        reason: '_setActivity must not call onSettingsUpdated: that chain '
+            'reloads every text controller from the database and would '
+            'clobber unsaved typing in another card',
+      );
+    });
+  });
+
   group('reminders-expanded branch', () {
     /// The removed neubrutalist suite seeded `reminders_enabled=true` plus a
     /// rate-capped plan and asserted the reminder time row, the streak

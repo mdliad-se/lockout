@@ -71,4 +71,37 @@ void main() {
     await settle(tester);
     expect(find.textContaining('LIAD'), findsNothing);
   });
+
+  testWidgets(
+      'a swatch tap that fails to persist warns instead of vanishing as an '
+      'unhandled error', (tester) async {
+    // Forces `ThemeController.select`'s `saveSetting` write to throw, the
+    // same aborting-trigger technique `database_service_test.dart` uses for
+    // `set_logs`. Self-contained: created and dropped inside this test only,
+    // so it cannot leak into the suites the serial runner reuses this
+    // process for.
+    final database = await DatabaseService.instance.database;
+    Future<void> dropTrigger() =>
+        database.execute('DROP TRIGGER IF EXISTS test_fail_theme_key');
+    await dropTrigger();
+    addTearDown(dropTrigger);
+    await database.execute(
+      "CREATE TRIGGER test_fail_theme_key BEFORE INSERT ON user_settings "
+      "WHEN NEW.key = 'theme_key' "
+      "BEGIN SELECT RAISE(ABORT, 'rejected by test trigger'); END;",
+    );
+
+    await tester.pumpWidget(hostedProfileTab());
+    await settle(tester);
+
+    await tester.tap(find.text('Paper'));
+    await settle(tester);
+
+    // Before the fix, `onTap: () async => await _applyTheme(key)` still
+    // discarded the returned Future (`InkWell.onTap` is `void Function()`),
+    // so this throw reached the test binding as an unhandled async error
+    // rather than being caught anywhere.
+    expect(tester.takeException(), isNull);
+    expect(find.text('Could not apply theme.'), findsOneWidget);
+  });
 }
