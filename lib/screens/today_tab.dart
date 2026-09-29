@@ -447,7 +447,9 @@ class TodayTabState extends State<TodayTab> {
         title: Text('DISCARD SESSION?', style: JinatraTokens.sectionHeader(fontSize: 16)),
         content: Text(
           _sessionCompletedSets > 0
-              ? '$_sessionCompletedSets logged sets will be lost. Discard them?'
+              ? '$_sessionCompletedSets logged '
+                  '${_sessionCompletedSets == 1 ? 'set' : 'sets'} will be '
+                  'lost. Discard them?'
               : 'No sets were logged, so there is nothing to archive. End the session?',
           style: JinatraTokens.bodyText(fontSize: 13),
         ),
@@ -732,8 +734,15 @@ class TodayTabState extends State<TodayTab> {
               ),
               Expanded(
                 child: _SessionStat(
-                  label: 'Volume',
-                  value: '${_fmtWeight(_sessionVolumeKg)} kg',
+                  // The unit lives in the label, not the value: at 360dp
+                  // the three stats share ~69dp each once the `Finish`
+                  // button takes its own ~88dp, and a four-digit
+                  // `1234.5 kg` needs ~110dp at `numeric(size: 20)` — it
+                  // ellipsises long before the figure itself would.
+                  // Dropping " kg" from the value buys back exactly the
+                  // width the unit cost.
+                  label: 'Volume (kg)',
+                  value: _fmtWeight(_sessionVolumeKg),
                 ),
               ),
               Expanded(
@@ -768,7 +777,7 @@ class TodayTabState extends State<TodayTab> {
       title: 'Finish session',
       builder: (_) => _FinishSummarySheet(
         duration: _elapsedLabel,
-        volume: '${_fmtWeight(_sessionVolumeKg)} kg',
+        volume: _fmtWeight(_sessionVolumeKg),
         sets: '$_sessionCompletedSets/$_sessionTotalSets',
       ),
     );
@@ -894,13 +903,15 @@ class TodayTabState extends State<TodayTab> {
     // 48dp delete button, with an ellipsised label taking whatever is left,
     // so a fifth 48dp control fits it without pressure. That leaves the
     // second line for the two steppers alone — each `Expanded` half gets
-    // ~140dp at 360dp width, of which each stepper's own two 48dp buttons
-    // take 96dp, leaving ~44dp for the value text. Putting the tick beside
-    // the steppers instead (the previous layout) left the value only ~20dp,
-    // which forced `FittedBox` to shrink a multi-digit weight far below the
-    // reps column's single digit — the two columns visibly changed scale
-    // against each other, which is what `LockoutTheme.numeric` exists to
-    // prevent.
+    // ~140dp at 360dp width. Putting the tick beside the steppers instead
+    // (the previous layout) left the value only ~20dp of that, forcing
+    // `FittedBox` to shrink a multi-digit weight far below the reps column's
+    // single digit — the two columns visibly changed scale against each
+    // other, which is what `LockoutTheme.numeric` exists to prevent.
+    // `_numberStepper` below caps the value's slot at an explicit width
+    // rather than letting it silently take whatever the ~140dp has left
+    // over from the steppers' buttons, so the value's scale stops
+    // depending on incidental neighbour layout — see its own comment.
     final rowContent = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: LockoutTheme.spaceSm,
@@ -995,6 +1006,7 @@ class TodayTabState extends State<TodayTab> {
         ? semantics.success.withValues(alpha: 0.12)
         : Colors.transparent;
     return TweenAnimationBuilder<Color?>(
+      key: ValueKey('set-tween-$exerciseIndex-$setIndex'),
       tween: ColorTween(end: targetColor),
       duration: Durations.medium1,
       curve: Easing.standard,
@@ -1029,19 +1041,37 @@ class TodayTabState extends State<TodayTab> {
           constraints: constraints,
           onPressed: onMinus,
         ),
-        // `Flexible` + `FittedBox` rather than a fixed-width `SizedBox`: the
-        // two steppers on this line have to share whatever room is left
-        // after their own four 48dp buttons, which shrinks with screen
-        // width. A fixed box either clips the value or reopens the overflow
-        // this row exists to avoid; scaling the label down instead never
-        // overflows its parent, regardless of viewport.
+        // `Flexible` still, so this can never overflow its Row regardless
+        // of what else shares the line — but capped with an explicit
+        // `maxWidth` rather than left to take "whatever is left": the
+        // previous uncapped `Flexible` grew or shrank with viewport *and*
+        // sibling layout together, so it could match the reps column's
+        // scale by coincidence at one combination and diverge from it at
+        // the next (round-2 finding B). `LockoutTheme.spaceXl + spaceSm`
+        // (40dp) is what is actually left once each stepper's own two
+        // 48dp buttons are subtracted from its ~140dp `Expanded` half at
+        // 360dp width (140 - 96 = 44; 40dp keeps a 4dp margin rather than
+        // claiming the exact remainder). A five-character value at
+        // `numeric(size: 14)` needs ~43dp at the default text scale, so
+        // this budget is *not* comfortable even there — the `FittedBox`
+        // is doing real, expected work at 1.0 scale, and more at a larger
+        // system font scale or a sub-360dp viewport. It still shrinks
+        // further than 40dp if a neighbour (e.g. the complete tick,
+        // wrongly sharing this line) leaves less room than that — capping
+        // the budget states the assumption; it does not remove the
+        // squeeze.
         Flexible(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              textAlign: TextAlign.center,
-              style: LockoutTheme.numeric(context, size: 14),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: LockoutTheme.spaceXl + LockoutTheme.spaceSm,
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                textAlign: TextAlign.center,
+                style: LockoutTheme.numeric(context, size: 14),
+              ),
             ),
           ),
         ),
@@ -1159,7 +1189,9 @@ class _FinishSummarySheet extends StatelessWidget {
         Row(
           children: [
             Expanded(child: _SessionStat(label: 'Duration', value: duration)),
-            Expanded(child: _SessionStat(label: 'Volume', value: volume)),
+            Expanded(
+              child: _SessionStat(label: 'Volume (kg)', value: volume),
+            ),
             Expanded(child: _SessionStat(label: 'Sets', value: sets)),
           ],
         ),

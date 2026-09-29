@@ -67,6 +67,7 @@ void main() {
         'onTertiaryContainer': [c.onTertiaryContainer, c.tertiaryContainer],
         'onErrorContainer': [c.onErrorContainer, c.errorContainer],
         'onInverseSurface': [c.onInverseSurface, c.inverseSurface],
+        'onSuccess': [s.semantics.onSuccess, s.semantics.success],
       };
       pairs.forEach((name, pair) {
         expect(

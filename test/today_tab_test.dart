@@ -387,7 +387,10 @@ void main() {
       await settle(tester);
 
       expect(find.text('Duration'), findsOneWidget);
-      expect(find.text('Volume'), findsOneWidget);
+      // The unit lives in the label, not the value, so a four-digit volume
+      // has room to stay on-scale next to `Finish` at 360dp — see
+      // `_buildSessionHeader`.
+      expect(find.text('Volume (kg)'), findsOneWidget);
       expect(find.text('Sets'), findsOneWidget);
       expect(find.text('Finish'), findsOneWidget);
     });
@@ -436,14 +439,21 @@ void main() {
 
       expect(tester.takeException(), isNull);
 
-      // Both values render through the same `LockoutTheme.numeric(size: 14)`
-      // style. If the weight cell's `FittedBox` were forced to shrink while
-      // the reps cell's was not, their rendered heights would diverge — the
-      // "a digit does not change width between 1 and 8" contract
-      // `LockoutTheme.numeric` documents applies across columns too.
-      final weightSize = tester.getSize(find.text('102.5').first);
-      final repsSize = tester.getSize(find.text('8').first);
-      expect(weightSize.height, closeTo(repsSize.height, 0.5));
+      // `tester.getSize` on the `Text` itself is not a usable regression
+      // check here: `FittedBox` applies its scale as a paint transform, so
+      // `RenderFittedBox.performLayout` lays the child out unbounded and
+      // `getSize` returns that unscaled layout size — identical for '102.5'
+      // and '8' by construction, whatever `FittedBox` actually does.
+      // Assert on the layout budget the value is given instead: it is
+      // font-independent, and it is exactly what regresses if the complete
+      // tick ever moves back onto the steppers' line (see
+      // `_buildSetRow`'s comment) — the value's slot narrows from its
+      // capped 40dp down to whatever the tick's neighbour leaves it.
+      final slot = tester.getSize(find.ancestor(
+        of: find.text('102.5'),
+        matching: find.byType(FittedBox),
+      ).first);
+      expect(slot.width, greaterThanOrEqualTo(40));
     });
 
     testWidgets('the rest bar adjusts in both directions', (tester) async {
@@ -515,7 +525,7 @@ void main() {
       // The copy must name what is actually lost — a session with a logged
       // set is real data, not the empty-draft case the dialog also serves.
       expect(
-        find.text('1 logged sets will be lost. Discard them?'),
+        find.text('1 logged set will be lost. Discard them?'),
         findsOneWidget,
       );
 
