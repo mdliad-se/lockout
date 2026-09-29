@@ -211,11 +211,18 @@ class FakeWebViewController extends PlatformWebViewController {
   FakeNavigationDelegate? navigationDelegate;
   final List<Uri> loadedUris = [];
 
+  /// Every colour handed to [setBackgroundColor], in call order — mirrors
+  /// [loadedUris] so a test can pin that the call still happens at all, not
+  /// just that it is absent from `initState`.
+  final List<Color> backgroundColors = [];
+
   @override
   Future<void> setJavaScriptMode(JavaScriptMode javaScriptMode) async {}
 
   @override
-  Future<void> setBackgroundColor(Color color) async {}
+  Future<void> setBackgroundColor(Color color) async {
+    backgroundColors.add(color);
+  }
 
   @override
   Future<void> setPlatformNavigationDelegate(
@@ -260,11 +267,10 @@ class FakeNavigationDelegate extends PlatformNavigationDelegate {
 
 /// Stands in for the platform's real webview surface: `flutter test` has no
 /// browser engine to paint, so this just needs to exist as a
-/// `WebViewWidget` in the tree, keyed so a test can find it.
+/// `WebViewWidget` in the tree.
 class FakeWebViewWidget extends PlatformWebViewWidget {
   FakeWebViewWidget(super.params) : super.implementation();
 
   @override
-  Widget build(BuildContext context) =>
-      const SizedBox.shrink(key: Key('fake-webview'));
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }

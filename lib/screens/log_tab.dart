@@ -244,42 +244,51 @@ class LogTabState extends State<LogTab> {
             // An `InkWell` here rather than `LockoutCard(onTap:)`: the card's
             // own `onTap` would cover the whole card, including the DELETE
             // ENTRY zone below, so only the header row gets the ripple.
+            // `LockoutCard(onTap:)` would also have supplied the 48dp min
+            // height that comes with it; wrapping the row's child in this
+            // `ConstrainedBox` puts that back without giving up the header-
+            // only ripple.
             InkWell(
               onTap: () => _toggleExpand(log),
               borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: LockoutTheme.minTouchTarget,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(log.dayName, style: theme.textTheme.titleSmall),
+                          const SizedBox(height: LockoutTheme.spaceXs),
+                          Text(sessionArchiveLine(log),
+                              style: theme.textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text(log.dayName, style: theme.textTheme.titleSmall),
+                        Text(
+                          '${kgWhole(log.totalVolumeKg)} kg',
+                          style: LockoutTheme.numeric(
+                            context,
+                            size: 14,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
                         const SizedBox(height: LockoutTheme.spaceXs),
-                        Text(sessionArchiveLine(log),
-                            style: theme.textTheme.bodySmall),
+                        Icon(
+                          isOpen ? Icons.expand_less : Icons.expand_more,
+                          size: 18,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ],
                     ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        '${kgWhole(log.totalVolumeKg)} kg',
-                        style: LockoutTheme.numeric(
-                          context,
-                          size: 14,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(height: LockoutTheme.spaceXs),
-                      Icon(
-                        isOpen ? Icons.expand_less : Icons.expand_more,
-                        size: 18,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
 

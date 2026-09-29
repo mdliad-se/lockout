@@ -331,6 +331,24 @@ void main() {
     });
 
     testWidgets(
+        "the archive card's header InkWell meets the minimum touch target",
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertSession(db, _log(id: 's1', dayName: 'MON - Legs'));
+
+      await pumpLog(tester);
+
+      final header = find.ancestor(
+        of: find.text('MON - Legs'),
+        matching: find.byType(InkWell),
+      );
+      expect(header, findsOneWidget);
+      final size = tester.getSize(header);
+      expect(size.width, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+      expect(size.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+    });
+
+    testWidgets(
         'expanding a card reveals its sets and a DELETE ENTRY link with a '
         'minimum-touch-target tap target', (tester) async {
       final db = DatabaseService.instance;

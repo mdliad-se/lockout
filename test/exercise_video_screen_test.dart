@@ -52,6 +52,26 @@ void main() {
           reason: 'the search query should have been handed to loadRequest');
     });
 
+    // Finding 2 (round 2). `FakeWebViewController.setBackgroundColor` was a
+    // silent no-op, so nothing distinguished "the call happens once, after
+    // `initState`" from "the call never happens at all" — deleting
+    // `didChangeDependencies` outright still left every other test in this
+    // suite green. This pins the call positively: see the task report for
+    // that red run, captured by commenting `didChangeDependencies` out.
+    testWidgets(
+        "didChangeDependencies hands the theme's surface colour to the "
+        'webview, exactly once', (tester) async {
+      final theme = lockoutTestTheme();
+      await tester.pumpWidget(MaterialApp(
+        theme: theme,
+        home: ExerciseVideoScreen(exerciseName: 'Squat'),
+      ));
+      await tester.pump();
+
+      expect(fakePlatform.lastController.backgroundColors.single,
+          theme.colorScheme.surface);
+    });
+
     testWidgets(
         'a pinned link that cannot be made loadable shows the unusable '
         'notice instead of the webview, with no reload button',

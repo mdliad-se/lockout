@@ -135,10 +135,13 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
   /// `didChangeDependencies` is the framework's answer — it runs once
   /// right after `initState` completes, and again on every later
   /// inherited-widget change, e.g. a theme switch. [_backgroundColorSet]
-  /// keeps this to exactly one call because this colour only needs to be
-  /// right before the webview's first `loadRequest`, not tracked live —
-  /// the webview does not repaint its background if the app theme changes
-  /// under it later.
+  /// keeps this to exactly one call: this colour is not tracked live, so it
+  /// is set once and never again on a later theme switch — the webview does
+  /// not repaint its background if the app theme changes under it later.
+  /// It lands *after* `initState`'s `loadRequest`, not before: both are
+  /// async platform-channel calls queued in the order they are made, so the
+  /// only practical exposure is a brief default-background flash on a dark
+  /// theme before the real colour paints, not a race either call could lose.
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
