@@ -6,6 +6,7 @@ import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/log_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/schedule_service.dart';
+import 'package:lockout/theme/lockout_theme.dart';
 import 'package:lockout/widgets/hero_card.dart';
 import 'package:lockout/widgets/stat_tile.dart';
 
@@ -91,7 +92,7 @@ void main() {
 
       final hero = tester.widget<HeroCard>(find.byType(HeroCard));
       expect(hero.eyebrow, 'CONSISTENCY');
-      expect(hero.title, 'NO ACTIVE STREAK');
+      expect(hero.title, 'No active streak');
     });
 
     testWidgets(
@@ -122,8 +123,8 @@ void main() {
       await pumpLog(tester);
 
       final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.title, '2 DAY STREAK');
-      expect(hero.subtitle, '2 WORKOUTS - 1500 KG TOTAL');
+      expect(hero.title, '2 day streak');
+      expect(hero.subtitle, '2 workouts - 1500 kg total');
 
       final tiles = tester.widgetList<StatTile>(find.byType(StatTile)).toList();
       expect(tiles.length, 2);
@@ -195,7 +196,7 @@ void main() {
       await seedOneCompletedOneSkipped(tester);
 
       final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.subtitle, '1 WORKOUTS - 1000 KG TOTAL',
+      expect(hero.subtitle, '1 workouts - 1000 kg total',
           reason: "the skipped session's volume must not be summed in");
 
       final tiles = tester.widgetList<StatTile>(find.byType(StatTile)).toList();
@@ -331,7 +332,7 @@ void main() {
 
     testWidgets(
         'expanding a card reveals its sets and a DELETE ENTRY link with a '
-        '40dp-class tap target', (tester) async {
+        'minimum-touch-target tap target', (tester) async {
       final db = DatabaseService.instance;
       await _insertSession(
         db,
@@ -365,8 +366,8 @@ void main() {
       );
       expect(detector, findsOneWidget);
       final size = tester.getSize(detector);
-      expect(size.width, greaterThanOrEqualTo(40));
-      expect(size.height, greaterThanOrEqualTo(40));
+      expect(size.width, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+      expect(size.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
     });
 
     testWidgets(
@@ -579,7 +580,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       final hero = tester.widget<HeroCard>(find.byType(HeroCard));
-      expect(hero.subtitle, contains('2 WORKOUTS'));
+      expect(hero.subtitle, contains('2 workouts'));
       expect(hero.subtitle, isNot(contains('Infinity')));
     });
 

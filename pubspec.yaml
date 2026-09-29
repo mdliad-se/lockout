@@ -62,6 +62,10 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   sqflite_common_ffi: ^2.3.3
+  # Fake `WebViewPlatform` for exercise_video_screen_test.dart: `flutter
+  # test` provides no real webview platform, and `WebViewController()`
+  # throws without one registered.
+  webview_flutter_platform_interface: ^2.15.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

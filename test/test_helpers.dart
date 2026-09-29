@@ -5,6 +5,7 @@ import 'package:lockout/services/database_service.dart';
 import 'package:lockout/theme/lockout_theme.dart';
 import 'package:lockout/theme/schemes.dart';
 import 'package:lockout/theme/theme_controller.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 /// Drives a bounded number of timed frames rather than `pumpAndSettle`.
 ///
@@ -155,4 +156,115 @@ Widget hostedProfileTab({VoidCallback? onSettingsUpdated}) {
       home: ProfileTab(onSettingsUpdated: onSettingsUpdated ?? () {}),
     ),
   );
+}
+
+/// A `WebViewPlatform` for `exercise_video_screen_test.dart`.
+///
+/// `flutter test` registers no real webview platform, so a bare
+/// `WebViewController()` throws — `PlatformWebViewController`'s factory
+/// asserts `WebViewPlatform.instance != null`. That gap is why
+/// `ExerciseVideoScreen` shipped with zero widget-level coverage, and why
+/// its `initState`-reads-`Theme.of(context)` regression went uncaught: with
+/// no way to pump the screen, there was no way to run it at all. Setting
+/// `WebViewPlatform.instance = FakeWebViewPlatform()` (once, e.g. in
+/// `setUp`) closes that gap without touching the real controller/webview
+/// wiring `ExerciseVideoScreen` owns.
+///
+/// [controllers] records every `FakeWebViewController` created, in creation
+/// order, so a test can reach the one backing the screen it pumped and
+/// drive its navigation delegate directly — `onProgress`, `onPageFinished`,
+/// `onWebResourceError` — the same events a real platform would deliver.
+class FakeWebViewPlatform extends WebViewPlatform {
+  final List<FakeWebViewController> controllers = [];
+
+  /// The controller for the most recently constructed `WebViewController`.
+  /// Every test in this suite pumps exactly one webview at a time.
+  FakeWebViewController get lastController => controllers.last;
+
+  @override
+  PlatformWebViewController createPlatformWebViewController(
+    PlatformWebViewControllerCreationParams params,
+  ) {
+    final controller = FakeWebViewController(params);
+    controllers.add(controller);
+    return controller;
+  }
+
+  @override
+  PlatformNavigationDelegate createPlatformNavigationDelegate(
+    PlatformNavigationDelegateCreationParams params,
+  ) =>
+      FakeNavigationDelegate(params);
+
+  @override
+  PlatformWebViewWidget createPlatformWebViewWidget(
+    PlatformWebViewWidgetCreationParams params,
+  ) =>
+      FakeWebViewWidget(params);
+}
+
+/// Records what `ExerciseVideoScreen` tells its `WebViewController` instead
+/// of forwarding any of it to a real browser engine.
+class FakeWebViewController extends PlatformWebViewController {
+  FakeWebViewController(super.params) : super.implementation();
+
+  FakeNavigationDelegate? navigationDelegate;
+  final List<Uri> loadedUris = [];
+
+  @override
+  Future<void> setJavaScriptMode(JavaScriptMode javaScriptMode) async {}
+
+  @override
+  Future<void> setBackgroundColor(Color color) async {}
+
+  @override
+  Future<void> setPlatformNavigationDelegate(
+    PlatformNavigationDelegate handler,
+  ) async {
+    navigationDelegate = handler as FakeNavigationDelegate;
+  }
+
+  @override
+  Future<void> loadRequest(LoadRequestParams params) async {
+    loadedUris.add(params.uri);
+  }
+}
+
+/// Captures the callbacks `NavigationDelegate` registers so a test can
+/// invoke them directly, simulating the progress/finished/error events
+/// that drive `ExerciseVideoScreen`'s `_progress`/`_failed` state machine.
+class FakeNavigationDelegate extends PlatformNavigationDelegate {
+  FakeNavigationDelegate(super.params) : super.implementation();
+
+  ProgressCallback? onProgress;
+  PageEventCallback? onPageFinished;
+  WebResourceErrorCallback? onWebResourceError;
+
+  @override
+  Future<void> setOnProgress(ProgressCallback onProgress) async {
+    this.onProgress = onProgress;
+  }
+
+  @override
+  Future<void> setOnPageFinished(PageEventCallback onPageFinished) async {
+    this.onPageFinished = onPageFinished;
+  }
+
+  @override
+  Future<void> setOnWebResourceError(
+    WebResourceErrorCallback onWebResourceError,
+  ) async {
+    this.onWebResourceError = onWebResourceError;
+  }
+}
+
+/// Stands in for the platform's real webview surface: `flutter test` has no
+/// browser engine to paint, so this just needs to exist as a
+/// `WebViewWidget` in the tree, keyed so a test can find it.
+class FakeWebViewWidget extends PlatformWebViewWidget {
+  FakeWebViewWidget(super.params) : super.implementation();
+
+  @override
+  Widget build(BuildContext context) =>
+      const SizedBox.shrink(key: Key('fake-webview'));
 }

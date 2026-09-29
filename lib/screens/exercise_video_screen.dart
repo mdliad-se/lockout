@@ -81,6 +81,11 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
   int _progress = 0;
   bool _failed = false;
 
+  /// Guards [didChangeDependencies] so the webview's background colour is
+  /// set exactly once. See the doc on [didChangeDependencies] for why it
+  /// lives there instead of [initState].
+  bool _backgroundColorSet = false;
+
   bool get _isPinned => widget.videoUrl.trim().isNotEmpty;
 
   /// Resolved once, in [initState]. `null` means the pinned link could not
@@ -96,11 +101,6 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
         : searchVideoUri(widget.exerciseName);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      // `Theme.of(context)` in `initState` rather than
-      // `didChangeDependencies`: this only sets the webview's one-time
-      // initial paint colour before its first `loadRequest`, so it does not
-      // need to track a later theme switch the way a rebuilding widget does.
-      ..setBackgroundColor(Theme.of(context).colorScheme.surface)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (p) {
@@ -120,6 +120,31 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
     // schemeless URI synchronously, and nothing here is async, so an
     // unusable pinned link would take the whole route down.
     if (target != null) _controller.loadRequest(target);
+  }
+
+  /// Sets the webview's one-time initial paint colour, once.
+  ///
+  /// Not in [initState]: `Theme.of(context)` calls
+  /// `dependOnInheritedWidgetOfExactType`, which asserts when the calling
+  /// element's `_debugLifecycleState` is still `created` — a state that
+  /// only advances to `initialized` after `initState()` itself returns. So
+  /// reading `Theme.of(context)` from inside `initState` throws in every
+  /// debug/profile build (asserts are stripped in release, which is why
+  /// this shipped unnoticed): the `FlutterError` propagates out of
+  /// `initState` and the route renders as a red error screen.
+  /// `didChangeDependencies` is the framework's answer — it runs once
+  /// right after `initState` completes, and again on every later
+  /// inherited-widget change, e.g. a theme switch. [_backgroundColorSet]
+  /// keeps this to exactly one call because this colour only needs to be
+  /// right before the webview's first `loadRequest`, not tracked live —
+  /// the webview does not repaint its background if the app theme changes
+  /// under it later.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_backgroundColorSet) return;
+    _backgroundColorSet = true;
+    _controller.setBackgroundColor(Theme.of(context).colorScheme.surface);
   }
 
   void _retry() {
@@ -144,7 +169,7 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              widget.exerciseName.toUpperCase(),
+              widget.exerciseName,
               style: theme.textTheme.titleMedium,
               overflow: TextOverflow.ellipsis,
             ),
@@ -214,7 +239,7 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
             children: [
               Icon(Icons.link_off, size: 40, color: semantics.warning),
               const SizedBox(height: LockoutTheme.spaceMd),
-              Text('LINK NOT USABLE', style: theme.textTheme.titleMedium),
+              Text('Link not usable', style: theme.textTheme.titleMedium),
               const SizedBox(height: LockoutTheme.spaceSm),
               Text(
                 'The pinned video link for this exercise is not a web address '
@@ -243,7 +268,7 @@ class _ExerciseVideoScreenState extends State<ExerciseVideoScreen> {
             children: [
               Icon(Icons.wifi_off, size: 40, color: semantics.warning),
               const SizedBox(height: LockoutTheme.spaceMd),
-              Text('VIDEO UNAVAILABLE', style: theme.textTheme.titleMedium),
+              Text('Video unavailable', style: theme.textTheme.titleMedium),
               const SizedBox(height: LockoutTheme.spaceSm),
               Text(
                 'Form videos stream from YouTube and need a connection. '

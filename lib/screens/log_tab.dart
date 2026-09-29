@@ -152,8 +152,8 @@ class LogTabState extends State<LogTab> {
   }
 
   String get _streakLabel {
-    if (_streakDays == 0) return 'NO ACTIVE STREAK';
-    return _streakDays == 1 ? '1 DAY STREAK' : '$_streakDays DAY STREAK';
+    if (_streakDays == 0) return 'No active streak';
+    return _streakDays == 1 ? '1 day streak' : '$_streakDays day streak';
   }
 
   @override
@@ -173,15 +173,15 @@ class LogTabState extends State<LogTab> {
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(LockoutTheme.screenPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             HeroCard(
               eyebrow: 'CONSISTENCY',
               title: _streakLabel,
-              subtitle: '${_logs.length} WORKOUTS - '
-                  '${kgWhole(_totalVolumeAllTime)} KG TOTAL',
+              subtitle: '${_logs.length} workouts - '
+                  '${kgWhole(_totalVolumeAllTime)} kg total',
               accent: semantics.categoryAt(0),
             ),
             Row(
@@ -192,7 +192,7 @@ class LogTabState extends State<LogTab> {
                     value: '${_logs.length}',
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: LockoutTheme.spaceSm),
                 Expanded(
                   child: StatTile(
                     label: 'TOTAL BURNED',
@@ -201,10 +201,10 @@ class LogTabState extends State<LogTab> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: LockoutTheme.spaceLg),
 
             Text('WORKOUT ARCHIVE', style: theme.textTheme.labelSmall),
-            const SizedBox(height: 8),
+            const SizedBox(height: LockoutTheme.spaceSm),
 
             Expanded(
               child: _logs.isEmpty
@@ -236,14 +236,17 @@ class LogTabState extends State<LogTab> {
     final sets = _expandedSets[log.id] ?? const <SetLog>[];
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: LockoutTheme.spaceMd),
       child: LockoutCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            GestureDetector(
+            // An `InkWell` here rather than `LockoutCard(onTap:)`: the card's
+            // own `onTap` would cover the whole card, including the DELETE
+            // ENTRY zone below, so only the header row gets the ripple.
+            InkWell(
               onTap: () => _toggleExpand(log),
-              behavior: HitTestBehavior.opaque,
+              borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
               child: Row(
                 children: [
                   Expanded(
@@ -268,7 +271,7 @@ class LogTabState extends State<LogTab> {
                           color: theme.colorScheme.primary,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: LockoutTheme.spaceXs),
                       Icon(
                         isOpen ? Icons.expand_less : Icons.expand_more,
                         size: 18,
@@ -292,7 +295,7 @@ class LogTabState extends State<LogTab> {
                   final reps = entry.value.map((s) => s.reps).join(', ');
                   final weight = entry.value.first.weightKg;
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -305,7 +308,8 @@ class LogTabState extends State<LogTab> {
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 3),
+                              horizontal: LockoutTheme.spaceSm,
+                              vertical: LockoutTheme.spaceXs),
                           decoration: BoxDecoration(
                             color: theme.colorScheme.surfaceContainerHigh,
                             borderRadius:
@@ -324,22 +328,28 @@ class LogTabState extends State<LogTab> {
                     ),
                   );
                 }),
-              const SizedBox(height: 6),
+              const SizedBox(height: LockoutTheme.spaceSm),
               // Padding lives *inside* the detector so the tappable area
-              // grows to a 40dp-tall bar without enlarging the visible text.
-              // The affordance itself is deliberately not BODY/FOOD's —
-              // those use an `Icons.delete_outline` button; the brief
-              // specifies a red text link for LOG. What matches (Ruling F)
-              // is the hit box and the shared `showUndoBanner` mechanism,
-              // not the widget. `semantics.danger` — not `colorScheme.error`
-              // — because this is a destructive-action affordance, exactly
+              // grows to LockoutTheme.minTouchTarget (48dp) without
+              // enlarging the visible text: `labelMedium` is a 14.4dp line
+              // box (`sans(12, w500, height: 1.2)`), so 17 on each side
+              // clears 48 with room to spare. The affordance itself is
+              // deliberately not BODY/FOOD's — those use an
+              // `Icons.delete_outline` `IconButton`, which gets its 48dp hit
+              // box from the theme's `minimumSize: Size(48, 48)`; the brief
+              // specifies a red text link for LOG instead, so this detector
+              // supplies its own 48dp-tall hit box by hand rather than
+              // inheriting the button's. What matches (Ruling F) is the tap
+              // target and the shared `showUndoBanner` mechanism, not the
+              // widget. `semantics.danger` — not `colorScheme.error` —
+              // because this is a destructive-action affordance, exactly
               // what that role is reserved for (see `LockoutSemantics`'s
               // doc on `danger` vs `error`).
               GestureDetector(
                 onTap: () => _deleteLog(log),
                 behavior: HitTestBehavior.opaque,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 17),
                   child: Text(
                     'DELETE ENTRY',
                     style: theme.textTheme.labelMedium?.copyWith(
