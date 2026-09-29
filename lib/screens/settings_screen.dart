@@ -25,7 +25,9 @@ class SettingsBody extends StatefulWidget {
   /// the title and there is no route to pop.
   final bool showAppBar;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // NOT const - this screen's children read colour from the theme, and a
+  // canonicalised instance is skipped on rebuild, stranding them in the
+  // previous theme after a switch.
   // ignore: prefer_const_constructors_in_immutables
   SettingsBody({
     super.key,
@@ -155,6 +157,37 @@ class SettingsBodyState extends State<SettingsBody> {
       _daysPerWeek = goal.daysPerWeek;
       _plan = snap.nutrition;
     });
+  }
+
+  /// Persists the training-days stepper the instant it changes.
+  ///
+  /// The Training card has no save button of its own — before this, its two
+  /// controls lived nowhere near a writer, so `_daysPerWeek` only ever
+  /// reached `training_days_per_week` if the user also opened the Food card
+  /// and pressed "Calculate my target". `MainScreen` calls `reload()` on
+  /// every tab switch, and `reload()` re-reads the database, so a stepper tap
+  /// followed by switching tabs silently reverted with no feedback. Written
+  /// directly rather than routed through `_saveGoalAndRecalculate`: that
+  /// method also recalculates and reports a new calorie target, which is the
+  /// Food card's action, not this one, and `training_days_per_week` does not
+  /// feed the nutrition calculation at all (it only feeds the training
+  /// recommendation `GoalService.snapshot()` derives on the fly, which is
+  /// never persisted). A direct write here is the same shape
+  /// `_saveHeightSettings` already takes for `height_cm` — a setting saved
+  /// from more than one place in this file — and it matches the pattern this
+  /// card's own reminder toggles already use: persist on change, no button.
+  Future<void> _setDaysPerWeek(int days) async {
+    setState(() => _daysPerWeek = days);
+    await DatabaseService.instance
+        .saveSetting('training_days_per_week', days.toString());
+  }
+
+  /// Persists the activity-level radio the instant it changes. See
+  /// [_setDaysPerWeek] for why this is a direct write rather than a route
+  /// through `_saveGoalAndRecalculate`.
+  Future<void> _setActivity(ActivityLevel activity) async {
+    setState(() => _activity = activity);
+    await DatabaseService.instance.saveSetting('activity_level', activity.name);
   }
 
   /// Persists only the height fields. Split from the food/nutrition save
@@ -517,22 +550,27 @@ class SettingsBodyState extends State<SettingsBody> {
           Wrap(
             spacing: LockoutTheme.spaceMd,
             runSpacing: LockoutTheme.spaceMd,
+            // `pickerKeys` is the single source of "what the picker should
+            // offer, in order" — it already gates the dynamic entry on
+            // `dynamicAvailable`, so re-deriving that gate here would just be
+            // a second copy of the same rule to keep in sync.
             children: [
-              for (final scheme in LockoutScheme.all)
-                _ThemeSwatch(
-                  name: scheme.name,
-                  colors: scheme.colors,
-                  selected: controller.selectedKey == scheme.key,
-                  onTap: () => _applyTheme(scheme.key),
-                ),
-              if (controller.dynamicAvailable)
-                _ThemeSwatch(
-                  name: 'Match my phone',
-                  colors: null,
-                  icon: Icons.palette,
-                  selected: controller.selectedKey == LockoutScheme.dynamicKey,
-                  onTap: () => _applyTheme(LockoutScheme.dynamicKey),
-                ),
+              for (final key in controller.pickerKeys)
+                if (key == LockoutScheme.dynamicKey)
+                  _ThemeSwatch(
+                    name: 'Match my phone',
+                    colors: null,
+                    icon: Icons.palette,
+                    selected: controller.selectedKey == LockoutScheme.dynamicKey,
+                    onTap: () async => await _applyTheme(LockoutScheme.dynamicKey),
+                  )
+                else
+                  _ThemeSwatch(
+                    name: LockoutScheme.byKey(key).name,
+                    colors: LockoutScheme.byKey(key).colors,
+                    selected: controller.selectedKey == key,
+                    onTap: () async => await _applyTheme(key),
+                  ),
             ],
           ),
         ],
@@ -635,7 +673,7 @@ class SettingsBodyState extends State<SettingsBody> {
                   ),
                   IconButton(
                     onPressed: _daysPerWeek > 2
-                        ? () => setState(() => _daysPerWeek--)
+                        ? () => _setDaysPerWeek(_daysPerWeek - 1)
                         : null,
                     icon: const Icon(Icons.remove_circle_outline),
                     padding: EdgeInsets.zero,
@@ -647,7 +685,7 @@ class SettingsBodyState extends State<SettingsBody> {
                   Text('$_daysPerWeek', style: theme.textTheme.titleMedium),
                   IconButton(
                     onPressed: _daysPerWeek < 6
-                        ? () => setState(() => _daysPerWeek++)
+                        ? () => _setDaysPerWeek(_daysPerWeek + 1)
                         : null,
                     icon: const Icon(Icons.add_circle_outline),
                     padding: EdgeInsets.zero,
@@ -664,7 +702,7 @@ class SettingsBodyState extends State<SettingsBody> {
             RadioListTile<ActivityLevel>(
               value: a,
               groupValue: _activity,
-              onChanged: (v) => setState(() => _activity = v ?? _activity),
+              onChanged: (v) => _setActivity(v ?? _activity),
               title: Text(a.label),
               subtitle: Text(a.blurb),
               secondary: Text('x${a.multiplier}', style: theme.textTheme.labelMedium),
@@ -961,7 +999,7 @@ class _ThemeSwatch extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
       child: Container(
-        width: 104,
+        width: LockoutTheme.swatchWidth,
         padding: const EdgeInsets.all(LockoutTheme.spaceSm),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
@@ -980,7 +1018,7 @@ class _ThemeSwatch extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 Container(
-                  height: 44,
+                  height: LockoutTheme.swatchPreviewHeight,
                   width: double.infinity,
                   padding: const EdgeInsets.all(LockoutTheme.spaceXs),
                   alignment: Alignment.center,
@@ -1001,11 +1039,11 @@ class _ThemeSwatch extends StatelessWidget {
                 ),
                 if (selected)
                   Positioned(
-                    top: -6,
-                    right: -6,
+                    top: LockoutTheme.swatchCheckOffset,
+                    right: LockoutTheme.swatchCheckOffset,
                     child: Icon(
                       Icons.check_circle,
-                      size: 18,
+                      size: LockoutTheme.swatchCheckSize,
                       color: theme.colorScheme.primary,
                     ),
                   ),

@@ -9,10 +9,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:lockout/models/models.dart';
+import 'package:lockout/screens/profile_tab.dart';
 import 'package:lockout/screens/settings_screen.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/goal_service.dart';
+import 'package:lockout/services/nutrition_planner.dart';
 import 'package:lockout/theme/lockout_theme.dart';
+import 'package:lockout/theme/schemes.dart';
 import 'package:lockout/widgets/lockout_field.dart';
 
 import 'test_helpers.dart';
@@ -166,6 +169,28 @@ void main() {
   Future<void> pumpSettings(WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 6000);
     tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: lockoutTestTheme(),
+        home: SettingsScreen(onSettingsUpdated: () {}),
+      ),
+    );
+    await settle(tester);
+  }
+
+  /// The same body, but at a 360dp logical width (1080 / 3.0, matching the
+  /// QA device `main_screen_test.dart` already renders at). Every other
+  /// settings test here runs at 800dp, so the reminders-expanded branch —
+  /// two `SwitchListTile`s, a `CalmRow` and an `OutlinedButton` all stacked
+  /// under a fixed-width caption — had no overflow guard at all until this
+  /// existed, which is exactly the width the 212px Training-days overflow
+  /// was caught at.
+  Future<void> pumpSettingsNarrow(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 6000);
+    tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
@@ -466,6 +491,32 @@ void main() {
       final importButton =
           tester.getSize(find.byKey(const Key('importBackupButton')));
       expect(importButton.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+
+      // The two hand-built stepper buttons and the seven swatches take their
+      // size from `LockoutTheme` too, but by their own `constraints:` /
+      // `width:`/`height:`, not from a component theme the two checks above
+      // already pin — so they need their own assertion.
+      final decrementButton = tester.getSize(
+        find.widgetWithIcon(IconButton, Icons.remove_circle_outline),
+      );
+      expect(decrementButton.width, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+      expect(decrementButton.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+
+      final incrementButton = tester.getSize(
+        find.widgetWithIcon(IconButton, Icons.add_circle_outline),
+      );
+      expect(incrementButton.width, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+      expect(incrementButton.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+
+      for (final scheme in LockoutScheme.all) {
+        final swatch = find.ancestor(
+          of: find.text(scheme.name),
+          matching: find.byType(InkWell),
+        );
+        final size = tester.getSize(swatch);
+        expect(size.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget),
+            reason: scheme.key);
+      }
     });
 
     testWidgets(
@@ -501,6 +552,94 @@ void main() {
         (tester) async {
       await pumpSettings(tester);
       expect(find.text('Appearance'), findsOneWidget);
+
+      // This would still pass with the whole picker deleted, unless it also
+      // asserts the swatches its own name promises are actually there.
+      for (final scheme in LockoutScheme.all) {
+        expect(find.text(scheme.name), findsOneWidget, reason: scheme.key);
+      }
+    });
+  });
+
+  group('training card commits what it owns', () {
+    /// Before this fix, `training_days_per_week` and `activity_level` had no
+    /// writer of their own: only `_saveGoalAndRecalculate`, behind the Food
+    /// card's "Calculate my target" button, persisted them.
+    /// `MainScreen._refreshVisibleTab` calls `ProfileTabState.reload()` on
+    /// every tab switch, and `reload()` re-reads every field from the
+    /// database — so adjusting the stepper or the activity radio and then
+    /// switching tabs silently reverted the change with no feedback.
+    testWidgets(
+        'the training-days stepper and activity radio survive the reload '
+        'MainScreen triggers on every tab switch', (tester) async {
+      final key = GlobalKey<ProfileTabState>();
+      tester.view.physicalSize = const Size(800, 6000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: lockoutTestTheme(),
+          home: ProfileTab(key: key, onSettingsUpdated: () {}),
+        ),
+      );
+      await settle(tester);
+
+      // Default is 4; bump it once.
+      expect(find.text('4'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.add_circle_outline));
+      await settle(tester);
+      expect(find.text('5'), findsOneWidget);
+
+      // Default activity is Moderately Active; choose a different one.
+      await tester.tap(find.text(ActivityLevel.high.label));
+      await settle(tester);
+
+      // The tab switch itself: MainScreen calls this on every tab change.
+      await key.currentState!.reload();
+      await settle(tester);
+
+      expect(find.text('5'), findsOneWidget,
+          reason: 'the stepper reverted to the database value on reload');
+      expect(
+        await DatabaseService.instance
+            .getSetting('training_days_per_week', defaultValue: ''),
+        '5',
+      );
+      expect(
+        await DatabaseService.instance
+            .getSetting('activity_level', defaultValue: ''),
+        ActivityLevel.high.name,
+      );
+    });
+  });
+
+  group('reminders-expanded branch', () {
+    /// The removed neubrutalist suite seeded `reminders_enabled=true` plus a
+    /// rate-capped plan and asserted the reminder time row, the streak
+    /// switch, the test-notification button and the clamp warning all
+    /// rendered. The M3 rewrite dropped every one of those assertions, so
+    /// none of that newly-rewritten subtree — the `_remindersEnabled == true`
+    /// branch of `_buildNotificationsCard`, and `plan.warning`'s container in
+    /// `_buildFoodCard` — was ever built by any test. Rendered at 360dp so
+    /// this also stands in for finding 5's overflow guard on that branch.
+    testWidgets(
+        'reminder time, streak warning, test notification and the rate-cap '
+        'warning all render together', (tester) async {
+      await seedCalculablePlan();
+      await DatabaseService.instance.saveSetting('reminders_enabled', 'true');
+
+      await pumpSettingsNarrow(tester);
+
+      expect(find.text('Reminder time'), findsOneWidget);
+      expect(find.text('Send test notification'), findsOneWidget);
+      expect(find.text('Streak warning at 21:00'), findsOneWidget);
+      expect(find.text('Daily target'), findsOneWidget);
+      expect(find.textContaining('Target eased to a safe rate'), findsOneWidget);
+
+      expect(tester.takeException(), isNull,
+          reason: 'no widget in this branch may overflow at 360dp');
     });
   });
 }

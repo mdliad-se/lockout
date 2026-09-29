@@ -36,6 +36,13 @@ class LockoutTheme {
   static const double minTouchTarget = 48;
   static const double controlHeight = 52;
 
+  // The theme picker's swatch card — the only raw dimensions left outside
+  // this file before this constraint was enforced.
+  static const double swatchWidth = 104;
+  static const double swatchPreviewHeight = 44;
+  static const double swatchCheckOffset = -6;
+  static const double swatchCheckSize = 18;
+
   static const String fontSans = 'Inter';
   static const String fontMono = 'JetBrainsMono';
 

@@ -24,6 +24,11 @@ void main() {
     await ThemeController.instance.load();
   });
 
+  // The serial runner reuses one process across every suite (see
+  // `lockout_app_test.dart:44`), so whatever this suite last selected would
+  // otherwise leak into the next one to run.
+  tearDown(() => ThemeController.instance.resetForTest());
+
   testWidgets('offers six swatches and no dynamic option when unavailable',
       (tester) async {
     await tester.pumpWidget(hostedProfileTab());
