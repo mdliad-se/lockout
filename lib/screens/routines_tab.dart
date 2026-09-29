@@ -758,6 +758,7 @@ class RoutinesTabState extends State<RoutinesTab> {
     final theme = Theme.of(context);
 
     return LockoutCard(
+      color: theme.colorScheme.surfaceContainerHigh,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1381,9 +1382,6 @@ class _ExerciseFormState extends State<_ExerciseForm> {
           label: 'Pinned video URL (optional)',
           controller: _videoCtrl,
         ),
-        const SizedBox(height: LockoutTheme.spaceXs),
-        Text('Leave empty to auto-search YouTube',
-            style: theme.textTheme.bodySmall),
         const SizedBox(height: LockoutTheme.spaceXs),
         Text(
           'Empty video URL means Watch opens a YouTube search for a 3D / '

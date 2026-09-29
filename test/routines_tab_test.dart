@@ -17,7 +17,7 @@ import 'test_helpers.dart';
 
 /// Direct coverage for `RoutinesTab`, which had zero widget coverage before
 /// the first fix wave: the day-detail sheet's `refreshAfter` staleness
-/// guard, the EDIT DAY sheet-pop, and the drag-does-not-reset-typed-state
+/// guard, the Edit day sheet-pop, and the drag-does-not-reset-typed-state
 /// regression from Task 8's review (every sheet form used to build its
 /// `TextEditingController`s and local form state inside the builder passed
 /// to `showLockoutSheet`, so a drag that only rebuilt the sheet's own
@@ -123,7 +123,7 @@ void main() {
     expect(find.byType(SheetScaffold), findsOneWidget);
   });
 
-  testWidgets('EDIT DAY saves and pops the day-detail sheet', (tester) async {
+  testWidgets('Edit day saves and pops the day-detail sheet', (tester) async {
     final day = await seedRoutineWithDay();
 
     await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
@@ -143,7 +143,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Both the edit-day form sheet and the day-detail sheet it was opened
-    // from are gone — EDIT DAY pops the parent sheet on a real save.
+    // from are gone — Edit day pops the parent sheet on a real save.
     expect(find.byType(SheetScaffold), findsNothing);
   });
 
