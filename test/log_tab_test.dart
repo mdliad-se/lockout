@@ -6,7 +6,6 @@ import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/log_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/schedule_service.dart';
-import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/hero_card.dart';
 import 'package:lockout/widgets/stat_tile.dart';
 
@@ -48,7 +47,6 @@ void main() {
   setUpAll(() {
     databaseFactory = databaseFactoryFfiNoIsolate;
     DatabaseService.testDatabasePath = inMemoryDatabasePath;
-    AppPalette.apply(AppPalette.paperPress);
   });
 
   setUp(() async {
@@ -74,7 +72,9 @@ void main() {
   Future<void> pumpLog(WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(MaterialApp(home: LogTab()));
+    await tester.pumpWidget(
+      MaterialApp(theme: lockoutTestTheme(), home: LogTab()),
+    );
     await settle(tester);
   }
 
@@ -555,7 +555,7 @@ void main() {
         _log(id: 'bad', dayName: 'Poisoned', totalVolumeKg: double.infinity),
       );
 
-      await tester.pumpWidget(MaterialApp(home: LogTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: LogTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull,
@@ -574,7 +574,7 @@ void main() {
         _log(id: 'bad', dayName: 'Poisoned', totalVolumeKg: double.infinity),
       );
 
-      await tester.pumpWidget(MaterialApp(home: LogTab()));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: LogTab()));
       await settle(tester);
 
       expect(tester.takeException(), isNull);

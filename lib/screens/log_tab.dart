@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/schedule_service.dart';
-import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_semantics.dart';
+import '../theme/lockout_theme.dart';
 import '../widgets/hero_card.dart';
-import '../widgets/jinatra_card.dart';
+import '../widgets/lockout_card.dart';
 import '../widgets/stat_tile.dart';
 import '../widgets/undo_banner.dart';
 
@@ -158,25 +159,30 @@ class LogTabState extends State<LogTab> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
+      return const Center(child: CircularProgressIndicator());
     }
 
+    final theme = Theme.of(context);
+    final semantics = LockoutSemantics.of(context);
+
+    // No screen-title header here (unlike a top-level tab): this widget is
+    // the HISTORY half of `ProgressTab`'s segmented control, which already
+    // shows "Progress" above and "History" on the segment itself — the same
+    // reason `body_tab.dart`'s WEIGHT half leads straight into its content
+    // rather than repeating a title.
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: theme.colorScheme.surface,
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('TRAINING LOG & HISTORY', style: JinatraTokens.sectionHeader()),
-            const SizedBox(height: 16),
-
             HeroCard(
               eyebrow: 'CONSISTENCY',
               title: _streakLabel,
               subtitle: '${_logs.length} WORKOUTS - '
                   '${kgWhole(_totalVolumeAllTime)} KG TOTAL',
-              accent: JinatraTokens.accentAt(0),
+              accent: semantics.categoryAt(0),
             ),
             Row(
               children: [
@@ -197,7 +203,7 @@ class LogTabState extends State<LogTab> {
             ),
             const SizedBox(height: 20),
 
-            Text('WORKOUT ARCHIVE', style: JinatraTokens.monoData(fontSize: 14)),
+            Text('WORKOUT ARCHIVE', style: theme.textTheme.labelSmall),
             const SizedBox(height: 8),
 
             Expanded(
@@ -207,8 +213,8 @@ class LogTabState extends State<LogTab> {
                         'NO COMPLETED WORKOUTS YET\nFinish a live session on the TODAY tab '
                         'and it lands here automatically.',
                         textAlign: TextAlign.center,
-                        style: JinatraTokens.monoData(
-                          color: JinatraTokens.ink.withValues(alpha: 0.6),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     )
@@ -224,123 +230,128 @@ class LogTabState extends State<LogTab> {
   }
 
   Widget _buildLogCard(SessionLog log) {
+    final theme = Theme.of(context);
+    final semantics = LockoutSemantics.of(context);
     final isOpen = _expanded.contains(log.id);
     final sets = _expandedSets[log.id] ?? const <SetLog>[];
 
-    return JinatraCard(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => _toggleExpand(log),
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        log.dayName,
-                        style: JinatraTokens.sectionHeader(fontSize: 15),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        sessionArchiveLine(log),
-                        style: JinatraTokens.monoData(fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${kgWhole(log.totalVolumeKg)} kg',
-                      style: JinatraTokens.monoData(
-                        fontSize: 14,
-                        color: JinatraTokens.deepTeal,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Icon(
-                      isOpen ? Icons.expand_less : Icons.expand_more,
-                      size: 18,
-                      color: JinatraTokens.ink,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          if (isOpen) ...[
-            Divider(color: JinatraTokens.ink, height: 20, thickness: 2),
-            if (sets.isEmpty)
-              Text(
-                'No set detail stored for this entry.',
-                style: JinatraTokens.bodyText(
-                  fontSize: 12,
-                  color: JinatraTokens.ink.withValues(alpha: 0.6),
-                ),
-              )
-            else
-              ..._groupByExercise(sets).entries.map((entry) {
-                final reps = entry.value.map((s) => s.reps).join(', ');
-                final weight = entry.value.first.weightKg;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.key,
-                          style: JinatraTokens.bodyText(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: JinatraTokens.mistTeal,
-                          border: Border.all(color: JinatraTokens.ink, width: 1),
-                        ),
-                        child: Text(
-                          weight > 0
-                              ? '${weight.toStringAsFixed(weight % 1 == 0 ? 0 : 1)}kg x $reps'
-                              : '$reps reps',
-                          style: JinatraTokens.monoData(fontSize: 10),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            const SizedBox(height: 6),
-            // Padding lives *inside* the detector so the tappable area
-            // grows to a 40dp-tall bar without enlarging the visible text.
-            // The affordance itself is deliberately not BODY/FOOD's —
-            // those use an `Icons.delete_outline` button; the brief
-            // specifies a red text link for LOG. What matches (Ruling F)
-            // is the hit box and the shared `showUndoBanner` mechanism,
-            // not the widget.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: LockoutCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             GestureDetector(
-              onTap: () => _deleteLog(log),
+              onTap: () => _toggleExpand(log),
               behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Text(
-                  'DELETE ENTRY',
-                  style: JinatraTokens.monoData(fontSize: 10, color: JinatraTokens.signal),
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(log.dayName, style: theme.textTheme.titleSmall),
+                        const SizedBox(height: LockoutTheme.spaceXs),
+                        Text(sessionArchiveLine(log),
+                            style: theme.textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${kgWhole(log.totalVolumeKg)} kg',
+                        style: LockoutTheme.numeric(
+                          context,
+                          size: 14,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Icon(
+                        isOpen ? Icons.expand_less : Icons.expand_more,
+                        size: 18,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
+
+            if (isOpen) ...[
+              const Divider(),
+              if (sets.isEmpty)
+                Text(
+                  'No set detail stored for this entry.',
+                  style: theme.textTheme.bodySmall,
+                )
+              else
+                ..._groupByExercise(sets).entries.map((entry) {
+                  final reps = entry.value.map((s) => s.reps).join(', ');
+                  final weight = entry.value.first.weightKg;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            entry.key,
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHigh,
+                            borderRadius:
+                                BorderRadius.circular(LockoutTheme.radiusPill),
+                            border: Border.all(
+                                color: theme.colorScheme.outlineVariant),
+                          ),
+                          child: Text(
+                            weight > 0
+                                ? '${weight.toStringAsFixed(weight % 1 == 0 ? 0 : 1)}kg x $reps'
+                                : '$reps reps',
+                            style: LockoutTheme.numeric(context, size: 10),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              const SizedBox(height: 6),
+              // Padding lives *inside* the detector so the tappable area
+              // grows to a 40dp-tall bar without enlarging the visible text.
+              // The affordance itself is deliberately not BODY/FOOD's —
+              // those use an `Icons.delete_outline` button; the brief
+              // specifies a red text link for LOG. What matches (Ruling F)
+              // is the hit box and the shared `showUndoBanner` mechanism,
+              // not the widget. `semantics.danger` — not `colorScheme.error`
+              // — because this is a destructive-action affordance, exactly
+              // what that role is reserved for (see `LockoutSemantics`'s
+              // doc on `danger` vs `error`).
+              GestureDetector(
+                onTap: () => _deleteLog(log),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: Text(
+                    'DELETE ENTRY',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: semantics.danger,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
