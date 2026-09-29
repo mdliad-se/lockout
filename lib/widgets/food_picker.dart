@@ -159,7 +159,7 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
             const SizedBox(height: LockoutTheme.spaceMd),
 
             SizedBox(
-              height: 40,
+              height: LockoutTheme.minTouchTarget,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(
@@ -223,11 +223,12 @@ class _FoodPickerSheetState extends State<_FoodPickerSheet> {
                       ),
                     )
                   : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(
+                      padding: EdgeInsets.fromLTRB(
                         LockoutTheme.screenPadding,
                         0,
                         LockoutTheme.screenPadding,
-                        LockoutTheme.screenPadding,
+                        LockoutTheme.screenPadding +
+                            MediaQuery.viewPaddingOf(context).bottom,
                       ),
                       itemCount: results.length,
                       separatorBuilder: (_, _) =>
@@ -349,9 +350,12 @@ class _ServingsSheetState extends State<_ServingsSheet> {
 
     return SheetScaffold(
       title: food.name,
-      footer: FilledButton(
-        onPressed: () => Navigator.pop(context, scaled),
-        child: const Text('Add to log'),
+      footer: SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          onPressed: () => Navigator.pop(context, scaled),
+          child: const Text('Add to log'),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -381,7 +385,6 @@ class _ServingsSheetState extends State<_ServingsSheet> {
           Text('Servings', style: theme.textTheme.labelMedium),
           const SizedBox(height: LockoutTheme.spaceSm),
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               IconButton(
                 onPressed: _servings > 0.25
@@ -412,10 +415,19 @@ class _ServingsSheetState extends State<_ServingsSheet> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Calories', style: theme.textTheme.labelMedium),
+                    Text(
+                      'Calories',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
                     Text(
                       '${scaled.kcal} kcal',
-                      style: LockoutTheme.numeric(context, size: 16),
+                      style: LockoutTheme.numeric(
+                        context,
+                        size: 16,
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
                     ),
                   ],
                 ),
@@ -423,12 +435,30 @@ class _ServingsSheetState extends State<_ServingsSheet> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    Text('P ${scaled.proteinG}g',
-                        style: LockoutTheme.numeric(context, size: 13)),
-                    Text('C ${scaled.carbG}g',
-                        style: LockoutTheme.numeric(context, size: 13)),
-                    Text('F ${scaled.fatG}g',
-                        style: LockoutTheme.numeric(context, size: 13)),
+                    Text(
+                      'P ${scaled.proteinG}g',
+                      style: LockoutTheme.numeric(
+                        context,
+                        size: 13,
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                    Text(
+                      'C ${scaled.carbG}g',
+                      style: LockoutTheme.numeric(
+                        context,
+                        size: 13,
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                    Text(
+                      'F ${scaled.fatG}g',
+                      style: LockoutTheme.numeric(
+                        context,
+                        size: 13,
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
                   ],
                 ),
               ],

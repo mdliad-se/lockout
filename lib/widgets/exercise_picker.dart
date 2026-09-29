@@ -141,7 +141,7 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
 
             // Muscle group filter strip
             SizedBox(
-              height: 40,
+              height: LockoutTheme.minTouchTarget,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(
@@ -205,11 +205,12 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
                       ),
                     )
                   : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(
+                      padding: EdgeInsets.fromLTRB(
                         LockoutTheme.screenPadding,
                         0,
                         LockoutTheme.screenPadding,
-                        LockoutTheme.screenPadding,
+                        LockoutTheme.screenPadding +
+                            MediaQuery.viewPaddingOf(context).bottom,
                       ),
                       itemCount: results.length,
                       separatorBuilder: (_, _) =>
