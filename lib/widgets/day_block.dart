@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/models.dart';
-import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_semantics.dart';
 
 /// Colour coding per training day, so a week reads at a glance.
 ///
@@ -15,14 +15,12 @@ import '../theme/jinatra_tokens.dart';
 ///     use, colours repeat deterministically. Either way, a training day
 ///     never receives the colour reserved for rest days.
 ///
-/// Colours come from the palette's authored ramp rather than HSL rotation of
-/// the primary — rotation produced muddy mid-tones in several themes and
-/// could not guarantee distinctness in the first place.
+/// Colours come from the scheme's authored ramp (`LockoutSemantics
+/// .categoryRamp`) rather than HSL rotation of the primary — rotation
+/// produced muddy mid-tones in several themes and could not guarantee
+/// distinctness in the first place.
 class DayColours {
   DayColours._();
-
-  /// Rest days recede rather than compete, and never consume an accent.
-  static Color get restColour => JinatraTokens.mistTeal;
 
   /// Day categories in a fixed order, so the same kind of session keeps the
   /// same colour everywhere in the app.
@@ -48,15 +46,20 @@ class DayColours {
   /// Colour per day for one routine, keyed by [TrainingDay.id].
   ///
   /// Pass the routine's days in display order; the order decides who keeps
-  /// their category colour when two days want the same one.
-  static Map<String, Color> assign(List<TrainingDay> days) {
-    final ramp = JinatraTokens.accents;
+  /// their category colour when two days want the same one. [semantics]
+  /// supplies both the ramp and the rest-day colour, so the assignment
+  /// follows the active scheme exactly.
+  static Map<String, Color> assign(
+    List<TrainingDay> days,
+    LockoutSemantics semantics,
+  ) {
+    final ramp = semantics.categoryRamp;
+    final restColour = semantics.restDay;
     final result = <String, Color>{};
     final taken = <int>{};
 
-    // Some themes' authored ramp happens to reuse the same colour as the
-    // muted rest surface (e.g. Paper Press's yellow accent equals its
-    // surfaceAlt). Reserve those slots up front so a training day can never
+    // Some schemes' authored ramp could in principle reuse the same colour
+    // as restDay. Reserve those slots up front so a training day can never
     // be handed the rest colour by coincidence — this holds no matter how
     // many training days are in the list.
     final reserved = <int>{};
@@ -110,25 +113,21 @@ class DayColours {
 
   /// Text and icons drawn on a day colour.
   static Color onColorFor(Color background) =>
-      JinatraTokens.onAccentColor(background);
+      LockoutSemantics.onColorFor(background);
 }
 
 /// A section heading inside an expanded day — "WARM-UP", "FINISHER".
 ///
 /// Deliberately a rule with a label rather than a bordered box: the day card
 /// already draws a frame, and nesting another one made the routine list read
-/// as a wall of rectangles.
+/// as a wall of rectangles. Uppercase stays: this is the small-metadata-label
+/// exception (`labelSmall`), same idiom as "WORKOUT ARCHIVE" and "QUICK
+/// ACTIONS" elsewhere in the app.
 class SectionHeading extends StatelessWidget {
   final String title;
   final String amount;
 
-  // NOT const: `build` resolves a palette colour, so a const call site
-  // would canonicalise this widget and `Element.updateChild` would skip
-  // its rebuild on a theme switch, stranding it in the old palette. A
-  // non-const constructor makes that unrepresentable rather than asking
-  // every call site to remember.
-  // ignore: prefer_const_constructors_in_immutables
-  SectionHeading({
+  const SectionHeading({
     super.key,
     required this.title,
     this.amount = '',
@@ -136,32 +135,26 @@ class SectionHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 6),
       child: Row(
         children: [
-          Text(
-            title.toUpperCase(),
-            style: JinatraTokens.monoData(
-              fontSize: 10,
-              color: JinatraTokens.ink.withValues(alpha: 0.75),
-            ),
-          ),
+          Text(title.toUpperCase(), style: theme.textTheme.labelSmall),
           const SizedBox(width: 8),
           Expanded(
             child: Container(
               height: 2,
-              color: JinatraTokens.ink.withValues(alpha: 0.18),
+              color: colors.outlineVariant,
             ),
           ),
           if (amount.isNotEmpty) ...[
             const SizedBox(width: 8),
             Text(
               amount,
-              style: JinatraTokens.monoData(
-                fontSize: 9,
-                color: JinatraTokens.ink.withValues(alpha: 0.55),
-              ),
+              style: theme.textTheme.labelSmall,
             ),
           ],
         ],
@@ -177,9 +170,7 @@ class SubItemRow extends StatelessWidget {
   final String amt;
   final VoidCallback? onRemove;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
-  // ignore: prefer_const_constructors_in_immutables
-  SubItemRow({
+  const SubItemRow({
     super.key,
     required this.name,
     required this.amt,
@@ -188,21 +179,18 @@ class SubItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
     return Padding(
       padding: const EdgeInsets.only(left: 2),
       child: Row(
         children: [
           Expanded(
-            child: Text(name, style: JinatraTokens.bodyText(fontSize: 13)),
+            child: Text(name, style: theme.textTheme.bodyMedium),
           ),
           const SizedBox(width: 8),
-          Text(
-            amt,
-            style: JinatraTokens.monoData(
-              fontSize: 10,
-              color: JinatraTokens.ink.withValues(alpha: 0.65),
-            ),
-          ),
+          Text(amt, style: theme.textTheme.labelSmall),
           // A bare 14px glyph was the last delete affordance in the app under
           // the 40dp floor that log_tab.dart, meal_section.dart and
           // undo_banner.dart each set for themselves. The box carries the
@@ -217,7 +205,7 @@ class SubItemRow extends StatelessWidget {
                 child: Icon(
                   Icons.close,
                   size: 14,
-                  color: JinatraTokens.ink.withValues(alpha: 0.5),
+                  color: colors.onSurfaceVariant,
                 ),
               ),
             )
@@ -237,12 +225,12 @@ class AddLink extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
-  // ignore: prefer_const_constructors_in_immutables
-  AddLink({super.key, required this.label, required this.onTap});
+  const AddLink({super.key, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -267,10 +255,8 @@ class AddLink extends StatelessWidget {
               padding: const EdgeInsets.only(left: 2),
               child: Text(
                 label,
-                style: JinatraTokens.monoData(
-                  fontSize: 10,
-                  color: JinatraTokens.deepTeal,
-                ),
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: theme.colorScheme.primary),
               ),
             ),
           ],

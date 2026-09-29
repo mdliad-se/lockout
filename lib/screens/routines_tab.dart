@@ -271,8 +271,12 @@ class RoutinesTabState extends State<RoutinesTab> {
           final exercises = _dayExercises[day.id] ?? [];
           final warmups = _dayWarmups[day.id] ?? [];
           final finishers = _dayFinishers[day.id] ?? [];
-          final colours = DayColours.assign(_routineDays[routine.id] ?? []);
-          final accent = colours[day.id] ?? DayColours.restColour;
+          final semantics = LockoutSemantics.of(context);
+          final colours = DayColours.assign(
+            _routineDays[routine.id] ?? [],
+            semantics,
+          );
+          final accent = colours[day.id] ?? semantics.restDay;
           final onAccent = DayColours.onColorFor(accent);
           return _buildDayDetail(
             ctx,
@@ -705,7 +709,8 @@ class RoutinesTabState extends State<RoutinesTab> {
             // meaningful across the whole week, so it is computed once here
             // and shared by the featured card and the collapsed rows.
             ...(() {
-              final colours = DayColours.assign(days);
+              final colours =
+                  DayColours.assign(days, LockoutSemantics.of(context));
               final focus = RoutineFocus.resolve(
                 routine: routine,
                 days: days,

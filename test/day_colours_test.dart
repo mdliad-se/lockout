@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lockout/models/models.dart';
-import 'package:lockout/theme/app_palette.dart';
-import 'package:lockout/theme/jinatra_tokens.dart';
+import 'package:lockout/theme/lockout_semantics.dart';
 import 'package:lockout/widgets/day_block.dart';
 
 TrainingDay _day(
@@ -22,6 +21,34 @@ TrainingDay _day(
       isRestDay: rest,
     );
 
+/// A fixture ramp rather than a real [LockoutScheme]: none of the six
+/// authored schemes happens to collide an accent with `restDay` (that
+/// collision was specific to the retired Paper Press palette), so a synthetic
+/// scheme is what keeps the "never hand a training day the rest colour, even
+/// once the ramp saturates" guarantee under test regardless of what the
+/// authored schemes look like.
+const _semantics = LockoutSemantics(
+  success: Color(0xFF2E7D32),
+  onSuccess: Color(0xFFFFFFFF),
+  warning: Color(0xFF8A6100),
+  danger: Color(0xFFB3261E),
+  restDay: Color(0xFFFFE24A),
+  chartLine: Color(0xFF2E7D32),
+  chartFill: Color(0x1F2E7D32),
+  categoryRamp: [
+    Color(0xFFFF6B35),
+    // Deliberately bit-identical to restDay, so a saturated ramp still
+    // cannot hand a training day the rest colour by coincidence.
+    Color(0xFFFFE24A),
+    Color(0xFF00A99D),
+    Color(0xFF7B61FF),
+    Color(0xFFFF3D71),
+    Color(0xFF2ECC71),
+    Color(0xFF3498DB),
+    Color(0xFFE67E22),
+  ],
+);
+
 /// The exact week from the bug report.
 List<TrainingDay> _reportedWeek() => [
       _day('sat', 'Push', focus: 'Chest, Shoulders, Triceps', order: 0),
@@ -34,11 +61,9 @@ List<TrainingDay> _reportedWeek() => [
     ];
 
 void main() {
-  setUp(() => AppPalette.apply(AppPalette.paperPress));
-
   group('DayColours.assign', () {
     test('every day in the list gets a colour', () {
-      final colours = DayColours.assign(_reportedWeek());
+      final colours = DayColours.assign(_reportedWeek(), _semantics);
       expect(colours.length, 7);
       for (final d in _reportedWeek()) {
         expect(colours.containsKey(d.id), isTrue, reason: d.id);
@@ -46,12 +71,12 @@ void main() {
     });
 
     test('the reported WED/THU collision is gone', () {
-      final colours = DayColours.assign(_reportedWeek());
+      final colours = DayColours.assign(_reportedWeek(), _semantics);
       expect(colours['wed'], isNot(colours['thu']));
     });
 
     test('all training days in a week are distinct', () {
-      final colours = DayColours.assign(_reportedWeek());
+      final colours = DayColours.assign(_reportedWeek(), _semantics);
       final training = _reportedWeek().where((d) => !d.isRestDay);
       final used = training.map((d) => colours[d.id]).toList();
       expect(used.toSet().length, used.length);
@@ -59,27 +84,30 @@ void main() {
 
     test('rest days take the muted surface and consume no accent', () {
       final week = _reportedWeek();
-      final colours = DayColours.assign(week);
-      expect(colours['tue'], DayColours.restColour);
-      expect(colours['fri'], DayColours.restColour);
+      final colours = DayColours.assign(week, _semantics);
+      expect(colours['tue'], _semantics.restDay);
+      expect(colours['fri'], _semantics.restDay);
 
       // Five accents remain available to five training days, so a week of
       // five training days never has to reuse one.
       final training = week.where((d) => !d.isRestDay);
       final used = training.map((d) => colours[d.id]).toSet();
-      expect(used.contains(DayColours.restColour), isFalse);
+      expect(used.contains(_semantics.restDay), isFalse);
     });
 
     test('a day keeps its category colour when nothing else claims it', () {
-      final colours = DayColours.assign(_reportedWeek());
-      expect(colours['sat'], JinatraTokens.accentAt(DayColours.categoryOf(
-        _day('sat', 'Push', focus: 'Chest, Shoulders, Triceps'),
-      )));
+      final colours = DayColours.assign(_reportedWeek(), _semantics);
+      expect(
+        colours['sat'],
+        _semantics.categoryAt(DayColours.categoryOf(
+          _day('sat', 'Push', focus: 'Chest, Shoulders, Triceps'),
+        )),
+      );
     });
 
     test('assignment is deterministic across calls', () {
-      final a = DayColours.assign(_reportedWeek());
-      final b = DayColours.assign(_reportedWeek());
+      final a = DayColours.assign(_reportedWeek(), _semantics);
+      final b = DayColours.assign(_reportedWeek(), _semantics);
       expect(a, b);
     });
 
@@ -88,7 +116,7 @@ void main() {
         11,
         (i) => _day('d$i', 'Session $i', focus: 'Full Body', order: i),
       );
-      final colours = DayColours.assign(days);
+      final colours = DayColours.assign(days, _semantics);
       expect(colours.length, 11);
     });
 
@@ -96,13 +124,13 @@ void main() {
       final routineA = [_day('a1', 'Legs', focus: 'Legs')];
       final routineB = [_day('b1', 'Legs', focus: 'Legs')];
       expect(
-        DayColours.assign(routineA)['a1'],
-        DayColours.assign(routineB)['b1'],
+        DayColours.assign(routineA, _semantics)['a1'],
+        DayColours.assign(routineB, _semantics)['b1'],
       );
     });
 
-    // Paper Press's accents[1] (#FFE24A) is bit-identical to restColour. Once
-    // the ramp saturates, an overflow day must still never land on it.
+    // categoryRamp[1] is bit-identical to restDay in this fixture. Once the
+    // ramp saturates, an overflow day must still never land on it.
     List<TrainingDay> _nineDayOverflowWeek() => [
           _day('d0', 'Push', focus: 'Chest', order: 0),
           _day('d1', 'Pull', focus: 'Back', order: 1),
@@ -117,22 +145,19 @@ void main() {
 
     test('a 9-day week never hands a training day the rest colour, even '
         'once the ramp saturates', () {
-      AppPalette.apply(AppPalette.paperPress);
-      final colours = DayColours.assign(_nineDayOverflowWeek());
+      final colours = DayColours.assign(_nineDayOverflowWeek(), _semantics);
       for (final day in _nineDayOverflowWeek()) {
-        expect(colours[day.id], isNot(DayColours.restColour), reason: day.id);
+        expect(colours[day.id], isNot(_semantics.restDay), reason: day.id);
       }
     });
 
     test('the same 9-day week assigns identically on repeat calls', () {
-      AppPalette.apply(AppPalette.paperPress);
-      final a = DayColours.assign(_nineDayOverflowWeek());
-      final b = DayColours.assign(_nineDayOverflowWeek());
+      final a = DayColours.assign(_nineDayOverflowWeek(), _semantics);
+      final b = DayColours.assign(_nineDayOverflowWeek(), _semantics);
       expect(a, b);
     });
 
     test('a 7-training-day week fills every non-reserved slot distinctly', () {
-      AppPalette.apply(AppPalette.paperPress);
       final week = [
         _day('e0', 'Push', focus: 'Chest', order: 0),
         _day('e1', 'Pull', focus: 'Back', order: 1),
@@ -142,10 +167,10 @@ void main() {
         _day('e5', 'Upper Body', focus: 'Upper', order: 5),
         _day('e6', 'Push', focus: 'Chest', order: 6),
       ];
-      final colours = DayColours.assign(week);
+      final colours = DayColours.assign(week, _semantics);
       final used = week.map((d) => colours[d.id]).toList();
       expect(used.toSet().length, 7);
-      expect(used.contains(DayColours.restColour), isFalse);
+      expect(used.contains(_semantics.restDay), isFalse);
     });
   });
 
@@ -167,10 +192,16 @@ void main() {
   });
 
   group('DayColours.onColorFor', () {
-    test('delegates to the token contrast rule', () {
+    test('a light background gets a darker foreground', () {
       const yellow = Color(0xFFFFE24A);
-      expect(DayColours.onColorFor(yellow),
-          JinatraTokens.onAccentColor(yellow));
+      final on = DayColours.onColorFor(yellow);
+      expect(on.computeLuminance(), lessThan(yellow.computeLuminance()));
+    });
+
+    test('a dark background gets a lighter foreground', () {
+      const navy = Color(0xFF101419);
+      final on = DayColours.onColorFor(navy);
+      expect(on.computeLuminance(), greaterThan(navy.computeLuminance()));
     });
   });
 }

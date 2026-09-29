@@ -1,3 +1,5 @@
+import 'dart:math' show max, min;
+
 import 'package:flutter/material.dart';
 
 /// The colours Material 3 has no role for.
@@ -60,6 +62,30 @@ class LockoutSemantics extends ThemeExtension<LockoutSemantics> {
   /// The ramp colour at [index], wrapping, so a caller with more than eight
   /// categories degrades to reuse instead of throwing.
   Color categoryAt(int index) => categoryRamp[index % categoryRamp.length];
+
+  static const Color _onDark = Color(0xFF111111);
+  static const Color _onLight = Color(0xFFFFFFFF);
+  static final double _onDarkLuminance = _onDark.computeLuminance();
+  static final double _onLightLuminance = _onLight.computeLuminance();
+
+  /// Label/icon colour for content sitting on an arbitrary [background].
+  ///
+  /// Only [categoryRamp] needs this: every other role in this class already
+  /// has an authored "on" pair (`onSuccess`, `ColorScheme.onPrimary`, ...),
+  /// but the eight ramp colours are per-scheme accents with no such pairing,
+  /// so the label colour has to be derived from the accent itself at paint
+  /// time. Picks whichever of near-black and white has the higher WCAG
+  /// contrast rather than testing luminance against a fixed threshold: a
+  /// mid-tone accent can sit below any sensible threshold yet still need
+  /// dark text, and a single threshold gets that case wrong.
+  static Color onColorFor(Color background) {
+    final l = background.computeLuminance();
+    final onDark = (max(l, _onDarkLuminance) + 0.05) /
+        (min(l, _onDarkLuminance) + 0.05);
+    final onLight = (max(l, _onLightLuminance) + 0.05) /
+        (min(l, _onLightLuminance) + 0.05);
+    return onDark >= onLight ? _onDark : _onLight;
+  }
 
   /// Resolves the extension for [context].
   ///

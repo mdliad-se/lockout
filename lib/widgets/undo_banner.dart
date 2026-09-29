@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_theme.dart';
 import 'bottom_nav.dart';
 
 /// Shows a dismissible "MESSAGE — UNDO" banner for [duration], above
@@ -107,9 +107,7 @@ class _UndoBanner extends StatefulWidget {
   final VoidCallback onUndo;
   final VoidCallback onExpire;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
-  // ignore: prefer_const_constructors_in_immutables
-  _UndoBanner({
+  const _UndoBanner({
     required this.message,
     required this.duration,
     required this.stackSlot,
@@ -149,8 +147,14 @@ class _UndoBannerState extends State<_UndoBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final bg = JinatraTokens.deepTeal;
-    final on = JinatraTokens.onAccentColor(bg);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    // Same role pairing `LockoutTheme.build`'s `snackBarTheme` uses: this
+    // banner exists only because a real `SnackBar` can't be pinned above a
+    // modal sheet's own barrier (see this file's top doc comment), so it
+    // borrows that theme's colours rather than inventing its own.
+    final bg = colors.inverseSurface;
+    final on = colors.onInverseSurface;
 
     return ValueListenableBuilder<double>(
       valueListenable: BottomNav.lastRenderedHeight,
@@ -167,23 +171,21 @@ class _UndoBannerState extends State<_UndoBanner> {
           bottom: 24 + navHeight + (widget.stackSlot * _stackSpacing),
           child: SafeArea(
             child: Material(
-              type: MaterialType.transparency,
-              child: Container(
-                // Keyed per stack slot so a test can measure this card's
-                // own rect (border, shadow and all) directly instead of a
-                // proxy like the "UNDO" text inside it — third-round
-                // review, Finding 3: the prior stacking test compared two
-                // "UNDO" `Text` rects, which sit `_stackSpacing` apart *by
-                // construction* (that's the offset applied to the whole
-                // card), so it could never see the cards themselves
-                // overlapping.
-                key: ValueKey('undo_banner_card_${widget.stackSlot}'),
+              // Keyed per stack slot so a test can measure this card's own
+              // rect (elevation and all) directly instead of a proxy like
+              // the "UNDO" text inside it — third-round review, Finding 3:
+              // the prior stacking test compared two "UNDO" `Text` rects,
+              // which sit `_stackSpacing` apart *by construction* (that's
+              // the offset applied to the whole card), so it could never see
+              // the cards themselves overlapping.
+              key: ValueKey('undo_banner_card_${widget.stackSlot}'),
+              color: bg,
+              elevation: 6,
+              surfaceTintColor: Colors.transparent,
+              borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+              child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: JinatraTokens.cardDecoration(
-                  background: bg,
-                  shadowOffset: JinatraTokens.shadowSm,
-                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -199,8 +201,8 @@ class _UndoBannerState extends State<_UndoBanner> {
                         liveRegion: true,
                         child: Text(
                           widget.message,
-                          style:
-                              JinatraTokens.monoData(color: on, fontSize: 12),
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: on),
                         ),
                       ),
                     ),
@@ -227,10 +229,14 @@ class _UndoBannerState extends State<_UndoBanner> {
                           child: ExcludeSemantics(
                             child: Text(
                               'UNDO',
-                              style: JinatraTokens.monoData(
-                                color: on,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w900,
+                              // Matches `snackBarTheme.actionTextColor`
+                              // (`colors.primary`) — the same action-colour
+                              // rule this banner would use if it really were
+                              // a `SnackBar` (see this file's top doc
+                              // comment for why it can't be one).
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: colors.primary,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),

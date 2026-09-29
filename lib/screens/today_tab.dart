@@ -10,7 +10,6 @@ import '../services/energy_estimator.dart';
 import '../services/goal_service.dart';
 import '../services/numeric_guard.dart';
 import '../services/schedule_service.dart';
-import '../theme/jinatra_tokens.dart';
 import '../widgets/action_grid.dart';
 import '../widgets/exercise_picker.dart';
 import '../widgets/home_hub.dart';
@@ -426,44 +425,41 @@ class TodayTabState extends State<TodayTab> {
     _endSessionState();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: JinatraTokens.deepTeal,
         content: Text(
           'SESSION SAVED - ${setRows.length} sets, ${_fmtWeight(session.totalVolumeKg)} kg volume',
-          style: JinatraTokens.monoData(color: JinatraTokens.onPrimary, fontSize: 12),
         ),
       ),
     );
   }
 
   Future<bool?> _confirmDiscard() {
+    final semantics = LockoutSemantics.of(context);
     return showDialog<bool>(
       context: context,
+      // No `backgroundColor`/`shape` here — `LockoutTheme.build`'s
+      // `dialogTheme` already supplies both.
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          side: BorderSide(color: JinatraTokens.ink, width: 3),
-          borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
-        ),
-        title: Text('DISCARD SESSION?', style: JinatraTokens.sectionHeader(fontSize: 16)),
+        title: const Text('DISCARD SESSION?'),
         content: Text(
           _sessionCompletedSets > 0
               ? '$_sessionCompletedSets logged '
                   '${_sessionCompletedSets == 1 ? 'set' : 'sets'} will be '
                   'lost. Discard ${_sessionCompletedSets == 1 ? 'it' : 'them'}?'
               : 'No sets were logged, so there is nothing to archive. End the session?',
-          style: JinatraTokens.bodyText(fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('KEEP GOING', style: JinatraTokens.monoData(fontSize: 12)),
+            child: const Text('KEEP GOING'),
           ),
           TextButton(
+            // `semantics.danger`, not `colorScheme.error` — this is a
+            // destructive confirmation, exactly what that role is reserved
+            // for (see `LockoutSemantics`'s doc on `danger` vs `error`, and
+            // `log_tab.dart`'s DELETE ENTRY for the same rule).
+            style: TextButton.styleFrom(foregroundColor: semantics.danger),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'DISCARD',
-              style: JinatraTokens.monoData(fontSize: 12, color: JinatraTokens.signal),
-            ),
+            child: const Text('DISCARD'),
           ),
         ],
       ),
@@ -500,7 +496,7 @@ class TodayTabState extends State<TodayTab> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
+      return const Center(child: CircularProgressIndicator());
     }
 
     return Scaffold(
