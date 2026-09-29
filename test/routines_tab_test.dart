@@ -10,7 +10,7 @@ import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/schedule_service.dart';
 import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/day_block.dart';
-import 'package:lockout/widgets/jinatra_input.dart';
+import 'package:lockout/widgets/lockout_field.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
 
 import 'test_helpers.dart';
@@ -556,7 +556,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final weightField = find.descendant(
-        of: find.widgetWithText(JinatraInput, 'WEIGHT (KG)'),
+        of: find.widgetWithText(LockoutField, 'Weight (kg)'),
         matching: find.byType(TextField),
       );
       await tester.enterText(weightField, 'Infinity');
@@ -605,7 +605,7 @@ void main() {
 
       await tester.enterText(
         find.descendant(
-          of: find.widgetWithText(JinatraInput, 'WEIGHT (KG)'),
+          of: find.widgetWithText(LockoutField, 'Weight (kg)'),
           matching: find.byType(TextField),
         ),
         '62.5',

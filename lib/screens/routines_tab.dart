@@ -7,16 +7,14 @@ import '../services/numeric_guard.dart';
 import '../services/routine_factory.dart';
 import '../services/routine_focus.dart';
 import '../services/schedule_service.dart';
-import '../theme/jinatra_tokens.dart';
 import '../theme/lockout_semantics.dart';
 import '../theme/lockout_theme.dart';
 import '../widgets/day_block.dart';
 import '../widgets/lockout_card.dart';
+import '../widgets/lockout_field.dart';
 import '../widgets/today_day_card.dart';
 import '../widgets/week_day_row.dart';
 import '../widgets/exercise_picker.dart';
-import '../widgets/jinatra_card.dart';
-import '../widgets/jinatra_input.dart';
 import '../widgets/sheet_scaffold.dart';
 import 'exercise_video_screen.dart';
 
@@ -221,32 +219,25 @@ class RoutinesTabState extends State<RoutinesTab> {
   }
 
   Future<void> _confirmDeleteRoutine(Routine routine) async {
+    final theme = Theme.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          side: BorderSide(
-              color: JinatraTokens.ink, width: JinatraTokens.borderControl),
-          borderRadius: BorderRadius.circular(JinatraTokens.radiusCard),
-        ),
-        title: Text('DELETE ROUTINE?',
-            style: JinatraTokens.sectionHeader(fontSize: 16)),
+        title: const Text('Delete routine?'),
         content: Text(
           '"${routine.name}" and all of its training days and exercises will be '
           'removed. Past workout history is kept.',
-          style: JinatraTokens.bodyText(fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('CANCEL', style: JinatraTokens.monoData(fontSize: 12)),
+            child: const Text('Cancel'),
           ),
           TextButton(
+            style:
+                TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('DELETE',
-                style: JinatraTokens.monoData(
-                    fontSize: 12, color: JinatraTokens.signal)),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -328,6 +319,9 @@ class RoutinesTabState extends State<RoutinesTab> {
       if (sheetCtx.mounted) setSheet(() {});
     }
 
+    final theme = Theme.of(sheetCtx);
+    final colors = theme.colorScheme;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -337,54 +331,48 @@ class RoutinesTabState extends State<RoutinesTab> {
         // surfaces here instead — read-only, the edit form is where it's set.
         if (day.focus.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Text(
-              day.focus,
-              style: JinatraTokens.monoData(
-                fontSize: 11,
-                color: JinatraTokens.ink.withValues(alpha: 0.65),
-              ),
-            ),
+            padding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
+            child: Text(day.focus, style: theme.textTheme.bodySmall),
           ),
         if (day.note.isNotEmpty)
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(9),
-            decoration: JinatraTokens.cardDecoration(
-              background: JinatraTokens.signal,
-              borderWidth: JinatraTokens.borderControl,
-              radius: JinatraTokens.radiusTile,
-              hasShadow: false,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('READ FIRST',
-                    style: JinatraTokens.monoData(
-                        fontSize: 9, color: JinatraTokens.onAccent)),
-                const SizedBox(height: 3),
-                Text(day.note,
-                    style: JinatraTokens.bodyText(
-                        fontSize: 12, color: JinatraTokens.onAccent)),
-              ],
+          Padding(
+            padding: const EdgeInsets.only(bottom: LockoutTheme.spaceMd),
+            child: LockoutCard(
+              color: colors.tertiaryContainer,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Read first',
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(color: colors.onTertiaryContainer),
+                  ),
+                  const SizedBox(height: LockoutTheme.spaceXs),
+                  Text(
+                    day.note,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: colors.onTertiaryContainer),
+                  ),
+                ],
+              ),
             ),
           ),
 
         if (day.isRestDay)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
+            padding: const EdgeInsets.symmetric(
+              vertical: LockoutTheme.spaceMd,
+            ),
             child: Row(
               children: [
-                Icon(Icons.bedtime_outlined,
-                    size: 18, color: JinatraTokens.ink),
-                const SizedBox(width: 9),
+                Icon(Icons.bedtime_outlined, color: colors.onSurfaceVariant),
+                const SizedBox(width: LockoutTheme.spaceSm),
                 Expanded(
-                  child: Text('Recovery is part of the plan.',
-                      style: JinatraTokens.bodyText(
-                        fontSize: 12,
-                        color: JinatraTokens.ink.withValues(alpha: 0.7),
-                      )),
+                  child: Text(
+                    'Recovery is part of the plan.',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: colors.onSurfaceVariant),
+                  ),
                 ),
               ],
             ),
@@ -453,46 +441,31 @@ class RoutinesTabState extends State<RoutinesTab> {
 
         // --- Day actions ---
         Padding(
-          padding: const EdgeInsets.only(top: 14),
+          padding: const EdgeInsets.only(top: LockoutTheme.spaceSm),
           child: Row(
             children: [
-              GestureDetector(
-                onTap: () async {
+              TextButton.icon(
+                onPressed: () async {
                   final saved =
                       await _openDayFormSheet(routine.id, existing: day);
                   if (saved != true || !mounted) return;
                   await _loadAllRoutinesData();
                   if (sheetCtx.mounted) Navigator.of(sheetCtx).maybePop();
                 },
-                behavior: HitTestBehavior.opaque,
-                child: Row(
-                  children: [
-                    Icon(Icons.edit_outlined,
-                        size: 14, color: JinatraTokens.ink),
-                    const SizedBox(width: 5),
-                    Text('EDIT DAY',
-                        style: JinatraTokens.monoData(fontSize: 9)),
-                  ],
-                ),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('EDIT DAY'),
               ),
-              const SizedBox(width: 18),
-              GestureDetector(
-                onTap: () async {
+              const SizedBox(width: LockoutTheme.spaceSm),
+              TextButton.icon(
+                onPressed: () async {
                   await DatabaseService.instance.deleteDay(day.id);
                   if (!mounted) return;
                   await _loadAllRoutinesData();
                   if (sheetCtx.mounted) Navigator.of(sheetCtx).maybePop();
                 },
-                behavior: HitTestBehavior.opaque,
-                child: Row(
-                  children: [
-                    Icon(Icons.close, size: 14, color: JinatraTokens.signal),
-                    const SizedBox(width: 5),
-                    Text('DELETE DAY',
-                        style: JinatraTokens.monoData(
-                            fontSize: 9, color: JinatraTokens.signal)),
-                  ],
-                ),
+                style: TextButton.styleFrom(foregroundColor: colors.error),
+                icon: const Icon(Icons.close, size: 18),
+                label: const Text('DELETE DAY'),
               ),
             ],
           ),
@@ -520,42 +493,43 @@ class RoutinesTabState extends State<RoutinesTab> {
     Color onAccent,
     RefreshAfter refreshAfter,
   ) {
+    final theme = Theme.of(context);
     return GestureDetector(
       onTap: () => refreshAfter(() => _openExerciseSheet(ex)),
       behavior: HitTestBehavior.opaque,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 40),
+        constraints:
+            const BoxConstraints(minHeight: LockoutTheme.minTouchTarget),
         child: Row(
           children: [
             Container(
-              width: 18,
-              height: 18,
+              width: 24,
+              height: 24,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: accent,
-                border: Border.all(color: JinatraTokens.ink, width: 1),
+                shape: BoxShape.circle,
               ),
-              child: Text('$number',
-                  style: JinatraTokens.monoData(fontSize: 9, color: onAccent)),
+              child: Text(
+                '$number',
+                style: LockoutTheme.numeric(context, size: 11, color: onAccent),
+              ),
             ),
-            const SizedBox(width: 9),
+            const SizedBox(width: LockoutTheme.spaceSm),
             Expanded(
               child: Text(
                 ex.name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: JinatraTokens.bodyText(fontSize: 13),
+                style: theme.textTheme.bodyMedium,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: LockoutTheme.spaceSm),
             Text(
               ex.targetWeightKg > 0
                   ? '${ex.targetLabel} @ ${ex.targetWeightKg}kg'
                   : ex.targetLabel,
-              style: JinatraTokens.monoData(
-                fontSize: 10,
-                color: JinatraTokens.ink.withValues(alpha: 0.65),
-              ),
+              style: theme.textTheme.labelSmall,
             ),
             // Sits where the remove glyph sits on a warm-up or finisher row,
             // on the same 40dp box, so the right edge of the sheet is one
@@ -564,11 +538,14 @@ class RoutinesTabState extends State<RoutinesTab> {
               onTap: () => _openVideo(ex.name, ex.videoUrl),
               behavior: HitTestBehavior.opaque,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                constraints: const BoxConstraints(
+                  minWidth: LockoutTheme.minTouchTarget,
+                  minHeight: LockoutTheme.minTouchTarget,
+                ),
                 child: Icon(
                   Icons.play_circle_outline,
-                  size: 16,
-                  color: JinatraTokens.deepTeal,
+                  size: 20,
+                  color: theme.colorScheme.primary,
                 ),
               ),
             ),
@@ -583,8 +560,7 @@ class RoutinesTabState extends State<RoutinesTab> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Center(
-          child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
+      return const Center(child: CircularProgressIndicator());
     }
 
     return Scaffold(
@@ -618,7 +594,7 @@ class RoutinesTabState extends State<RoutinesTab> {
                   ),
                 ],
               ),
-            const SizedBox(height: 16),
+            const SizedBox(height: LockoutTheme.spaceMd),
             Expanded(
               child: _routines.isEmpty
                   ? _buildEmptyState()
@@ -635,24 +611,23 @@ class RoutinesTabState extends State<RoutinesTab> {
   }
 
   Widget _buildEmptyState() {
+    final theme = Theme.of(context);
     return Center(
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: JinatraTokens.cardDecoration(),
+      child: LockoutCard(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.fitness_center, size: 48, color: JinatraTokens.ink),
-            const SizedBox(height: 12),
-            Text('NO ROUTINES YET',
-                style: JinatraTokens.sectionHeader(fontSize: 16)),
-            const SizedBox(height: 8),
+            Icon(Icons.fitness_center,
+                size: 48, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: LockoutTheme.spaceSm),
+            Text('No routines yet', style: theme.textTheme.titleMedium),
+            const SizedBox(height: LockoutTheme.spaceXs),
             Text(
-              'Tap "+ NEW" and pick a starter split. Every day arrives with a '
+              'Tap "+ New" and pick a starter split. Every day arrives with a '
               'warm-up, numbered exercises and a conditioning finisher already '
               'filled in.',
               textAlign: TextAlign.center,
-              style: JinatraTokens.bodyText(),
+              style: theme.textTheme.bodyMedium,
             ),
           ],
         ),
@@ -661,34 +636,22 @@ class RoutinesTabState extends State<RoutinesTab> {
   }
 
   Widget _buildRoutineCard(Routine routine) {
+    final theme = Theme.of(context);
     final days = _routineDays[routine.id] ?? [];
     final isActive = routine.id == _activeRoutineId;
     final todayCode = ScheduleService.weekdayCode(DateTime.now());
 
-    return JinatraCard(
-      shadowOffset: JinatraTokens.shadowLg,
+    return LockoutCard(
+      elevated: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Expanded(
-                child: Text(
-                  routine.name,
-                  style: JinatraTokens.sectionHeader(fontSize: 18),
-                ),
+                child: Text(routine.name, style: theme.textTheme.titleLarge),
               ),
               PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert, color: JinatraTokens.ink),
-                color: JinatraTokens.paper,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(JinatraTokens.radiusTile),
-                  side: BorderSide(
-                      color: JinatraTokens.ink,
-                      width: JinatraTokens.borderControl),
-                ),
                 onSelected: (v) {
                   if (v == 'active') _setActive(routine);
                   if (v == 'delete') _confirmDeleteRoutine(routine);
@@ -697,39 +660,32 @@ class RoutinesTabState extends State<RoutinesTab> {
                 // a fixed two-item menu can't express that, so filter here.
                 itemBuilder: (_) => [
                   if (!isActive)
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: 'active',
-                      child: Text('SET AS ACTIVE',
-                          style: JinatraTokens.monoData(fontSize: 12)),
+                      child: Text('SET AS ACTIVE'),
                     ),
                   PopupMenuItem(
                     value: 'delete',
-                    child: Text('DELETE',
-                        style: JinatraTokens.monoData(
-                            fontSize: 12, color: JinatraTokens.signal)),
+                    child: Text(
+                      'DELETE',
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: LockoutTheme.spaceSm),
           Wrap(
-            spacing: 6,
-            runSpacing: 6,
+            spacing: LockoutTheme.spaceSm,
+            runSpacing: LockoutTheme.spaceSm,
             children: [
-              // `color` is a foreground tone here (the outline + text), not
-              // a background — `mistTeal` is a surface tone and reads at
-              // ~1.1-1.3:1 contrast against `paper` in every palette. `ink`
-              // is the legible choice v1 used for this chip's outline/text.
-              _tag(routine.schedulingMode.name.toUpperCase(),
-                  JinatraTokens.ink),
-              _tag('${days.length} DAYS', JinatraTokens.ink),
-              if (isActive) _tag('ACTIVE', JinatraTokens.signal, filled: true),
+              _tag(routine.schedulingMode.name.toUpperCase()),
+              _tag('${days.length} DAYS'),
+              if (isActive) _tag('ACTIVE', filled: true),
             ],
           ),
-          const Divider(height: 22, thickness: 2),
-
-          const SizedBox(height: 12),
+          const Divider(),
           if (days.isEmpty)
             Text(
               'No training days yet. Open the week and tap "Add day" to pin a '
@@ -873,23 +829,15 @@ class RoutinesTabState extends State<RoutinesTab> {
 
   /// A day tag/status chip. Outline by default; filled only for the
   /// currently-active routine's ACTIVE badge, so the header reads calmer.
-  Widget _tag(String label, Color color, {bool filled = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: JinatraTokens.cardDecoration(
-        background: filled ? color : Colors.transparent,
-        borderColor: filled ? JinatraTokens.ink : color,
-        borderWidth: JinatraTokens.borderDivider,
-        hasShadow: false,
-        radius: JinatraTokens.radiusPill,
-      ),
-      child: Text(
-        label,
-        style: JinatraTokens.monoData(
-          fontSize: 9,
-          color: filled ? JinatraTokens.onAccentColor(color) : color,
-        ),
-      ),
+  Widget _tag(String label, {bool filled = false}) {
+    final colors = Theme.of(context).colorScheme;
+    return Chip(
+      label: Text(label),
+      backgroundColor: filled ? colors.primaryContainer : null,
+      labelStyle: filled
+          ? TextStyle(color: colors.onPrimaryContainer)
+          : null,
+      side: filled ? BorderSide.none : null,
     );
   }
 }
@@ -945,117 +893,106 @@ class _CreateRoutineFormState extends State<_CreateRoutineForm> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        JinatraInput(
-          label: 'Routine Name',
+        LockoutField(
+          label: 'Routine name',
           controller: _nameCtrl,
           hint: 'e.g. Push / Pull / Legs',
         ),
-        Text('SCHEDULING MODE', style: JinatraTokens.monoData(fontSize: 12)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _choice(
-                label: 'WEEKDAY',
-                selected: _mode == SchedulingMode.weekday,
-                onTap: () => setState(() => _mode = SchedulingMode.weekday),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        Text('Scheduling mode', style: theme.textTheme.labelMedium),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<SchedulingMode>(
+            segments: const [
+              ButtonSegment(
+                value: SchedulingMode.weekday,
+                label: Text('Weekday'),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _choice(
-                label: 'ROTATING',
-                selected: _mode == SchedulingMode.rotating,
-                onTap: () => setState(() => _mode = SchedulingMode.rotating),
+              ButtonSegment(
+                value: SchedulingMode.rotating,
+                label: Text('Rotating'),
               ),
-            ),
-          ],
+            ],
+            selected: {_mode},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) => setState(() => _mode = s.first),
+          ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: LockoutTheme.spaceSm),
         Text(
           _mode == SchedulingMode.weekday
               ? 'Each day is pinned to a weekday. Today\'s workout is whichever day matches today.'
               : 'Days cycle in order, one per calendar day, ignoring weekdays.',
-          style: JinatraTokens.bodyText(
-            fontSize: 12,
-            color: JinatraTokens.ink.withValues(alpha: 0.7),
-          ),
+          style: theme.textTheme.bodySmall,
         ),
-        const SizedBox(height: 18),
-        Text('START FROM', style: JinatraTokens.monoData(fontSize: 12)),
-        const SizedBox(height: 4),
+        const SizedBox(height: LockoutTheme.spaceLg),
+        Text('Start from', style: theme.textTheme.labelMedium),
+        const SizedBox(height: LockoutTheme.spaceXs),
         Text(
           _showTemplateError
               ? 'Pick a starter split, or Blank Routine to add your own days.'
               : 'A starter split arrives with warm-ups, numbered exercises '
                   'and a finisher already filled in.',
-          style: JinatraTokens.bodyText(
-            fontSize: 12,
-            color: _showTemplateError
-                ? JinatraTokens.signal
-                : JinatraTokens.ink.withValues(alpha: 0.7),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: _showTemplateError ? theme.colorScheme.error : null,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: LockoutTheme.spaceSm),
         ...RoutineTemplate.all.map((t) {
           final selected = t.key == _template?.key;
-          return GestureDetector(
-            onTap: () => setState(() {
-              _template = t;
-              _showTemplateError = false;
-            }),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: JinatraTokens.cardDecoration(
-                background:
-                    selected ? JinatraTokens.mistTeal : JinatraTokens.paper,
-                borderColor:
-                    selected ? JinatraTokens.deepTeal : JinatraTokens.ink,
-                borderWidth: selected
-                    ? JinatraTokens.borderControl
-                    : JinatraTokens.borderDivider,
-                radius: JinatraTokens.radiusTile,
-                hasShadow: false,
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    selected
-                        ? Icons.check_box
-                        : Icons.check_box_outline_blank,
-                    size: 18,
-                    color: JinatraTokens.ink,
+          return Padding(
+            padding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
+            child: InkWell(
+              onTap: () => setState(() {
+                _template = t;
+                _showTemplateError = false;
+              }),
+              borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+              child: Container(
+                padding: const EdgeInsets.all(LockoutTheme.spaceMd),
+                decoration: BoxDecoration(
+                  color: selected ? theme.colorScheme.secondaryContainer : null,
+                  borderRadius:
+                      BorderRadius.circular(LockoutTheme.radiusButton),
+                  border: Border.all(
+                    color: selected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.outlineVariant,
+                    width: selected ? 2 : 1,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(t.name,
-                            style: JinatraTokens.bodyText(
-                                fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 2),
-                        Text(
-                          t.blurb,
-                          style: JinatraTokens.monoData(
-                            fontSize: 10,
-                            color: JinatraTokens.ink.withValues(alpha: 0.65),
-                          ),
-                        ),
-                      ],
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      selected
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      color: selected ? theme.colorScheme.primary : null,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: LockoutTheme.spaceSm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(t.name, style: theme.textTheme.titleSmall),
+                          const SizedBox(height: LockoutTheme.spaceXs),
+                          Text(t.blurb, style: theme.textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
         }),
-        const SizedBox(height: 16),
+        const SizedBox(height: LockoutTheme.spaceSm),
         FilledButton(onPressed: () async {
             final template = _template;
             if (template == null) {
@@ -1078,34 +1015,6 @@ class _CreateRoutineFormState extends State<_CreateRoutineForm> {
       ],
     );
   }
-}
-
-Widget _choice({
-  required String label,
-  required bool selected,
-  required VoidCallback onTap,
-}) {
-  return GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.all(12),
-      decoration: JinatraTokens.cardDecoration(
-        background: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
-        borderWidth: JinatraTokens.borderControl,
-        radius: JinatraTokens.radiusTile,
-        hasShadow: !selected,
-        shadowOffset: JinatraTokens.shadowSm,
-      ),
-      child: Center(
-        child: Text(
-          label,
-          style: JinatraTokens.monoData(
-            color: selected ? JinatraTokens.onPrimary : JinatraTokens.ink,
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 class _DayForm extends StatefulWidget {
@@ -1152,73 +1061,51 @@ class _DayFormState extends State<_DayForm> {
   @override
   Widget build(BuildContext context) {
     final existing = widget.existing;
+    final theme = Theme.of(context);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('DAY OF WEEK', style: JinatraTokens.monoData(fontSize: 12)),
-        const SizedBox(height: 8),
+        Text('Day of week', style: theme.textTheme.labelMedium),
+        const SizedBox(height: LockoutTheme.spaceSm),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: LockoutTheme.spaceSm,
+          runSpacing: LockoutTheme.spaceSm,
           children: ScheduleService.weekdayPickerOrder.map((d) {
             final selected = _tag == d;
-            return GestureDetector(
-              onTap: () => setState(() => _tag = d),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: JinatraTokens.cardDecoration(
-                  background:
-                      selected ? JinatraTokens.signal : JinatraTokens.paper,
-                  borderWidth: JinatraTokens.borderControl,
-                  radius: JinatraTokens.radiusTile,
-                  hasShadow: !selected,
-                  shadowOffset: JinatraTokens.shadowSm,
-                ),
-                child: Text(d,
-                    style: JinatraTokens.monoData(
-                      fontSize: 12,
-                      color: selected
-                          ? JinatraTokens.onAccent
-                          : JinatraTokens.ink,
-                    )),
-              ),
+            return ChoiceChip(
+              label: Text(d),
+              selected: selected,
+              onSelected: (_) => setState(() => _tag = d),
             );
           }).toList(),
         ),
-        const SizedBox(height: 16),
-        JinatraInput(
-          label: 'Day Name',
+        const SizedBox(height: LockoutTheme.spaceMd),
+        LockoutField(
+          label: 'Day name',
           controller: _nameCtrl,
           hint: 'e.g. Push',
         ),
-        JinatraInput(
+        const SizedBox(height: LockoutTheme.spaceSm),
+        LockoutField(
           label: 'Focus (muscle groups)',
           controller: _focusCtrl,
           hint: 'e.g. Chest - Shoulders - Triceps',
         ),
-        JinatraInput(
-          label: 'Day Note (optional)',
+        const SizedBox(height: LockoutTheme.spaceSm),
+        LockoutField(
+          label: 'Day note (optional)',
           controller: _noteCtrl,
           hint: 'Injury cautions, tempo rules...',
         ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Text('MARK AS REST DAY',
-                  style: JinatraTokens.monoData(fontSize: 13)),
-            ),
-            Switch(
-              value: _isRest,
-              activeThumbColor: JinatraTokens.deepTeal,
-              onChanged: (v) => setState(() => _isRest = v),
-            ),
-          ],
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Mark as rest day'),
+          value: _isRest,
+          onChanged: (v) => setState(() => _isRest = v),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: LockoutTheme.spaceSm),
         FilledButton(onPressed: () async {
             if (_nameCtrl.text.trim().isEmpty) return;
             await DatabaseService.instance.insertDay(TrainingDay(
@@ -1276,16 +1163,18 @@ class _SubItemFormState extends State<_SubItemForm> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        JinatraInput(
+        LockoutField(
           label: 'Movement',
           controller: _nameCtrl,
           hint: widget.isWarmup ? 'e.g. Arm circles' : 'e.g. Push-ups',
         ),
-        JinatraInput(
+        const SizedBox(height: LockoutTheme.spaceSm),
+        LockoutField(
           label: 'Amount',
           controller: _amtCtrl,
           hint: widget.isWarmup ? 'e.g. 3-4 min' : 'e.g. 12-15 reps',
         ),
+        const SizedBox(height: LockoutTheme.spaceSm),
         FilledButton(onPressed: () async {
             if (_nameCtrl.text.trim().isEmpty) return;
             final db = DatabaseService.instance;
@@ -1367,6 +1256,7 @@ class _ExerciseFormState extends State<_ExerciseForm> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final ex = widget.ex;
     final group = ex.muscleGroup.isNotEmpty
         ? ex.muscleGroup
@@ -1383,104 +1273,73 @@ class _ExerciseFormState extends State<_ExerciseForm> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Not a sectionHeader: the SheetScaffold title above
+                  // Not a titleLarge: the SheetScaffold title above
                   // ("ADD EXERCISE" / "EDIT EXERCISE") already carries that
                   // weight, so this is a secondary line, not a second
                   // heading.
-                  Text(ex.name.toUpperCase(),
-                      style: JinatraTokens.bodyText(
-                          fontWeight: FontWeight.w800, fontSize: 15)),
+                  Text(ex.name, style: theme.textTheme.titleMedium),
                   if (group.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    // v2 chrome, matching the WATCH pill beside it — this was
-                    // the last raw `BoxDecoration` (square corners, 2px
-                    // border) left in the sheet.
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: JinatraTokens.cardDecoration(
-                        background: JinatraTokens.mistTeal,
-                        borderWidth: JinatraTokens.borderControl,
-                        radius: JinatraTokens.radiusPill,
-                        hasShadow: false,
-                      ),
-                      child: Text(group.toUpperCase(),
-                          style: JinatraTokens.monoData(fontSize: 10)),
+                    const SizedBox(height: LockoutTheme.spaceXs),
+                    Chip(
+                      label: Text(group),
+                      visualDensity: VisualDensity.compact,
                     ),
                   ],
                 ],
               ),
             ),
-            GestureDetector(
-              onTap: () {
+            FilledButton.tonalIcon(
+              onPressed: () {
                 Navigator.pop(context);
                 widget.onWatch(ex.name, _videoCtrl.text.trim());
               },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: JinatraTokens.cardDecoration(
-                  background: JinatraTokens.signal,
-                  borderWidth: JinatraTokens.borderControl,
-                  radius: JinatraTokens.radiusPill,
-                  shadowOffset: JinatraTokens.shadowSm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.play_arrow,
-                        size: 15, color: JinatraTokens.onAccent),
-                    const SizedBox(width: 4),
-                    Text('WATCH',
-                        style: JinatraTokens.monoData(
-                            fontSize: 11, color: JinatraTokens.onAccent)),
-                  ],
-                ),
-              ),
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Watch'),
             ),
           ],
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: LockoutTheme.spaceLg),
         Row(
           children: [
             Expanded(
-              child: JinatraInput(
+              child: LockoutField(
                 label: 'Sets',
                 controller: _setsCtrl,
                 keyboardType: TextInputType.number,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: LockoutTheme.spaceSm),
             Expanded(
-              child: JinatraInput(
-                label: 'Min Reps',
+              child: LockoutField(
+                label: 'Min reps',
                 controller: _repsMinCtrl,
                 keyboardType: TextInputType.number,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: LockoutTheme.spaceSm),
             Expanded(
-              child: JinatraInput(
-                label: 'Max Reps',
+              child: LockoutField(
+                label: 'Max reps',
                 controller: _repsMaxCtrl,
                 keyboardType: TextInputType.number,
               ),
             ),
           ],
         ),
+        const SizedBox(height: LockoutTheme.spaceSm),
         Row(
           children: [
             Expanded(
-              child: JinatraInput(
+              child: LockoutField(
                 label: 'Weight (kg)',
                 controller: _weightCtrl,
                 hint: '0',
                 keyboardType: TextInputType.number,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: LockoutTheme.spaceSm),
             Expanded(
-              child: JinatraInput(
+              child: LockoutField(
                 label: 'Rest (sec)',
                 controller: _restCtrl,
                 keyboardType: TextInputType.number,
@@ -1488,25 +1347,25 @@ class _ExerciseFormState extends State<_ExerciseForm> {
             ),
           ],
         ),
-        JinatraInput(
+        const SizedBox(height: LockoutTheme.spaceSm),
+        LockoutField(
           label: 'Note',
           controller: _noteCtrl,
           hint: 'Cues, injury notes, tempo...',
         ),
-        JinatraInput(
-          label: 'Pinned Video URL (optional)',
+        const SizedBox(height: LockoutTheme.spaceSm),
+        LockoutField(
+          label: 'Pinned video URL (optional)',
           controller: _videoCtrl,
           hint: 'Leave empty to auto-search YouTube',
         ),
+        const SizedBox(height: LockoutTheme.spaceXs),
         Text(
-          'Empty video URL means WATCH opens a YouTube search for a 3D / '
+          'Empty video URL means Watch opens a YouTube search for a 3D / '
           'animated form demo of this exercise. Paste a link to pin one.',
-          style: JinatraTokens.bodyText(
-            fontSize: 11,
-            color: JinatraTokens.ink.withValues(alpha: 0.65),
-          ),
+          style: theme.textTheme.bodySmall,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: LockoutTheme.spaceMd),
         FilledButton(onPressed: () async {
             final minReps =
                 int.tryParse(_repsMinCtrl.text) ?? ex.targetRepsMin;
@@ -1542,7 +1401,7 @@ class _ExerciseFormState extends State<_ExerciseForm> {
           child: Text(widget.isNew ? 'Add to day' : 'Save changes'),
         ),
         if (!widget.isNew) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: LockoutTheme.spaceSm),
           FilledButton.tonal(onPressed: () async {
               await DatabaseService.instance.deleteExercise(ex.id);
               if (!context.mounted) return;
