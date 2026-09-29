@@ -135,7 +135,7 @@ void main() {
     // outside small metadata labels and the weekday rail.
     expect(find.text('${day.tag} - ${day.name}'), findsOneWidget);
 
-    await tester.tap(find.text('EDIT DAY'));
+    await tester.tap(find.text('Edit day'));
     await tester.pumpAndSettle();
     expect(find.text('Save day'), findsOneWidget);
 
@@ -183,6 +183,119 @@ void main() {
         reason: 'the small drag must not have dismissed the sheet');
     expect(find.text(typed), findsOneWidget,
         reason: 'the typed routine name must survive a non-dismissing drag');
+  });
+
+  // Task 15a review: three controls changed widget class (and therefore
+  // selection semantics) in the Jinatra -> M3 conversion, and nothing drove
+  // any of them through the UI — inverting `onSelected` or pointing
+  // `onSelectionChanged` at the wrong value left all pre-existing tests
+  // green. Each test below drives the control the way a user would and
+  // asserts the persisted database row, not just an on-screen label.
+  group('the widget-class swaps persist the right value', () {
+    testWidgets(
+        'choosing Rotating in the create-routine SegmentedButton persists '
+        'rotating scheduling', (tester) async {
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
+      await settle(tester);
+
+      await tester.tap(find.text('New'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'e.g. Push / Pull / Legs'),
+          'Rotation Split');
+      await tester.pump();
+
+      // Weekday is the form's default; Rotating is the other segment, so
+      // tapping it is the only way the persisted value can ever be
+      // ROTATING rather than WEEKDAY.
+      await tester.tap(find.text('Rotating'));
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('Blank Routine'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Blank Routine'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Save routine'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save routine'));
+      await tester.pumpAndSettle();
+
+      final routines = await DatabaseService.instance.getRoutines();
+      expect(routines, hasLength(1));
+      expect(routines.single['scheduling_mode'], 'ROTATING');
+    });
+
+    testWidgets(
+        'picking a weekday ChoiceChip persists that tag on the new day',
+        (tester) async {
+      await seedRoutineWithDay();
+
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
+      await settle(tester);
+
+      await tester.tap(find.textContaining('Full week'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add day'));
+      await tester.pumpAndSettle();
+
+      // The form defaults to the first entry in weekdayPickerOrder; picking
+      // any other chip is the only way the persisted tag can differ from
+      // that default.
+      final defaultTag = ScheduleService.weekdayPickerOrder.first;
+      final chosenTag = ScheduleService.weekdayPickerOrder
+          .firstWhere((d) => d != defaultTag);
+
+      // Target the ChoiceChip specifically (not just any Text with this
+      // string) — the same weekday code also labels the seeded day's badge
+      // in the week list sitting behind this sheet.
+      await tester.tap(find.widgetWithText(ChoiceChip, chosenTag));
+      await tester.pump();
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'e.g. Push'), 'Pull Day');
+      await tester.pump();
+
+      await tester.tap(find.text('Create day'));
+      await tester.pumpAndSettle();
+
+      final days = await DatabaseService.instance.getDaysForRoutine('r1');
+      final created = days.firstWhere((d) => d['name'] == 'Pull Day');
+      expect(created['tag'], chosenTag);
+    });
+
+    testWidgets(
+        'toggling the rest-day SwitchListTile persists isRestDay on the '
+        'new day', (tester) async {
+      await seedRoutineWithDay();
+
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: RoutinesTab()));
+      await settle(tester);
+
+      await tester.tap(find.textContaining('Full week'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add day'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'e.g. Push'), 'Recovery Day');
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('Mark as rest day'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mark as rest day'));
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('Create day'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create day'));
+      await tester.pumpAndSettle();
+
+      final days = await DatabaseService.instance.getDaysForRoutine('r1');
+      final created = days.firstWhere((d) => d['name'] == 'Recovery Day');
+      expect(created['is_rest_day'], 1);
+    });
   });
 
   // Second review wave: the first fix wave hoisted controllers out of the
@@ -441,7 +554,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('day form: + ADD DAY, type a day name, then ADD DAY',
+    testWidgets('day form: Add day, type a day name, then Create day',
         (tester) async {
       await seedRoutineWithDay();
 
@@ -460,10 +573,21 @@ void main() {
           find.widgetWithText(TextField, 'e.g. Push'), 'Pull Day');
       await tester.pump();
 
-      await tester.tap(find.text('Add day'));
+      // The day form's submit button reads 'Create day', not 'Add day' —
+      // that label belongs to the week expander's own control, one tap
+      // behind this sheet. Tapping 'Add day' here resolves to that control
+      // (confirmed: a hit-test-miss warning, not a thrown exception, and
+      // the day is never created) rather than the form's real submit
+      // button, which is exactly the regression this test now guards: it
+      // asserts the day was actually created, not just that nothing threw.
+      await tester.tap(find.text('Create day'));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
+      final days =
+          await DatabaseService.instance.getDaysForRoutine('r1');
+      expect(days.any((d) => d['name'] == 'Pull Day'), isTrue,
+          reason: 'the day form must actually submit and create the day');
     });
 
     testWidgets(
@@ -512,8 +636,15 @@ void main() {
       await tester.tap(find.text('Bench Press'));
       await tester.pumpAndSettle();
 
+      // The field's guidance now sits beside it as an always-visible
+      // caption (`LockoutField` has no `helperText` slot), not as the
+      // field's own hint text, so it can no longer be used to find the
+      // TextField itself.
       await tester.enterText(
-          find.widgetWithText(TextField, 'Cues, injury notes, tempo...'),
+          find.descendant(
+            of: find.widgetWithText(LockoutField, 'Note'),
+            matching: find.byType(TextField),
+          ),
           'slow eccentric');
       await tester.pump();
 

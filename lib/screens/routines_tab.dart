@@ -410,7 +410,7 @@ class RoutinesTabState extends State<RoutinesTab> {
           ),
           ...exercises.asMap().entries.map(
                 (e) => _buildExerciseRow(
-                    e.key + 1, e.value, accent, onAccent, refreshAfter),
+                    e.key + 1, e.value, accent, onAccent, refreshAfter, theme),
               ),
           AddLink(
             label: '+ ADD EXERCISE',
@@ -453,7 +453,7 @@ class RoutinesTabState extends State<RoutinesTab> {
                   if (sheetCtx.mounted) Navigator.of(sheetCtx).maybePop();
                 },
                 icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('EDIT DAY'),
+                label: const Text('Edit day'),
               ),
               const SizedBox(width: LockoutTheme.spaceSm),
               TextButton.icon(
@@ -465,7 +465,7 @@ class RoutinesTabState extends State<RoutinesTab> {
                 },
                 style: TextButton.styleFrom(foregroundColor: colors.error),
                 icon: const Icon(Icons.close, size: 18),
-                label: const Text('DELETE DAY'),
+                label: const Text('Delete day'),
               ),
             ],
           ),
@@ -492,8 +492,14 @@ class RoutinesTabState extends State<RoutinesTab> {
     Color accent,
     Color onAccent,
     RefreshAfter refreshAfter,
+    // The sheet's own theme, not the tab's — this row only ever renders
+    // inside the day sheet, whose context `_buildDayDetail` already resolves
+    // two frames up as `Theme.of(sheetCtx)`. Reading `Theme.of(context)` here
+    // (the tab's element) is harmless only while the sheet shares the tab's
+    // tree today; it stops being harmless the moment a sheet wraps its own
+    // `Theme`.
+    ThemeData theme,
   ) {
-    final theme = Theme.of(context);
     return GestureDetector(
       onTap: () => refreshAfter(() => _openExerciseSheet(ex)),
       behavior: HitTestBehavior.opaque,
@@ -623,7 +629,7 @@ class RoutinesTabState extends State<RoutinesTab> {
             Text('No routines yet', style: theme.textTheme.titleMedium),
             const SizedBox(height: LockoutTheme.spaceXs),
             Text(
-              'Tap "+ New" and pick a starter split. Every day arrives with a '
+              'Tap New and pick a starter split. Every day arrives with a '
               'warm-up, numbered exercises and a conditioning finisher already '
               'filled in.',
               textAlign: TextAlign.center,
@@ -641,8 +647,10 @@ class RoutinesTabState extends State<RoutinesTab> {
     final isActive = routine.id == _activeRoutineId;
     final todayCode = ScheduleService.weekdayCode(DateTime.now());
 
+    // Not elevated: the featured `TodayDayCard` inside is the card that
+    // leads on this screen (see `LockoutCard`'s own doc), so the container
+    // stays flat and lets that one lift.
     return LockoutCard(
-      elevated: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -662,12 +670,12 @@ class RoutinesTabState extends State<RoutinesTab> {
                   if (!isActive)
                     const PopupMenuItem(
                       value: 'active',
-                      child: Text('SET AS ACTIVE'),
+                      child: Text('Set as active'),
                     ),
                   PopupMenuItem(
                     value: 'delete',
                     child: Text(
-                      'DELETE',
+                      'Delete',
                       style: TextStyle(color: theme.colorScheme.error),
                     ),
                   ),
@@ -954,7 +962,13 @@ class _CreateRoutineFormState extends State<_CreateRoutineForm> {
                 _showTemplateError = false;
               }),
               borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
-              child: Container(
+              // Ink, not Container: Container's opaque BoxDecoration paints
+              // over the InkWell's splash (which draws on the ancestor
+              // Material), so a selected tile — the one with a fill — gave no
+              // press feedback while an unselected one still did. Ink paints
+              // its decoration onto that same ancestor Material, underneath
+              // any splash, instead of into a new layer on top of it.
+              child: Ink(
                 padding: const EdgeInsets.all(LockoutTheme.spaceMd),
                 decoration: BoxDecoration(
                   color: selected ? theme.colorScheme.secondaryContainer : null,
@@ -1087,18 +1101,23 @@ class _DayFormState extends State<_DayForm> {
           controller: _nameCtrl,
           hint: 'e.g. Push',
         ),
-        const SizedBox(height: LockoutTheme.spaceSm),
+        const SizedBox(height: LockoutTheme.spaceMd),
         LockoutField(
           label: 'Focus (muscle groups)',
           controller: _focusCtrl,
           hint: 'e.g. Chest - Shoulders - Triceps',
         ),
-        const SizedBox(height: LockoutTheme.spaceSm),
+        const SizedBox(height: LockoutTheme.spaceMd),
         LockoutField(
           label: 'Day note (optional)',
           controller: _noteCtrl,
-          hint: 'Injury cautions, tempo rules...',
         ),
+        // Guidance the user needs before typing, not a hint hidden inside
+        // the field until focus — `LockoutField` has no `helperText` slot
+        // (out of scope for this file), so this stands in for one.
+        const SizedBox(height: LockoutTheme.spaceXs),
+        Text('Injury cautions, tempo rules...', style: theme.textTheme.bodySmall),
+        const SizedBox(height: LockoutTheme.spaceSm),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Mark as rest day'),
@@ -1168,7 +1187,7 @@ class _SubItemFormState extends State<_SubItemForm> {
           controller: _nameCtrl,
           hint: widget.isWarmup ? 'e.g. Arm circles' : 'e.g. Push-ups',
         ),
-        const SizedBox(height: LockoutTheme.spaceSm),
+        const SizedBox(height: LockoutTheme.spaceMd),
         LockoutField(
           label: 'Amount',
           controller: _amtCtrl,
@@ -1326,7 +1345,7 @@ class _ExerciseFormState extends State<_ExerciseForm> {
             ),
           ],
         ),
-        const SizedBox(height: LockoutTheme.spaceSm),
+        const SizedBox(height: LockoutTheme.spaceMd),
         Row(
           children: [
             Expanded(
@@ -1347,18 +1366,24 @@ class _ExerciseFormState extends State<_ExerciseForm> {
             ),
           ],
         ),
-        const SizedBox(height: LockoutTheme.spaceSm),
+        const SizedBox(height: LockoutTheme.spaceMd),
         LockoutField(
           label: 'Note',
           controller: _noteCtrl,
-          hint: 'Cues, injury notes, tempo...',
         ),
-        const SizedBox(height: LockoutTheme.spaceSm),
+        // Guidance the user needs before typing, not a hint hidden inside
+        // the field until focus — `LockoutField` has no `helperText` slot
+        // (out of scope for this file), so this stands in for one.
+        const SizedBox(height: LockoutTheme.spaceXs),
+        Text('Cues, injury notes, tempo...', style: theme.textTheme.bodySmall),
+        const SizedBox(height: LockoutTheme.spaceMd),
         LockoutField(
           label: 'Pinned video URL (optional)',
           controller: _videoCtrl,
-          hint: 'Leave empty to auto-search YouTube',
         ),
+        const SizedBox(height: LockoutTheme.spaceXs),
+        Text('Leave empty to auto-search YouTube',
+            style: theme.textTheme.bodySmall),
         const SizedBox(height: LockoutTheme.spaceXs),
         Text(
           'Empty video URL means Watch opens a YouTube search for a 3D / '
