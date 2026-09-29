@@ -6,12 +6,11 @@ import '../services/numeric_guard.dart';
 import '../services/nutrition_planner.dart';
 import '../services/routine_factory.dart';
 import '../services/units.dart';
-import '../theme/jinatra_tokens.dart';
 import '../theme/lockout_theme.dart';
 import '../widgets/calm_row.dart';
 import '../widgets/lockout_card.dart';
+import '../widgets/lockout_field.dart';
 import '../widgets/weight_card.dart';
-import '../widgets/jinatra_input.dart';
 import '../widgets/sheet_scaffold.dart';
 import '../widgets/stat_tile.dart';
 import '../widgets/undo_banner.dart';
@@ -306,6 +305,8 @@ class BodyTabState extends State<BodyTab> {
   }
 
   Widget _buildBmiCard() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final heightCm = _goal?.profile.heightCm ?? 175.0;
     final weight = _bodyLogs.isNotEmpty ? _bodyLogs.first.weightKg : null;
     final bmi = _goal?.bmi;
@@ -321,11 +322,10 @@ class BodyTabState extends State<BodyTab> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('LATEST WEIGHT',
-                      style: Theme.of(context).textTheme.labelSmall),
+                  Text('LATEST WEIGHT', style: theme.textTheme.labelSmall),
                   Text(
                     weight != null ? '${weight.toStringAsFixed(1)} kg' : '--',
-                    style: Theme.of(context).textTheme.headlineSmall,
+                    style: theme.textTheme.headlineSmall,
                   ),
                 ],
               ),
@@ -333,73 +333,63 @@ class BodyTabState extends State<BodyTab> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('BMI', style: Theme.of(context).textTheme.labelSmall),
+                  Text('BMI', style: theme.textTheme.labelSmall),
                   Text(
                     bmi != null ? bmi.toStringAsFixed(1) : '--',
-                    style: JinatraTokens.displayHeader(
-                        fontSize: 26, color: JinatraTokens.deepTeal),
+                    style: theme.textTheme.headlineSmall
+                        ?.copyWith(color: colors.primary),
                   ),
                   if (bmi != null) ...[
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: JinatraTokens.signal,
-                        border: Border.all(color: JinatraTokens.ink, width: 2),
-                      ),
-                      child: Text(Units.bmiCategory(bmi),
-                          style: JinatraTokens.monoData(
-                              fontSize: 9, color: JinatraTokens.onAccent)),
+                    const SizedBox(height: LockoutTheme.spaceXs),
+                    Chip(
+                      label: Text(Units.bmiCategory(bmi)),
+                      visualDensity: VisualDensity.compact,
                     ),
                   ],
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: LockoutTheme.spaceMd),
 
           // The calculation, spelled out. Waist is deliberately absent.
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: JinatraTokens.mistTeal,
-              border: Border.all(color: JinatraTokens.ink, width: 2),
-            ),
+          LockoutCard(
+            color: colors.tertiaryContainer,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('HOW THIS BMI IS CALCULATED',
-                    style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(height: 5),
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(color: colors.onTertiaryContainer)),
+                const SizedBox(height: LockoutTheme.spaceXs),
                 Text(
                   weight == null
                       ? 'weight / height²  —  log a weight to calculate'
                       : '${weight.toStringAsFixed(1)} kg / '
                           '(${metres.toStringAsFixed(2)} m)² = '
                           '${bmi!.toStringAsFixed(1)}',
-                  style: LockoutTheme.numeric(context, size: 13),
+                  style: LockoutTheme.numeric(context,
+                      size: 13, color: colors.onTertiaryContainer),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: LockoutTheme.spaceSm),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('HEIGHT FROM SETTINGS',
-                        style: Theme.of(context).textTheme.labelSmall),
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: colors.onTertiaryContainer)),
                     Text(Units.formatHeight(heightCm, _heightUnit),
-                        style: Theme.of(context).textTheme.labelSmall),
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: colors.onTertiaryContainer)),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: LockoutTheme.spaceXs),
                 Text(
                   'Waist is stored as a separate measurement and plays no part '
                   'in BMI. BMI also cannot tell muscle from fat — for a lifter '
                   'it is a rough reference, not a verdict.',
-                  style: JinatraTokens.bodyText(
-                    fontSize: 11,
-                    color: JinatraTokens.ink.withValues(alpha: 0.7),
-                  ),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: colors.onTertiaryContainer),
                 ),
               ],
             ),
@@ -413,19 +403,21 @@ class BodyTabState extends State<BodyTab> {
     final snap = _goal;
     final plan = snap?.nutrition;
 
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
     if (snap == null || plan == null || snap.currentWeightKg == null) {
       return LockoutCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('NO GOAL SET',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 6),
+            Text('NO GOAL SET', style: theme.textTheme.titleMedium),
+            const SizedBox(height: LockoutTheme.spaceSm),
             Text(
               'Add your age and target weight in Settings, and log one body '
               'weight here. Then the app can work out your calorie target and '
               'recommend a training split instead of guessing.',
-              style: JinatraTokens.bodyText(fontSize: 13),
+              style: theme.textTheme.bodyMedium,
             ),
           ],
         ),
@@ -448,22 +440,16 @@ class BodyTabState extends State<BodyTab> {
           Row(
             children: [
               Expanded(
-                child: Text('GOAL PROGRESS',
-                    style: JinatraTokens.monoData(fontSize: 14)),
+                child:
+                    Text('GOAL PROGRESS', style: theme.textTheme.titleSmall),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: JinatraTokens.signal,
-                  border: Border.all(color: JinatraTokens.ink, width: 2),
-                ),
-                child: Text(plan.directionLabel,
-                    style: JinatraTokens.monoData(
-                        fontSize: 9, color: JinatraTokens.onAccent)),
+              Chip(
+                label: Text(plan.directionLabel),
+                visualDensity: VisualDensity.compact,
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: LockoutTheme.spaceMd),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -472,71 +458,53 @@ class BodyTabState extends State<BodyTab> {
               _stat('TARGET', '${target.toStringAsFixed(1)} kg'),
             ],
           ),
-          const SizedBox(height: 12),
-          Container(
-            height: 18,
-            decoration: BoxDecoration(
-              color: JinatraTokens.mistTeal,
-              border: Border.all(color: JinatraTokens.ink, width: 2),
-            ),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: progress,
-              child: Container(color: JinatraTokens.deepTeal),
-            ),
+          const SizedBox(height: LockoutTheme.spaceMd),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(LockoutTheme.radiusPill),
+            child: LinearProgressIndicator(value: progress),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: LockoutTheme.spaceSm),
           Text(
             '${(progress * 100).round()}% of the way. Planned pace '
             '${plan.weeklyRatePct.toStringAsFixed(2)}% bodyweight/week over '
             '${plan.weeks} weeks.',
-            style: JinatraTokens.bodyText(fontSize: 12),
+            style: theme.textTheme.bodySmall,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: LockoutTheme.spaceXs),
           Text(
             'Healthy BMI weight for your height is '
             '${range.$1.toStringAsFixed(1)}-${range.$2.toStringAsFixed(1)} kg.',
-            style: JinatraTokens.monoData(
-              fontSize: 10,
-              color: JinatraTokens.ink.withValues(alpha: 0.65),
-            ),
+            style: theme.textTheme.bodySmall,
           ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: JinatraTokens.mistTeal,
-              border: Border.all(color: JinatraTokens.ink, width: 2),
-            ),
+          const SizedBox(height: LockoutTheme.spaceMd),
+          LockoutCard(
+            color: colors.tertiaryContainer,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('DAILY INTAKE TARGET',
-                    style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(height: 3),
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(color: colors.onTertiaryContainer)),
+                const SizedBox(height: LockoutTheme.spaceXs),
                 Text('${plan.targetKcal} kcal',
-                    style: JinatraTokens.displayHeader(fontSize: 22)),
-                const SizedBox(height: 4),
+                    style: theme.textTheme.headlineSmall
+                        ?.copyWith(color: colors.onTertiaryContainer)),
+                const SizedBox(height: LockoutTheme.spaceXs),
                 Text(
                   'P ${plan.proteinG}g  -  C ${plan.carbG}g  -  F ${plan.fatG}g',
-                  style: Theme.of(context).textTheme.labelSmall,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: colors.onTertiaryContainer),
                 ),
               ],
             ),
           ),
           if (plan.warning != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: JinatraTokens.signal,
-                border: Border.all(color: JinatraTokens.ink, width: 2),
-              ),
+            const SizedBox(height: LockoutTheme.spaceSm),
+            LockoutCard(
+              color: colors.tertiaryContainer,
               child: Text(plan.warning!,
-                  style: JinatraTokens.bodyText(
-                      fontSize: 12, color: JinatraTokens.onAccent)),
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: colors.onTertiaryContainer)),
             ),
           ],
         ],
@@ -545,13 +513,15 @@ class BodyTabState extends State<BodyTab> {
   }
 
   Widget _buildPlanCard(BuildContext sheetContext) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final rec = _goal?.training;
     if (rec == null) {
       return LockoutCard(
         child: Text(
           'Add your age and target weight in Settings, and log one body '
           'weight, to get a recommended training split.',
-          style: JinatraTokens.bodyText(fontSize: 13),
+          style: theme.textTheme.bodyMedium,
         ),
       );
     }
@@ -560,65 +530,62 @@ class BodyTabState extends State<BodyTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('RECOMMENDED TRAINING PLAN',
-              style: JinatraTokens.monoData(fontSize: 14)),
-          const SizedBox(height: 10),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: JinatraTokens.deepTeal,
-              border: Border.all(
-                  color: JinatraTokens.ink, width: JinatraTokens.borderControl),
-              boxShadow: [JinatraTokens.hardShadow(offset: 3)],
-            ),
+          Text('RECOMMENDED TRAINING PLAN', style: theme.textTheme.titleSmall),
+          const SizedBox(height: LockoutTheme.spaceMd),
+          LockoutCard(
+            color: colors.primaryContainer,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(rec.template.name.toUpperCase(),
-                    style: JinatraTokens.displayHeader(
-                        color: JinatraTokens.onPrimary, fontSize: 20)),
-                const SizedBox(height: 4),
+                Text(rec.template.name,
+                    style: theme.textTheme.titleLarge
+                        ?.copyWith(color: colors.onPrimaryContainer)),
+                const SizedBox(height: LockoutTheme.spaceXs),
                 Text(
                   '${rec.daysPerWeek} days/week  -  ${rec.template.days.length} sessions',
-                  style: JinatraTokens.monoData(
-                      color: JinatraTokens.sweetCream, fontSize: 10),
+                  style: theme.textTheme.labelMedium
+                      ?.copyWith(color: colors.onPrimaryContainer),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: LockoutTheme.spaceMd),
           _advice('WHY THIS SPLIT', rec.rationale),
           _advice('HOW TO LOAD IT', rec.loadingAdvice),
           _advice('CARDIO', rec.cardioAdvice),
-          const SizedBox(height: 6),
-          FilledButton(onPressed: () => _createRecommendedRoutine(sheetContext), child: Text('Create this routine')),
+          const SizedBox(height: LockoutTheme.spaceXs),
+          FilledButton(
+            onPressed: () => _createRecommendedRoutine(sheetContext),
+            child: const Text('Create this routine'),
+          ),
         ],
       ),
     );
   }
 
   Widget _advice(String title, String body) {
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.labelSmall),
-          const SizedBox(height: 3),
-          Text(body, style: JinatraTokens.bodyText(fontSize: 12)),
+          Text(title, style: theme.textTheme.labelSmall),
+          const SizedBox(height: LockoutTheme.spaceXs),
+          Text(body, style: theme.textTheme.bodySmall),
         ],
       ),
     );
   }
 
   Widget _stat(String label, String value) {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.labelSmall),
-        const SizedBox(height: 2),
-        Text(value, style: JinatraTokens.monoData(fontSize: 14)),
+        Text(label, style: theme.textTheme.labelSmall),
+        const SizedBox(height: LockoutTheme.spaceXs),
+        Text(value, style: LockoutTheme.numeric(context, size: 14)),
       ],
     );
   }
@@ -721,45 +688,37 @@ class _MeasurementFormState extends State<_MeasurementForm> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        JinatraInput(
+        LockoutField(
           label: 'Weight (kg)',
           controller: _weightCtrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
-        JinatraInput(
+        const SizedBox(height: LockoutTheme.spaceMd),
+        LockoutField(
           label: 'Waist (cm) - optional',
           controller: _waistCtrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
         if (_error != null) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: JinatraTokens.signal,
-              border: Border.all(color: JinatraTokens.ink, width: 2),
-            ),
-            child: Text(
-              _error!,
-              style: JinatraTokens.bodyText(
-                  fontSize: 12, color: JinatraTokens.onAccent),
-            ),
+          const SizedBox(height: LockoutTheme.spaceSm),
+          Text(
+            _error!,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.error),
           ),
-          const SizedBox(height: 10),
         ],
+        const SizedBox(height: LockoutTheme.spaceXs),
         Text(
           'Waist is tracked on its own. It is not used in the BMI figure — '
           'BMI is weight and height only.',
-          style: JinatraTokens.bodyText(
-            fontSize: 11,
-            color: JinatraTokens.ink.withValues(alpha: 0.65),
-          ),
+          style: theme.textTheme.bodySmall,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: LockoutTheme.spaceMd),
         // The `_saving` re-entrancy guard used to be invisible — SAVE
         // MEASUREMENT looked identically pressable mid-save. `IgnorePointer`
         // stops a second tap from reaching `_save` at all (belt-and-braces

@@ -269,6 +269,34 @@ void main() {
       expect(find.text('NO GOAL SET'), findsOneWidget);
     });
 
+    // Task 15c: the goal-progress bar swapped a hand-rolled
+    // Container/FractionallySizedBox pair for a themed `LinearProgressIndicator`
+    // — a different widget class, so a test that only checked `findsOneWidget`
+    // on the old shape would silently stop finding anything rather than
+    // failing loudly. This drives the sheet with a seeded, deterministic goal
+    // (80.0kg start -> 70.0kg target, 75.0kg current is exactly halfway) and
+    // reads the new widget's own `value`, so a broken progress calculation is
+    // caught here rather than only by eye.
+    testWidgets(
+        'the GOAL PROGRESS bar value matches the fraction of the weight '
+        'change already done', (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '70.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-05', weightKg: 75.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Goal progress'));
+      await tester.pumpAndSettle();
+
+      final bar = tester
+          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+      expect(bar.value, closeTo(0.5, 0.0001));
+    });
+
     testWidgets(
         'logging a measurement through the hero sheet inserts it and the '
         'grid picks it up', (tester) async {
