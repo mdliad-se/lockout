@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lockout/screens/profile_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/theme/lockout_theme.dart';
 import 'package:lockout/theme/schemes.dart';
+import 'package:lockout/theme/theme_controller.dart';
 
 /// Drives a bounded number of timed frames rather than `pumpAndSettle`.
 ///
@@ -136,3 +138,21 @@ int _endOfStringLiteral(String source, int start) {
 /// defaults. This is the one-liner that satisfies it.
 ThemeData lockoutTestTheme([LockoutScheme scheme = LockoutScheme.graphite]) =>
     LockoutTheme.build(colors: scheme.colors, semantics: scheme.semantics);
+
+/// Hosts `ProfileTab` the way `main.dart` hosts `MainScreen`: rebuilt
+/// whenever `ThemeController` notifies, so a swatch selection actually
+/// repaints instead of leaving the previous theme on screen. A bare
+/// `MaterialApp(home: ProfileTab(...))` would build the theme once and never
+/// again, which is exactly the hazard `main.dart`'s own `ListenableBuilder`
+/// exists to avoid.
+Widget hostedProfileTab({VoidCallback? onSettingsUpdated}) {
+  return ListenableBuilder(
+    listenable: ThemeController.instance,
+    builder: (_, _) => MaterialApp(
+      theme: ThemeController.instance.lightTheme,
+      darkTheme: ThemeController.instance.darkTheme,
+      themeMode: ThemeController.instance.themeMode,
+      home: ProfileTab(onSettingsUpdated: onSettingsUpdated ?? () {}),
+    ),
+  );
+}
