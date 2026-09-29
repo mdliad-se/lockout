@@ -413,6 +413,25 @@ void main() {
       expect(rowColour(), isNot(before));
     });
 
+    // The default test viewport is 800x600 — wide enough that a set row's
+    // fixed-width children never come close to overflowing, which is why the
+    // suite stayed green while the row genuinely overflowed on a real phone.
+    // 360dp is the narrowest common Android width.
+    testWidgets(
+        'the set row does not overflow at a 360dp phone width',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('the rest bar adjusts in both directions', (tester) async {
       await seedActiveWeekdayRoutineForToday();
       await tester.pumpWidget(hostedTodayTab());
@@ -425,6 +444,67 @@ void main() {
       expect(find.text('-15s'), findsOneWidget);
       expect(find.text('+15s'), findsOneWidget);
       expect(find.text('Skip'), findsOneWidget);
+    });
+
+    // Restores the v1 per-set delete affordance: `Add set` gained a way
+    // back once a user could add sets they did not mean to.
+    testWidgets('a set can be removed, but never down to zero',
+        (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      expect(find.byKey(const ValueKey('set-row-0-1')), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close).first);
+      await settle(tester);
+
+      expect(find.byKey(const ValueKey('set-row-0-1')), findsNothing);
+      expect(find.byKey(const ValueKey('set-row-0-0')), findsOneWidget);
+
+      // One set left: the guard disables the control rather than removing
+      // the last row a session needs to log anything at all.
+      final lastDelete = tester.widget<IconButton>(
+        find
+            .ancestor(
+              of: find.byIcon(Icons.close),
+              matching: find.byType(IconButton),
+            )
+            .first,
+      );
+      expect(lastDelete.onPressed, isNull);
+    });
+
+    // The finish sheet's Discard used to end a session with logged sets on
+    // a single tap. It must now route through the same "DISCARD SESSION?"
+    // gate a zero-set session already gets from `_finishSession`.
+    testWidgets(
+        'Discard asks for confirmation once a set has been logged',
+        (tester) async {
+      await seedActiveWeekdayRoutineForToday();
+      await tester.pumpWidget(hostedTodayTab());
+      await settle(tester);
+      await tester.tap(find.text('Start session'));
+      await settle(tester);
+
+      await tester.tap(find.byKey(const ValueKey('set-complete-0-0')));
+      await settle(tester, maxPumps: 4);
+
+      await tester.tap(find.text('Finish'));
+      await settle(tester);
+      await tester.tap(find.text('Discard'));
+      await settle(tester);
+
+      expect(find.text('DISCARD SESSION?'), findsOneWidget);
+
+      await tester.tap(find.text('KEEP GOING'));
+      await settle(tester);
+
+      // Declining the confirmation must leave the session running, not end
+      // it anyway.
+      expect(find.text('Finish'), findsOneWidget);
     });
   });
 }

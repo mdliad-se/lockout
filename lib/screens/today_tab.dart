@@ -637,7 +637,6 @@ class TodayTabState extends State<TodayTab> {
   // --- ACTIVE SESSION ---
 
   Widget _buildActiveSession() {
-    final theme = Theme.of(context);
     final totalExercises = _liveExercises.length;
     final completedExercises = totalExercises == 0
         ? 0
@@ -650,46 +649,64 @@ class TodayTabState extends State<TodayTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSessionHeader(theme, exerciseProgress),
+        _buildSessionHeader(exerciseProgress),
         const SizedBox(height: LockoutTheme.spaceMd),
-        Expanded(
-          child: ListView(
-            children: [
-              _buildLegSafetyNotice(theme),
-              const SizedBox(height: LockoutTheme.spaceMd),
-              if (_liveExercises.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: LockoutTheme.spaceLg,
-                  ),
-                  child: Text(
-                    'No exercises yet. Add one to begin.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                )
-              else
-                for (var i = 0; i < _liveExercises.length; i++)
-                  _buildExerciseCard(_liveExercises[i], i),
-              // Plain text, not `.icon` — an `Icons.add` glyph here would
-              // sit alongside the weight/rep stepper's own plus buttons and
-              // get swept into any test that walks every `Icons.add` on
-              // screen expecting a stepper.
-              OutlinedButton(
-                onPressed: _addExerciseMidSession,
-                child: const Text('Add exercise'),
-              ),
-            ],
-          ),
-        ),
+        Expanded(child: _buildExerciseList()),
       ],
+    );
+  }
+
+  /// Item 0 is the leg-safety notice, the last item is `Add exercise`, and
+  /// everything between is one exercise card (or the empty-state message
+  /// when there are none) — kept a `ListView.builder` rather than a plain
+  /// `ListView` so a long session does not eagerly build every card and
+  /// every set row up front.
+  Widget _buildExerciseList() {
+    final theme = Theme.of(context);
+    final hasExercises = _liveExercises.isNotEmpty;
+    final itemCount = (hasExercises ? _liveExercises.length : 1) + 2;
+    final lastIndex = itemCount - 1;
+
+    return ListView.builder(
+      itemCount: itemCount,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: LockoutTheme.spaceMd),
+            child: _buildLegSafetyNotice(),
+          );
+        }
+        if (index == lastIndex) {
+          // Plain text, not `.icon` — an `Icons.add` glyph here would sit
+          // alongside the weight/rep stepper's own plus buttons and get
+          // swept into any test that walks every `Icons.add` on screen
+          // expecting a stepper.
+          return OutlinedButton(
+            onPressed: _addExerciseMidSession,
+            child: const Text('Add exercise'),
+          );
+        }
+        if (!hasExercises) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: LockoutTheme.spaceLg,
+            ),
+            child: Text(
+              'No exercises yet. Add one to begin.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+          );
+        }
+        return _buildExerciseCard(_liveExercises[index - 1], index - 1);
+      },
     );
   }
 
   /// The three-figure Duration / Volume / Sets row, a Finish action, and the
   /// exercise-completion bar beneath it — see `_FinishSummarySheet` for what
   /// tapping Finish opens.
-  Widget _buildSessionHeader(ThemeData theme, double exerciseProgress) {
+  Widget _buildSessionHeader(double exerciseProgress) {
     return LockoutCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -697,19 +714,19 @@ class TodayTabState extends State<TodayTab> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Expanded(child: _statColumn(theme, 'Duration', _elapsedLabel)),
               Expanded(
-                child: _statColumn(
-                  theme,
-                  'Volume',
-                  '${_fmtWeight(_sessionVolumeKg)} kg',
+                child: _SessionStat(label: 'Duration', value: _elapsedLabel),
+              ),
+              Expanded(
+                child: _SessionStat(
+                  label: 'Volume',
+                  value: '${_fmtWeight(_sessionVolumeKg)} kg',
                 ),
               ),
               Expanded(
-                child: _statColumn(
-                  theme,
-                  'Sets',
-                  '$_sessionCompletedSets/$_sessionTotalSets',
+                child: _SessionStat(
+                  label: 'Sets',
+                  value: '$_sessionCompletedSets/$_sessionTotalSets',
                 ),
               ),
               FilledButton.tonal(
@@ -725,18 +742,6 @@ class TodayTabState extends State<TodayTab> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _statColumn(ThemeData theme, String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label, style: theme.textTheme.labelSmall),
-        const SizedBox(height: LockoutTheme.spaceXs),
-        Text(value, style: LockoutTheme.numeric(context, size: 20)),
-      ],
     );
   }
 
@@ -758,11 +763,20 @@ class TodayTabState extends State<TodayTab> {
     if (action == 'save') {
       await _finishSession();
     } else if (action == 'discard') {
+      // A session with logged sets is real data, not an empty draft — the
+      // same "DISCARD SESSION?" gate `_finishSession` already applies when
+      // there is nothing logged must also guard the one-tap Discard here
+      // once there is something to lose.
+      if (_sessionCompletedSets > 0) {
+        final confirmed = await _confirmDiscard();
+        if (confirmed != true || !mounted) return;
+      }
       _endSessionState();
     }
   }
 
-  Widget _buildLegSafetyNotice(ThemeData theme) {
+  Widget _buildLegSafetyNotice() {
+    final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return LockoutCard(
       color: colors.tertiaryContainer,
@@ -818,6 +832,7 @@ class TodayTabState extends State<TodayTab> {
                   ),
                 ),
                 IconButton(
+                  tooltip: 'Watch video',
                   onPressed: () => _openVideo(ex.name, ex.videoUrl),
                   icon: const Icon(Icons.play_circle_outline),
                 ),
@@ -855,62 +870,96 @@ class TodayTabState extends State<TodayTab> {
   ) {
     final theme = Theme.of(context);
     final semantics = LockoutSemantics.of(context);
+    // Two lines, not one: SET + PREVIOUS + delete on top, the steppers and
+    // the complete tick beneath. A single `Row` carrying all of it needs
+    // ~332dp of non-shrinkable children (set number, both steppers, the
+    // filled complete button) before the row's own padding, which overflows
+    // a 360-390dp phone. Splitting the steppers onto their own line, and
+    // giving each an `Expanded` + `Flexible`/`FittedBox` value label instead
+    // of a fixed-width box, means the only children that cannot shrink are
+    // the four 48dp icon buttons plus the complete tick — 240dp, which fits
+    // even the narrowest common width with room for the numbers.
     final rowContent = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: LockoutTheme.spaceSm,
         vertical: LockoutTheme.spaceXs,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 20,
-            child: Text(
-              '${setIndex + 1}',
-              style: LockoutTheme.numeric(context, size: 14),
-            ),
+          Row(
+            children: [
+              SizedBox(
+                width: LockoutTheme.spaceLg,
+                child: Text(
+                  '${setIndex + 1}',
+                  style: LockoutTheme.numeric(context, size: 14),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  ex.lastPerformance.isEmpty ? '-' : ex.lastPerformance,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove set',
+                icon: const Icon(Icons.close),
+                onPressed: ex.sets.length > 1
+                    ? () => setState(() => ex.sets.removeAt(setIndex))
+                    : null,
+              ),
+            ],
           ),
-          Expanded(
-            child: Text(
-              ex.lastPerformance.isEmpty ? '-' : ex.lastPerformance,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall,
-            ),
-          ),
-          _numberStepper(
-            value: _fmtWeight(set.weightKg),
-            onMinus: () {
-              if (set.weightKg >= 2.5) {
-                setState(() => set.weightKg -= 2.5);
-              } else if (set.weightKg > 0) {
-                setState(() => set.weightKg = 0);
-              }
-            },
-            onPlus: () => setState(() => set.weightKg += 2.5),
-          ),
-          _numberStepper(
-            value: '${set.reps}',
-            onMinus: () {
-              if (set.reps > 1) setState(() => set.reps--);
-            },
-            onPlus: () => setState(() => set.reps++),
-          ),
-          IconButton.filled(
-            key: ValueKey('set-complete-$exerciseIndex-$setIndex'),
-            style: IconButton.styleFrom(
-              backgroundColor: set.completed
-                  ? semantics.success
-                  : theme.colorScheme.surfaceContainerHighest,
-              foregroundColor: set.completed
-                  ? theme.colorScheme.onPrimary
-                  : theme.colorScheme.onSurfaceVariant,
-            ),
-            icon: const Icon(Icons.check),
-            onPressed: () {
-              final wasDone = set.completed;
-              setState(() => set.completed = !wasDone);
-              if (!wasDone) _beginRest(ex.restSeconds);
-            },
+          Row(
+            children: [
+              Expanded(
+                child: _numberStepper(
+                  label: 'weight',
+                  value: _fmtWeight(set.weightKg),
+                  onMinus: () {
+                    if (set.weightKg >= 2.5) {
+                      setState(() => set.weightKg -= 2.5);
+                    } else if (set.weightKg > 0) {
+                      setState(() => set.weightKg = 0);
+                    }
+                  },
+                  onPlus: () => setState(() => set.weightKg += 2.5),
+                ),
+              ),
+              Expanded(
+                child: _numberStepper(
+                  label: 'reps',
+                  value: '${set.reps}',
+                  onMinus: () {
+                    if (set.reps > 1) setState(() => set.reps--);
+                  },
+                  onPlus: () => setState(() => set.reps++),
+                ),
+              ),
+              IconButton.filled(
+                key: ValueKey('set-complete-$exerciseIndex-$setIndex'),
+                tooltip: set.completed
+                    ? 'Mark set incomplete'
+                    : 'Mark set complete',
+                style: IconButton.styleFrom(
+                  backgroundColor: set.completed
+                      ? semantics.success
+                      : theme.colorScheme.surfaceContainerHighest,
+                  foregroundColor: set.completed
+                      ? theme.colorScheme.onPrimary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+                icon: const Icon(Icons.check),
+                onPressed: () {
+                  final wasDone = set.completed;
+                  setState(() => set.completed = !wasDone);
+                  if (!wasDone) _beginRest(ex.restSeconds);
+                },
+              ),
+            ],
           ),
         ],
       ),
@@ -940,6 +989,7 @@ class TodayTabState extends State<TodayTab> {
   }
 
   Widget _numberStepper({
+    required String label,
     required String value,
     required VoidCallback onMinus,
     required VoidCallback onPlus,
@@ -949,22 +999,32 @@ class TodayTabState extends State<TodayTab> {
       minHeight: LockoutTheme.minTouchTarget,
     );
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         IconButton(
+          tooltip: 'Decrease $label',
           icon: const Icon(Icons.remove),
           constraints: constraints,
           onPressed: onMinus,
         ),
-        SizedBox(
-          width: 36,
-          child: Text(
-            value,
-            textAlign: TextAlign.center,
-            style: LockoutTheme.numeric(context, size: 14),
+        // `Flexible` + `FittedBox` rather than a fixed-width `SizedBox`: the
+        // two steppers on this line have to share whatever room is left
+        // after their own four 48dp buttons, which shrinks with screen
+        // width. A fixed box either clips the value or reopens the overflow
+        // this row exists to avoid; scaling the label down instead never
+        // overflows its parent, regardless of viewport.
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              textAlign: TextAlign.center,
+              style: LockoutTheme.numeric(context, size: 14),
+            ),
           ),
         ),
         IconButton(
+          tooltip: 'Increase $label',
           icon: const Icon(Icons.add),
           constraints: constraints,
           onPressed: onPlus,
@@ -1008,14 +1068,34 @@ class TodayTabState extends State<TodayTab> {
                   Row(
                     children: [
                       TextButton(
-                        onPressed: () => setState(
-                          () => _restSeconds =
-                              _restSeconds > 15 ? _restSeconds - 15 : 0,
-                        ),
+                        onPressed: () => setState(() {
+                          // `_restTotalSeconds` is the progress bar's
+                          // denominator, so it has to shrink by the same
+                          // amount `_restSeconds` does — otherwise the bar
+                          // reads a stale, too-large total. And when this
+                          // adjustment reaches zero, `_restRunning` clears
+                          // immediately rather than waiting up to a second
+                          // for the next ticker frame to notice.
+                          final next =
+                              _restSeconds > 15 ? _restSeconds - 15 : 0;
+                          final spent = _restSeconds - next;
+                          final remainingTotal = _restTotalSeconds - spent;
+                          _restTotalSeconds =
+                              remainingTotal < 0 ? 0 : remainingTotal;
+                          _restSeconds = next;
+                          if (_restSeconds == 0) _restRunning = false;
+                        }),
                         child: const Text('-15s'),
                       ),
                       TextButton(
-                        onPressed: () => setState(() => _restSeconds += 15),
+                        onPressed: () => setState(() {
+                          // Symmetric with the total above: extending the
+                          // rest also extends what "full" means for the bar,
+                          // or +15s would pin it at 100% until the clock
+                          // fell back under the original total.
+                          _restSeconds += 15;
+                          _restTotalSeconds += 15;
+                        }),
                         child: const Text('+15s'),
                       ),
                       TextButton(
@@ -1050,16 +1130,15 @@ class _FinishSummarySheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Expanded(child: _stat(context, theme, 'Duration', duration)),
-            Expanded(child: _stat(context, theme, 'Volume', volume)),
-            Expanded(child: _stat(context, theme, 'Sets', sets)),
+            Expanded(child: _SessionStat(label: 'Duration', value: duration)),
+            Expanded(child: _SessionStat(label: 'Volume', value: volume)),
+            Expanded(child: _SessionStat(label: 'Sets', value: sets)),
           ],
         ),
         const SizedBox(height: LockoutTheme.spaceLg),
@@ -1083,8 +1162,21 @@ class _FinishSummarySheet extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _stat(BuildContext context, ThemeData theme, String label, String value) {
+/// The Duration/Volume/Sets caption-over-value pairing shared by the session
+/// header (`_buildSessionHeader`) and the finish summary sheet
+/// (`_FinishSummarySheet`) — the whole point of the sheet is that it states
+/// the same triple the header does, so both render through the one widget.
+class _SessionStat extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _SessionStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
