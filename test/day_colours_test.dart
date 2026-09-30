@@ -88,8 +88,9 @@ void main() {
       expect(colours['tue'], _semantics.restDay);
       expect(colours['fri'], _semantics.restDay);
 
-      // Five accents remain available to five training days, so a week of
-      // five training days never has to reuse one.
+      // The fixture ramp has eight slots, one of them reserved because it
+      // equals restDay — so seven stay available to the week's five
+      // training days and none of them has to reuse a colour.
       final training = week.where((d) => !d.isRestDay);
       final used = training.map((d) => colours[d.id]).toSet();
       expect(used.contains(_semantics.restDay), isFalse);

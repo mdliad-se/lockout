@@ -68,17 +68,22 @@ class LockoutSemantics extends ThemeExtension<LockoutSemantics> {
   static final double _onDarkLuminance = _onDark.computeLuminance();
   static final double _onLightLuminance = _onLight.computeLuminance();
 
-  /// Label/icon colour for content sitting on an arbitrary [background].
+  /// Label/icon colour for content sitting on a [categoryRamp] colour.
   ///
-  /// Only [categoryRamp] needs this: every other role in this class already
-  /// has an authored "on" pair (`onSuccess`, `ColorScheme.onPrimary`, ...),
-  /// but the eight ramp colours are per-scheme accents with no such pairing,
-  /// so the label colour has to be derived from the accent itself at paint
-  /// time. Picks whichever of near-black and white has the higher WCAG
+  /// Named for the ramp rather than for colours in general, because it is
+  /// only correct for the ramp: every other role in this class already has
+  /// an authored "on" pair (`onSuccess`, `ColorScheme.onPrimary`, ...) and a
+  /// caller reaching for one of those should use the authored pair, not this
+  /// derivation. The eight ramp colours are per-scheme accents with no such
+  /// pairing, so their label colour has to come from the accent itself at
+  /// paint time. Picks whichever of near-black and white has the higher WCAG
   /// contrast rather than testing luminance against a fixed threshold: a
   /// mid-tone accent can sit below any sensible threshold yet still need
   /// dark text, and a single threshold gets that case wrong.
-  static Color onColorFor(Color background) {
+  ///
+  /// `schemes_test.dart` holds both guarantees — >= 3.0 contrast for every
+  /// ramp accent of every scheme, and the argmax choice itself.
+  static Color onCategoryColor(Color background) {
     final l = background.computeLuminance();
     final onDark = (max(l, _onDarkLuminance) + 0.05) /
         (min(l, _onDarkLuminance) + 0.05);

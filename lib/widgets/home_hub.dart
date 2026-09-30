@@ -87,7 +87,8 @@ class HomeHub extends StatelessWidget {
   /// block is dropped rather than shown with values the user cannot act on.
   final bool foodTabEnabled;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   HomeHub({
     super.key,

@@ -229,13 +229,21 @@ class _UndoBannerState extends State<_UndoBanner> {
                           child: ExcludeSemantics(
                             child: Text(
                               'UNDO',
-                              // Matches `snackBarTheme.actionTextColor`
-                              // (`colors.primary`) — the same action-colour
-                              // rule this banner would use if it really were
-                              // a `SnackBar` (see this file's top doc
-                              // comment for why it can't be one).
+                              // `inversePrimary`, which is the primary tone
+                              // meant for an inverse-surface background —
+                              // this card's background, and the tone
+                              // `snackBarTheme.actionTextColor` now names
+                              // too. That theme field used to say
+                              // `colors.primary`, but nothing in this app
+                              // builds a `SnackBarAction`, so the pairing
+                              // had never painted: borrowed here it
+                              // measures 1.37:1 on graphite and no better
+                              // than ~2.1:1 on any scheme, under even the
+                              // 3:1 non-text floor, for the banner's only
+                              // control. `schemes_test.dart` holds the
+                              // replacement at >= 4.5:1 across all six.
                               style: theme.textTheme.labelLarge?.copyWith(
-                                color: colors.primary,
+                                color: colors.inversePrimary,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),

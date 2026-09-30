@@ -321,7 +321,14 @@ class LockoutTheme {
         backgroundColor: colors.inverseSurface,
         contentTextStyle:
             text.bodyMedium?.copyWith(color: colors.onInverseSurface),
-        actionTextColor: colors.primary,
+        // `inversePrimary`, the primary tone meant for an inverse-surface
+        // background — `primary` itself measures 1.37:1 on graphite here.
+        // Nothing in this app builds a `SnackBarAction` today, so this line
+        // has never painted; it is stated correctly so that the first one
+        // that does is readable. `schemes_test.dart` holds the pairing at
+        // >= 4.5:1 across all six schemes, and `undo_banner.dart` (which
+        // borrows these colours) is the live consumer.
+        actionTextColor: colors.inversePrimary,
         behavior: SnackBarBehavior.floating,
         shape: _rounded(radiusButton),
         insetPadding: const EdgeInsets.all(spaceMd),

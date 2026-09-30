@@ -17,9 +17,8 @@ enum ProgressSegment { weight, history }
 class ProgressTab extends StatefulWidget {
   final ProgressSegment initialSegment;
 
-  // NOT const — this screen's children read colour from the theme, and a
-  // canonicalised instance is skipped on rebuild, stranding them in the
-  // previous theme after a switch.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   ProgressTab({super.key, this.initialSegment = ProgressSegment.weight});
 

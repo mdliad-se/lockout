@@ -932,8 +932,10 @@ void main() {
       // matter what `_stackSpacing` is set to, even a value smaller than
       // the card's actual rendered height. Comparing the cards themselves
       // (keyed `undo_banner_card_<slot>`, third-round review Finding 3)
-      // is what actually proves one card's ink border and shadow aren't
-      // painted over by the other.
+      // is what actually proves one card is not painted over by the
+      // other. (There is no ink border to hide any more — what an overlap
+      // would swallow now is the lower card's own rounded surface and the
+      // elevation shadow under it.)
       final firstCard =
           find.byKey(const ValueKey('undo_banner_card_0'));
       final secondCard =

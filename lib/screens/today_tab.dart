@@ -68,9 +68,8 @@ class TodayTab extends StatefulWidget {
   /// not offer a tap target that silently does nothing.
   final bool foodTabEnabled;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
-  // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
-  // rebuild would strand it in the old palette for the process lifetime.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   TodayTab({
     super.key,
@@ -439,7 +438,7 @@ class TodayTabState extends State<TodayTab> {
       // No `backgroundColor`/`shape` here — `LockoutTheme.build`'s
       // `dialogTheme` already supplies both.
       builder: (ctx) => AlertDialog(
-        title: const Text('DISCARD SESSION?'),
+        title: const Text('Discard session?'),
         content: Text(
           _sessionCompletedSets > 0
               ? '$_sessionCompletedSets logged '
@@ -450,7 +449,7 @@ class TodayTabState extends State<TodayTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('KEEP GOING'),
+            child: const Text('Keep going'),
           ),
           TextButton(
             // `semantics.danger`, not `colorScheme.error` — this is a
@@ -459,7 +458,7 @@ class TodayTabState extends State<TodayTab> {
             // `log_tab.dart`'s DELETE ENTRY for the same rule).
             style: TextButton.styleFrom(foregroundColor: semantics.danger),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('DISCARD'),
+            child: const Text('Discard'),
           ),
         ],
       ),
@@ -782,7 +781,7 @@ class TodayTabState extends State<TodayTab> {
       await _finishSession();
     } else if (action == 'discard') {
       // A session with logged sets is real data, not an empty draft — the
-      // same "DISCARD SESSION?" gate `_finishSession` already applies when
+      // same "Discard session?" gate `_finishSession` already applies when
       // there is nothing logged must also guard the one-tap Discard here
       // once there is something to lose.
       if (_sessionCompletedSets > 0) {

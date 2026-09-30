@@ -538,7 +538,7 @@ void main() {
     });
 
     // The finish sheet's Discard used to end a session with logged sets on
-    // a single tap. It must now route through the same "DISCARD SESSION?"
+    // a single tap. It must now route through the same "Discard session?"
     // gate a zero-set session already gets from `_finishSession`.
     testWidgets(
         'Discard asks for confirmation once a set has been logged',
@@ -557,7 +557,7 @@ void main() {
       await tester.tap(find.text('Discard'));
       await settle(tester);
 
-      expect(find.text('DISCARD SESSION?'), findsOneWidget);
+      expect(find.text('Discard session?'), findsOneWidget);
       // The copy must name what is actually lost — a session with a logged
       // set is real data, not the empty-draft case the dialog also serves.
       expect(
@@ -565,7 +565,7 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.text('KEEP GOING'));
+      await tester.tap(find.text('Keep going'));
       await settle(tester);
 
       // Declining the confirmation must leave the session running, not end

@@ -1,6 +1,33 @@
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../theme/lockout_semantics.dart';
+import '../theme/lockout_theme.dart';
+
+// --------------------------------------------------------------------------
+// Why some constructors in this app are not const
+//
+// A number of widgets across `lib/` declare a non-const constructor with
+// `// ignore: prefer_const_constructors_in_immutables` and point at this
+// note. It is one note rather than sixteen copies because the copies stated
+// a rule that is wrong.
+//
+// The claim was that a const instance is canonicalised, skipped on rebuild,
+// and therefore "stranded in the previous theme after a switch". The first
+// half is real — `Element.updateChild` returns the existing child untouched
+// when the new widget is identical to the old one — but the conclusion does
+// not follow: anything reading `Theme.of(context)` registers an
+// `InheritedWidget` dependency, and a theme change rebuilds every dependent
+// directly rather than through its parent. A const constructor cannot strand
+// a widget in the old theme, and nothing here depends on avoiding one.
+//
+// What is left is narrower and has nothing to do with colour: in practice
+// these constructors are invoked with runtime values — a `GlobalKey` held by
+// a `State`, a callback, a model loaded from the database — so the call site
+// could not be a const expression anyway and a const declaration would buy
+// nothing. Where one could (`main.dart`'s `MainScreen()`), the saving is a
+// single canonicalised widget at the app root, which is not worth churning
+// every file on a UI-only branch for. Anything new should prefer const.
+// --------------------------------------------------------------------------
 
 /// Colour coding per training day, so a week reads at a glance.
 ///
@@ -112,8 +139,15 @@ class DayColours {
   }
 
   /// Text and icons drawn on a day colour.
+  ///
+  /// A one-line delegate to [LockoutSemantics.onCategoryColor] and nothing
+  /// more — kept only as the seam the day-colour code reads through, so
+  /// `routines_tab.dart` asks one class for both the accent and its label
+  /// colour instead of having to know which of the two owns which half. It
+  /// adds no behaviour; if that pairing ever stops holding, delete it and
+  /// let the caller reach for the semantics directly.
   static Color onColorFor(Color background) =>
-      LockoutSemantics.onColorFor(background);
+      LockoutSemantics.onCategoryColor(background);
 }
 
 /// A section heading inside an expanded day — "WARM-UP", "FINISHER".
@@ -154,7 +188,12 @@ class SectionHeading extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               amount,
-              style: theme.textTheme.labelSmall,
+              // Same size as the title, one step back in the role hierarchy:
+              // the title names the section and the amount only qualifies
+              // it, which the previous design carried with a smaller, more
+              // transparent type and this carries through colour roles.
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: colors.onSurfaceVariant),
             ),
           ],
         ],
@@ -191,17 +230,22 @@ class SubItemRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(amt, style: theme.textTheme.labelSmall),
-          // A bare 14px glyph was the last delete affordance in the app under
-          // the 40dp floor that log_tab.dart, meal_section.dart and
-          // undo_banner.dart each set for themselves. The box carries the
-          // row's height too, so every row in the day sheet is one bar tall
-          // whether or not it has a remove control.
+          // A bare 14px glyph was the last delete affordance in the app
+          // below a tap-target floor. It sits on `LockoutTheme
+          // .minTouchTarget` like every other control this branch restyled —
+          // the 40 it first shipped with was inherited from the widgets this
+          // replaced, never a decision. The box carries the row's height
+          // too, so every row in the day sheet is one bar tall whether or
+          // not it has a remove control.
           if (onRemove != null)
             GestureDetector(
               onTap: onRemove,
               behavior: HitTestBehavior.opaque,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                constraints: const BoxConstraints(
+                  minWidth: LockoutTheme.minTouchTarget,
+                  minHeight: LockoutTheme.minTouchTarget,
+                ),
                 child: Icon(
                   Icons.close,
                   size: 14,
@@ -210,7 +254,10 @@ class SubItemRow extends StatelessWidget {
               ),
             )
           else
-            const SizedBox(width: 40, height: 40),
+            const SizedBox(
+              width: LockoutTheme.minTouchTarget,
+              height: LockoutTheme.minTouchTarget,
+            ),
         ],
       ),
     );
@@ -234,20 +281,24 @@ class AddLink extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      // A `ConstrainedBox` rather than padding, for the repo's 40dp tap
-      // target: `HitTestBehavior.opaque` does not enlarge the box it sits
-      // on, and padding a 10px mono line to the floor leaves the result
-      // depending on the font's line height. A minimum states it instead.
-      // log_tab.dart:334 clears the same floor for the same 10px text with
-      // `vertical: 14` padding and its own test holds it there, so both
+      // A `ConstrainedBox` rather than padding, for `LockoutTheme
+      // .minTouchTarget`: `HitTestBehavior.opaque` does not enlarge the box
+      // it sits on, and padding a 10px mono line to the floor leaves the
+      // result depending on the font's line height. A minimum states it
+      // instead. log_tab.dart clears the same floor for the same 10px text
+      // with `vertical: 14` padding and its own test holds it there, so both
       // idioms work — that one and meal_section.dart / undo_banner.dart are
       // candidates to migrate to this stated-minimum form later.
       // The `Row` does two jobs: `mainAxisSize.min` shrink-wraps the label
       // so the visible text is unchanged, and its default cross-axis
-      // centring puts the glyphs in the middle of the 40dp box. Without it
-      // a bare `Text` paints at the top and leaves a 26dp gap beneath.
+      // centring puts the glyphs in the middle of the box. Without it a bare
+      // `Text` paints at the top and leaves the rest of the box empty
+      // beneath it.
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 40, minWidth: 40),
+        constraints: const BoxConstraints(
+          minHeight: LockoutTheme.minTouchTarget,
+          minWidth: LockoutTheme.minTouchTarget,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

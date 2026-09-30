@@ -8,9 +8,8 @@ import 'routines_tab.dart';
 import 'today_tab.dart';
 
 class MainScreen extends StatefulWidget {
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. Here the
-  // palette is read by the AppBar and BottomNav this screen builds, not by
-  // the screen itself; canonicalising it strands them just the same.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   MainScreen({super.key});
 

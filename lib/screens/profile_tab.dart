@@ -11,9 +11,8 @@ import 'settings_screen.dart';
 class ProfileTab extends StatefulWidget {
   final VoidCallback onSettingsUpdated;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
-  // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
-  // rebuild would strand it in the old theme for the process lifetime.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   ProfileTab({super.key, required this.onSettingsUpdated});
 

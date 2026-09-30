@@ -9,6 +9,8 @@ import 'package:lockout/widgets/week_day_row.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/schedule_service.dart';
 import 'package:lockout/theme/app_palette.dart';
+import 'package:lockout/theme/lockout_theme.dart';
+import 'package:lockout/theme/schemes.dart';
 import 'package:lockout/widgets/day_block.dart';
 import 'package:lockout/widgets/lockout_field.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
@@ -121,6 +123,45 @@ void main() {
     expect(sheetTitle, findsOneWidget);
     expect(find.text('Bench Press'), findsNothing);
     expect(find.byType(SheetScaffold), findsOneWidget);
+  });
+
+  /// A theme whose `danger` differs from every other role, so the
+  /// assertions below cannot pass by coincidence: every shipped scheme sets
+  /// `danger` to the same value as `ColorScheme.error`, and a test that
+  /// compared against that value would go on passing if the button were
+  /// wired back to `error`.
+  ThemeData themeWithSentinelDanger(Color danger) => LockoutTheme.build(
+        colors: LockoutScheme.graphite.colors,
+        semantics: LockoutScheme.graphite.semantics.copyWith(danger: danger),
+      );
+
+  testWidgets(
+      'the delete-routine confirmation takes semantics.danger, not '
+      'colorScheme.error', (tester) async {
+    await seedRoutineWithDay();
+    const sentinel = Color(0xFF00FF00);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: themeWithSentinelDanger(sentinel),
+      home: RoutinesTab(),
+    ));
+    await settle(tester);
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete routine?'), findsOneWidget);
+    final confirm =
+        tester.widget<TextButton>(find.widgetWithText(TextButton, 'Delete'));
+    expect(confirm.style?.foregroundColor?.resolve(<WidgetState>{}), sentinel);
+    expect(sentinel, isNot(LockoutScheme.graphite.colors.error));
+
+    // The dialog is a confirmation: declining must leave the routine alone.
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Push Pull Legs'), findsOneWidget);
   });
 
   testWidgets('Edit day saves and pops the day-detail sheet', (tester) async {

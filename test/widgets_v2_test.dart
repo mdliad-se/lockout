@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lockout/theme/app_palette.dart';
+import 'package:lockout/theme/lockout_theme.dart';
 import 'package:lockout/theme/schemes.dart';
 import 'package:lockout/widgets/action_grid.dart';
 import 'package:lockout/widgets/calm_row.dart';
@@ -8,6 +9,7 @@ import 'package:lockout/widgets/day_block.dart';
 import 'package:lockout/widgets/hero_card.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
 import 'package:lockout/widgets/stat_tile.dart';
+import 'package:lockout/widgets/undo_banner.dart';
 
 import 'test_helpers.dart';
 
@@ -19,6 +21,24 @@ Widget _host(Widget child) => MaterialApp(
 /// The ramp the rebuilt widgets identify with, replacing the palette accents
 /// the neubrutalist versions took.
 Color _ramp(int i) => LockoutScheme.graphite.semantics.categoryAt(i);
+
+/// Hosts a button that raises an undo banner into the root overlay, the way
+/// BODY and FOOD raise it after a delete.
+Widget _undoHost() => MaterialApp(
+      theme: lockoutTestTheme(),
+      home: Scaffold(
+        body: Builder(
+          builder: (ctx) => TextButton(
+            onPressed: () => showUndoBanner(
+              ctx,
+              message: 'Entry deleted',
+              onUndo: () {},
+            ),
+            child: const Text('delete'),
+          ),
+        ),
+      ),
+    );
 
 void main() {
   setUpAll(() {
@@ -118,14 +138,18 @@ void main() {
     expect(find.text('23.4'), findsOneWidget);
   });
 
-  // The day sheet's Add affordance was the one place this repo's own 40dp
-  // tap-target bar (log_tab.dart:325, meal_section.dart:110,
-  // undo_banner.dart:217) was never applied: `AddLink` padded to roughly
-  // 23dp tall around 10px mono text, and `HitTestBehavior.opaque` does not
-  // enlarge the box it is applied to. `tester.tap` hits a widget's centre
-  // regardless of size, so the flow tests in routines_tab_test.dart cannot
-  // catch a shrunk hit target — this measures the tappable box instead.
-  testWidgets('AddLink has at least a 40dp tall tappable bar', (tester) async {
+  // The day sheet's Add affordance was the one place this repo's own
+  // tap-target bar was never applied: `AddLink` padded to roughly 23dp tall
+  // around 10px mono text, and `HitTestBehavior.opaque` does not enlarge the
+  // box it is applied to. `tester.tap` hits a widget's centre regardless of
+  // size, so the flow tests in routines_tab_test.dart cannot catch a shrunk
+  // hit target — this measures the tappable box instead.
+  //
+  // The bar is `LockoutTheme.minTouchTarget` (48), not the 40 this widget
+  // first shipped with: 40 was never a recorded decision, and 48 is the
+  // branch-wide constraint every other restyled control already clears.
+  testWidgets('AddLink has at least a minTouchTarget tall tappable bar',
+      (tester) async {
     await tester.pumpWidget(_host(AddLink(label: '+ ADD WARM-UP', onTap: () {})));
 
     final detector = find.ancestor(
@@ -133,7 +157,8 @@ void main() {
       matching: find.byType(GestureDetector),
     );
     expect(detector, findsOneWidget);
-    expect(tester.getSize(detector).height, greaterThanOrEqualTo(40));
+    expect(tester.getSize(detector).height,
+        greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
 
     // The label is centred in that box, not parked at its top. Height alone
     // cannot see the difference: drop the centring and a 10px line paints at
@@ -144,9 +169,8 @@ void main() {
   });
 
   // The day sheet's rows carried a bare 14px `Icons.close` — the one delete
-  // affordance in the app still under the 40dp floor that log_tab.dart,
-  // meal_section.dart and undo_banner.dart each set for themselves.
-  testWidgets('SubItemRow remove affordance has a 40dp tap target',
+  // affordance in the app that was still under the app's tap-target floor.
+  testWidgets('SubItemRow remove affordance clears minTouchTarget',
       (tester) async {
     await tester.pumpWidget(_host(
       SubItemRow(name: 'Band pull-aparts', amt: 'x15', onRemove: () {}),
@@ -158,14 +182,14 @@ void main() {
     );
     expect(detector, findsOneWidget);
     final size = tester.getSize(detector);
-    expect(size.width, greaterThanOrEqualTo(40));
-    expect(size.height, greaterThanOrEqualTo(40));
+    expect(size.width, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+    expect(size.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
   });
 
   // The width leg needs its own case: every real label is ~135dp wide, so a
-  // long one satisfies `>= 40` whatever the constraint says and would pass
+  // long one satisfies the floor whatever the constraint says and would pass
   // against `minWidth: 0`.
-  testWidgets('AddLink holds the 40dp floor on both axes for a short label',
+  testWidgets('AddLink holds the floor on both axes for a short label',
       (tester) async {
     await tester.pumpWidget(_host(AddLink(label: '+', onTap: () {})));
 
@@ -174,8 +198,8 @@ void main() {
       matching: find.byType(GestureDetector),
     );
     final size = tester.getSize(detector);
-    expect(size.width, greaterThanOrEqualTo(40));
-    expect(size.height, greaterThanOrEqualTo(40));
+    expect(size.width, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+    expect(size.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
   });
 
   // Reported on an Android 16 device: a tall sheet drew its title UNDER the
@@ -245,5 +269,31 @@ void main() {
     await tester.tap(find.text('SAVE'));
     await tester.pumpAndSettle();
     expect(result, 'saved');
+  });
+
+  // The banner paints on `inverseSurface`, and its action used to take
+  // `colors.primary` — 1.37:1 on graphite, unreadable, and the control is
+  // the only one the banner has. `inversePrimary` is the readable tone for
+  // that background in every scheme (`schemes_test.dart` measures it);
+  // this pins the widget to the role rather than to a value, so a scheme
+  // that authors its own `inversePrimary` still gets a legible label.
+  testWidgets('the undo banner draws its action in inversePrimary',
+      (tester) async {
+    await tester.pumpWidget(_undoHost());
+    await tester.tap(find.text('delete'));
+    await tester.pump();
+
+    final colors = lockoutTestTheme().colorScheme;
+    final action = tester.widget<Text>(find.text('UNDO'));
+    expect(action.style?.color, colors.inversePrimary);
+    expect(action.style?.color, isNot(colors.primary));
+
+    // The message keeps the background's own on-colour.
+    final message = tester.widget<Text>(find.text('Entry deleted'));
+    expect(message.style?.color, colors.onInverseSurface);
+
+    // Let the 5s auto-dismiss Timer fire, or the test ends with it pending.
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
   });
 }

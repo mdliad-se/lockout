@@ -49,7 +49,8 @@ Future<PickedFood?> showFoodPicker(BuildContext context) {
 }
 
 class _FoodPickerSheet extends StatefulWidget {
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   _FoodPickerSheet();
 
@@ -255,7 +256,8 @@ class _FoodRow extends StatelessWidget {
   final String? matchNote;
   final VoidCallback onTap;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   _FoodRow({required this.food, required this.matchNote, required this.onTap});
 

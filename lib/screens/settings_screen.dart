@@ -6,6 +6,7 @@ import '../services/notification_service.dart';
 import '../services/numeric_guard.dart';
 import '../services/nutrition_planner.dart';
 import '../services/units.dart';
+import '../theme/lockout_semantics.dart';
 import '../theme/lockout_theme.dart';
 import '../theme/schemes.dart';
 import '../theme/theme_controller.dart';
@@ -25,9 +26,8 @@ class SettingsBody extends StatefulWidget {
   /// the title and there is no route to pop.
   final bool showAppBar;
 
-  // NOT const - this screen's children read colour from the theme, and a
-  // canonicalised instance is skipped on rebuild, stranding them in the
-  // previous theme after a switch.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   SettingsBody({
     super.key,
@@ -400,7 +400,7 @@ class SettingsBodyState extends State<SettingsBody> {
   }
 
   Future<void> _import() async {
-    final theme = Theme.of(context);
+    final semantics = LockoutSemantics.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -417,7 +417,13 @@ class SettingsBodyState extends State<SettingsBody> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+            // `semantics.danger`, not `colorScheme.error` — replacing every
+            // row in the database is a destructive confirmation, the role
+            // `LockoutSemantics` reserves `danger` for (see that class's
+            // doc, and today_tab's discard dialog for the same rule). The
+            // Import button that opens this dialog stays `error`: it is the
+            // affordance, not the confirmation.
+            style: TextButton.styleFrom(foregroundColor: semantics.danger),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Choose file'),
           ),

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lockout/theme/lockout_semantics.dart';
 import 'package:lockout/theme/schemes.dart';
 
 /// WCAG relative-contrast ratio, so "is this label readable" is a number
@@ -227,5 +228,83 @@ void main() {
     expect(changed.warning, const Color(0xFF123456));
     expect(changed.success, base.success);
     expect(changed.categoryRamp, base.categoryRamp);
+  });
+
+  // --- Finding 1 (task 15e review): the undo banner's only action ---------
+
+  /// `undo_banner.dart` paints its action label on `inverseSurface`. It used
+  /// to paint `colors.primary` there, which measures 1.37:1 on graphite and
+  /// never cleared ~2.1:1 on any scheme — unreadable for the banner's only
+  /// control. It now uses `inversePrimary`; this is the number that stops
+  /// that regressing, either from the widget or from a scheme that decides
+  /// to author `inversePrimary` itself (none does today, so it resolves to
+  /// `onPrimary`).
+  test('the inverse-surface action label is readable in every scheme', () {
+    for (final s in LockoutScheme.all) {
+      expect(
+        _contrast(s.colors.inversePrimary, s.colors.inverseSurface),
+        greaterThanOrEqualTo(4.5),
+        reason: '${s.key}: UNDO on the inverse banner',
+      );
+    }
+  });
+
+  // --- Finding 2: the invariants carried off `theme_tokens_test.dart` -----
+
+  /// `LockoutSemantics.onCategoryColor` is the function that used to be
+  /// `JinatraTokens.onAccentColor`, and its real guarantees lived in
+  /// `theme_tokens_test.dart` against `AppPalette`. That file dies with the
+  /// palette system, so the guarantees are restated here against
+  /// `LockoutScheme.all` — a luminance-direction check on two literal
+  /// backgrounds (which is all `day_colours_test.dart` carries) would not
+  /// catch a mid-tone accent resolving the wrong way.
+  group('LockoutSemantics.onCategoryColor', () {
+    test('every ramp accent of every scheme can carry a readable label', () {
+      for (final s in LockoutScheme.all) {
+        for (final accent in s.semantics.categoryRamp) {
+          expect(
+            _contrast(accent, LockoutSemantics.onCategoryColor(accent)),
+            greaterThanOrEqualTo(3.0),
+            reason: '${s.key} ${accent.toARGB32().toRadixString(16)}',
+          );
+        }
+      }
+    });
+
+    test('the label is the real-contrast argmax over every ramp accent', () {
+      for (final s in LockoutScheme.all) {
+        for (final accent in s.semantics.categoryRamp) {
+          final onDark = _contrast(accent, const Color(0xFF111111));
+          final onLight = _contrast(accent, const Color(0xFFFFFFFF));
+          final expected = onDark >= onLight
+              ? const Color(0xFF111111)
+              : const Color(0xFFFFFFFF);
+          expect(
+            LockoutSemantics.onCategoryColor(accent),
+            expected,
+            reason: '${s.key} ${accent.toARGB32().toRadixString(16)} '
+                'onDark=$onDark onLight=$onLight',
+          );
+        }
+      }
+    });
+
+    test('picks the higher-contrast of near-black and white, not a threshold',
+        () {
+      expect(LockoutSemantics.onCategoryColor(const Color(0xFFFFE24A)),
+          const Color(0xFF111111));
+      expect(LockoutSemantics.onCategoryColor(const Color(0xFF1E44D6)),
+          const Color(0xFFFFFFFF));
+    });
+
+    /// Ported from `theme_tokens_test.dart`. No `LockoutScheme` authors
+    /// #E23A2E, so this is no longer a palette case — it is kept as a
+    /// pure-function pin, because it is the mid-tone a luminance-threshold
+    /// implementation resolves to white and the argmax resolves to
+    /// near-black, and that is the mistake being guarded.
+    test('regression: #E23A2E resolves to near-black, not white', () {
+      expect(LockoutSemantics.onCategoryColor(const Color(0xFFE23A2E)),
+          const Color(0xFF111111));
+    });
   });
 }

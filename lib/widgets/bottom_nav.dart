@@ -38,9 +38,8 @@ class BottomNav extends StatefulWidget {
   final ValueChanged<int> onTap;
   final bool foodTabEnabled;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. The bar
-  // reads its colours from the theme, and a canonicalised instance is skipped
-  // on rebuild, stranding it in the previous theme after a switch.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   BottomNav({
     super.key,

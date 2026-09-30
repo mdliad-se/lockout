@@ -16,7 +16,8 @@ class SheetScaffold extends StatelessWidget {
   final Widget child;
   final Widget? footer;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   SheetScaffold({
     super.key,

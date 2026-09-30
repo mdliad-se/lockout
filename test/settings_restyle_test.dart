@@ -166,7 +166,7 @@ void main() {
   /// Settings is one long scroll. A surface tall enough to hold every card
   /// keeps the field or button a test drives on screen, so the test
   /// exercises the screen rather than the scroll physics.
-  Future<void> pumpSettings(WidgetTester tester) async {
+  Future<void> pumpSettings(WidgetTester tester, {ThemeData? theme}) async {
     tester.view.physicalSize = const Size(800, 6000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -174,7 +174,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        theme: lockoutTestTheme(),
+        theme: theme ?? lockoutTestTheme(),
         home: SettingsScreen(onSettingsUpdated: () {}),
       ),
     );
@@ -520,10 +520,20 @@ void main() {
     });
 
     testWidgets(
-        'the destructive import action resolves to colorScheme.error, '
-        'behind its confirmation dialog', (tester) async {
-      await pumpSettings(tester);
-      final colors = lockoutTestTheme().colorScheme;
+        'the import action is an error-coloured button behind a '
+        'danger-coloured confirmation', (tester) async {
+      // Every shipped scheme happens to set `danger` to the same value as
+      // `ColorScheme.error`, so a test against the shipped theme could not
+      // tell the two roles apart. This one overrides `danger` to a sentinel
+      // that no other role holds.
+      const sentinel = Color(0xFF00FF00);
+      final theme = LockoutTheme.build(
+        colors: LockoutScheme.graphite.colors,
+        semantics:
+            LockoutScheme.graphite.semantics.copyWith(danger: sentinel),
+      );
+      await pumpSettings(tester, theme: theme);
+      final colors = theme.colorScheme;
 
       final importButton = tester.widget<OutlinedButton>(
         find.byKey(const Key('importBackupButton')),
@@ -539,13 +549,18 @@ void main() {
       expect(find.text('Replace all data?'), findsOneWidget,
           reason: 'the destructive action stays behind its confirmation');
 
+      // `semantics.danger`, not `colorScheme.error`: this is a destructive
+      // confirmation, which is the role `LockoutSemantics` reserves `danger`
+      // for (today_tab's discard dialog and log_tab's DELETE ENTRY already
+      // read it that way).
       final confirmButton = tester.widget<TextButton>(
         find.widgetWithText(TextButton, 'Choose file'),
       );
       expect(
         confirmButton.style?.foregroundColor?.resolve(<WidgetState>{}),
-        colors.error,
+        sentinel,
       );
+      expect(sentinel, isNot(colors.error));
     });
 
     testWidgets('the seven-swatch theme picker sits under an Appearance caption',

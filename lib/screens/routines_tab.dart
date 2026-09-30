@@ -36,9 +36,8 @@ class RoutinesTab extends StatefulWidget {
   /// which case the card simply offers no Start.
   final VoidCallback? onStartToday;
 
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart. This tab
-  // lives in `MainScreen`'s `IndexedStack` and never unmounts, so a skipped
-  // rebuild would strand it in the old palette for the process lifetime.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   RoutinesTab({super.key, this.onStartToday});
 
@@ -219,7 +218,7 @@ class RoutinesTabState extends State<RoutinesTab> {
   }
 
   Future<void> _confirmDeleteRoutine(Routine routine) async {
-    final theme = Theme.of(context);
+    final semantics = LockoutSemantics.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -234,8 +233,13 @@ class RoutinesTabState extends State<RoutinesTab> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            style:
-                TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+            // `semantics.danger`, not `colorScheme.error` — deleting a
+            // routine is a destructive confirmation, which is the role
+            // `LockoutSemantics` reserves `danger` for; `error` is what the
+            // framework also paints on an invalid form field (see that
+            // class's doc, and today_tab's discard dialog for the same
+            // rule).
+            style: TextButton.styleFrom(foregroundColor: semantics.danger),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete'),
           ),
@@ -879,7 +883,8 @@ class RoutinesTabState extends State<RoutinesTab> {
 // controller is gone but something in the tree still points at it.
 
 class _CreateRoutineForm extends StatefulWidget {
-  // NOT const - see `SectionHeading` in lib/widgets/day_block.dart.
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
   // ignore: prefer_const_constructors_in_immutables
   _CreateRoutineForm();
 
