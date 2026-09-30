@@ -8,7 +8,6 @@ import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/today_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/schedule_service.dart';
-import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/theme/lockout_theme.dart';
 
 import 'test_helpers.dart';
@@ -72,7 +71,6 @@ void main() {
     // default factory's background-isolate round trip inside that same zone.
     databaseFactory = databaseFactoryFfiNoIsolate;
     DatabaseService.testDatabasePath = inMemoryDatabasePath;
-    AppPalette.apply(AppPalette.paperPress);
   });
 
   setUp(() async {

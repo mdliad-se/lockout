@@ -6,76 +6,9 @@ import 'package:lockout/data/food_library.dart';
 import 'package:lockout/data/routine_templates.dart';
 import 'package:lockout/services/nutrition_planner.dart';
 import 'package:lockout/services/training_planner.dart';
-import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/food_picker.dart';
 
 void main() {
-  group('AppPalette', () {
-    test('ships four light and four dark palettes', () {
-      expect(AppPalette.light.length, 4);
-      expect(AppPalette.dark.length, 4);
-      expect(AppPalette.all.length, 8);
-    });
-
-    test('light palettes are light and dark palettes are dark', () {
-      for (final p in AppPalette.light) {
-        expect(p.isDark, isFalse, reason: p.key);
-      }
-      for (final p in AppPalette.dark) {
-        expect(p.isDark, isTrue, reason: p.key);
-      }
-    });
-
-    test('palette keys and names are unique', () {
-      final keys = AppPalette.all.map((p) => p.key).toList();
-      final names = AppPalette.all.map((p) => p.name).toList();
-      expect(keys.toSet().length, keys.length);
-      expect(names.toSet().length, names.length);
-    });
-
-    test('an unknown key falls back rather than throwing', () {
-      expect(AppPalette.byKey('does_not_exist').key, AppPalette.fallback.key);
-      expect(AppPalette.byKey('carbon_lime').name, 'Carbon Lime');
-    });
-
-    test('applying a palette bumps the revision exactly once', () {
-      AppPalette.applyKey(AppPalette.fallback.key);
-      final before = AppPalette.revision.value;
-
-      AppPalette.apply(AppPalette.voidMagenta);
-      expect(AppPalette.revision.value, before + 1);
-      expect(AppPalette.current.key, 'void_magenta');
-
-      // Re-applying the same palette must not trigger a needless rebuild.
-      AppPalette.apply(AppPalette.voidMagenta);
-      expect(AppPalette.revision.value, before + 1);
-
-      AppPalette.apply(AppPalette.fallback);
-    });
-
-    test('ink contrasts with canvas in every palette', () {
-      for (final p in AppPalette.all) {
-        final inkLum = p.ink.computeLuminance();
-        final canvasLum = p.canvas.computeLuminance();
-        expect((inkLum - canvasLum).abs(), greaterThan(0.4), reason: p.key);
-      }
-    });
-
-    test('text on primary and accent stays readable', () {
-      // Neubrutalism puts label text directly on saturated fills; if onPrimary
-      // does not contrast with primary the button becomes unreadable.
-      for (final p in AppPalette.all) {
-        final primaryGap =
-            (p.onPrimary.computeLuminance() - p.primary.computeLuminance())
-                .abs();
-        final accentGap =
-            (p.onAccent.computeLuminance() - p.accent.computeLuminance()).abs();
-        expect(primaryGap, greaterThan(0.25), reason: '${p.key} primary');
-        expect(accentGap, greaterThan(0.25), reason: '${p.key} accent');
-      }
-    });
-  });
-
   group('FoodLibrary', () {
     test('catalog is large and spans many cuisines', () {
       expect(FoodLibrary.all.length, greaterThan(300));

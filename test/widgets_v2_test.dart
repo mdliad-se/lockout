@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/theme/lockout_theme.dart';
 import 'package:lockout/theme/schemes.dart';
 import 'package:lockout/widgets/action_grid.dart';
@@ -41,11 +40,6 @@ Widget _undoHost({ThemeData? theme}) => MaterialApp(
     );
 
 void main() {
-  setUpAll(() {
-    // A widget test must never reach the network for a font file.
-    AppPalette.apply(AppPalette.paperPress);
-  });
-
   testWidgets(
       'SheetScaffold bottom padding tracks MediaQuery viewInsets',
       (tester) async {

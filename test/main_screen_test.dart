@@ -5,7 +5,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/main_screen.dart';
 import 'package:lockout/services/database_service.dart';
-import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/bottom_nav.dart';
 
 import 'test_helpers.dart';
@@ -42,7 +41,6 @@ void main() {
     // default factory's background-isolate round trip inside that same zone.
     databaseFactory = databaseFactoryFfiNoIsolate;
     DatabaseService.testDatabasePath = inMemoryDatabasePath;
-    AppPalette.apply(AppPalette.paperPress);
   });
 
   setUp(() async {

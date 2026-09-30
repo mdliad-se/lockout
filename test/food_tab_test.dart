@@ -6,7 +6,6 @@ import 'package:lockout/models/models.dart';
 import 'package:lockout/theme/schemes.dart';
 import 'package:lockout/screens/food_tab.dart';
 import 'package:lockout/services/database_service.dart';
-import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/meal_section.dart';
 import 'package:lockout/widgets/progress_hero.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
@@ -28,7 +27,6 @@ void main() {
   setUpAll(() {
     databaseFactory = databaseFactoryFfiNoIsolate;
     DatabaseService.testDatabasePath = inMemoryDatabasePath;
-    AppPalette.apply(AppPalette.paperPress);
   });
 
   setUp(() async {

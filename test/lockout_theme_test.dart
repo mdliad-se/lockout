@@ -38,6 +38,22 @@ void main() {
     expect(theme.scaffoldBackgroundColor, LockoutScheme.paper.colors.surface);
   });
 
+  /// Rehomed from `theme_tokens_test.dart`, which pinned the Jinatra radii
+  /// (card 14, tile 12, pill 999) and died with that layer. The guarantee is
+  /// the same one: the shape scale is a decision, not an accident, so a
+  /// number cannot drift without a test saying so. The values are the
+  /// Lockout scale, which is a different scale — the test below only proves
+  /// the components agree with the tokens, which stays true if every token
+  /// moves together.
+  test('the shape scale is the pinned Lockout values', () {
+    expect(LockoutTheme.radiusButton, 14.0);
+    expect(LockoutTheme.radiusCard, 18.0);
+    expect(LockoutTheme.radiusDialog, 24.0);
+    expect(LockoutTheme.radiusSheet, 28.0);
+    expect(LockoutTheme.radiusField, 14.0);
+    expect(LockoutTheme.radiusPill, 999.0);
+  });
+
   test('the shape scale reaches the component themes', () {
     final theme = _themeFor(LockoutScheme.graphite);
 

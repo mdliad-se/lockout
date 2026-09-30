@@ -6,7 +6,6 @@ import 'package:lockout/models/models.dart';
 import 'package:lockout/screens/body_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/services/goal_service.dart';
-import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/calm_row.dart';
 import 'package:lockout/widgets/weight_card.dart';
 import 'package:lockout/widgets/sheet_scaffold.dart';
@@ -34,7 +33,6 @@ void main() {
   setUpAll(() {
     databaseFactory = databaseFactoryFfiNoIsolate;
     DatabaseService.testDatabasePath = inMemoryDatabasePath;
-    AppPalette.apply(AppPalette.paperPress);
   });
 
   setUp(() async {
