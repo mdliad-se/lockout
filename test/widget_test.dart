@@ -56,35 +56,178 @@ void main() {
   });
 
   group('ScheduleService - streak', () {
-    String key(DateTime d) => ScheduleService.dateKey(d);
+    // Fixtures are built with calendar arithmetic — `DateTime(y, m, d - n)`,
+    // which the constructor normalises across month and year boundaries —
+    // rather than `now.subtract(Duration(days: n))`. Subtracting a fixed 24h
+    // is the exact idiom these tests exist to guard against: on a
+    // DST-observing host at 00:30 the morning after a spring-forward,
+    // `now.subtract(const Duration(days: 1))` lands on the day *before*
+    // yesterday, quietly turning "a streak ending yesterday" into a
+    // gap-of-two case and failing in CI for a reason that has nothing to do
+    // with the streak rule.
+    String daysAgo(int n) {
+      final now = DateTime.now();
+      return ScheduleService.dateKey(
+        DateTime(now.year, now.month, now.day - n),
+      );
+    }
 
     test('consecutive days ending today count', () {
-      final now = DateTime.now();
-      final dates = [
-        key(now),
-        key(now.subtract(const Duration(days: 1))),
-        key(now.subtract(const Duration(days: 2))),
-      ];
-      expect(ScheduleService.currentStreakDays(dates), 3);
+      expect(
+        ScheduleService.currentStreakDays([daysAgo(0), daysAgo(1), daysAgo(2)]),
+        3,
+      );
     });
 
     test('a streak ending yesterday is still live', () {
-      final now = DateTime.now();
-      final dates = [
-        key(now.subtract(const Duration(days: 1))),
-        key(now.subtract(const Duration(days: 2))),
-      ];
-      expect(ScheduleService.currentStreakDays(dates), 2);
+      expect(ScheduleService.currentStreakDays([daysAgo(1), daysAgo(2)]), 2);
     });
 
     test('a gap of two days breaks the streak', () {
-      final now = DateTime.now();
-      final dates = [key(now.subtract(const Duration(days: 3)))];
-      expect(ScheduleService.currentStreakDays(dates), 0);
+      expect(ScheduleService.currentStreakDays([daysAgo(3)]), 0);
+    });
+
+    // A gap of 3 (above) also trips a mutated `> 2` bound, so it does not
+    // discriminate the boundary. A gap of exactly 2 (the day-before-
+    // yesterday case) only breaks the streak under the real `> 1` bound.
+    test('a gap of exactly two days (day before yesterday) also breaks '
+        'the streak', () {
+      expect(ScheduleService.currentStreakDays([daysAgo(2)]), 0);
     });
 
     test('no history means no streak', () {
       expect(ScheduleService.currentStreakDays([]), 0);
+    });
+
+    // A date ahead of today is not a workout that happened: it comes from
+    // clock skew, or from a backup restored from a device in a later
+    // timezone. Left in, it makes the newest-date gap negative, which sails
+    // past the `> 1` break test and reports a live streak off a session
+    // nobody has done.
+    test('a future-dated session cannot prop up a dead streak', () {
+      expect(ScheduleService.currentStreakDays([daysAgo(-1)]), 0);
+    });
+
+    test('a future-dated session neither extends nor breaks a live run', () {
+      expect(
+        ScheduleService.currentStreakDays([daysAgo(-1), daysAgo(0), daysAgo(1)]),
+        2,
+      );
+    });
+  });
+
+  // `dayNumber` derives a day ordinal from calendar fields alone (Howard
+  // Hinnant's days_from_civil) and never from wall-clock subtraction,
+  // because two local midnights are not reliably 24h apart: across a
+  // spring-forward they are 23h apart, which `Duration.inDays` floors to 0,
+  // and across a fall-back a genuine two-day gap is 47h, which floors to 1.
+  group('ScheduleService - dayNumber', () {
+    test('adjacent calendar dates are one ordinal apart whatever the time '
+        'of day', () {
+      expect(
+        ScheduleService.dayNumber(DateTime(2026, 3, 9, 0, 0)) -
+            ScheduleService.dayNumber(DateTime(2026, 3, 8, 23, 59)),
+        1,
+      );
+    });
+
+    test('ordinals run continuously across a month boundary', () {
+      expect(
+        ScheduleService.dayNumber(DateTime(2027, 3, 1)) -
+            ScheduleService.dayNumber(DateTime(2027, 2, 28)),
+        1,
+      );
+    });
+
+    test('a leap day is a day like any other', () {
+      // 2028 is a leap year, so 02-28 -> 03-01 spans two days.
+      expect(
+        ScheduleService.dayNumber(DateTime(2028, 3, 1)) -
+            ScheduleService.dayNumber(DateTime(2028, 2, 28)),
+        2,
+      );
+    });
+
+    // The tests above prove `dayNumber` is exact; the ones below prove the
+    // streak consults `calendarDay`. Neither says the field production runs
+    // on holds `dayNumber` — swap its initialiser for the wall-clock
+    // subtraction it exists to defeat and all of them still pass, because
+    // this host's timezone makes the two agree on every real date. This is
+    // the assertion that joins the two halves. Static tear-offs are
+    // canonicalised in Dart, so `dayNumber` is identical to itself and
+    // `same` is a sound identity check.
+    test('the calendar production uses is the ordinal one', () {
+      expect(ScheduleService.calendarDay, same(ScheduleService.dayNumber));
+    });
+  });
+
+  // The DST hazard above cannot be reproduced here: this host runs at UTC+6
+  // and observes no transition, so every real `DateTime` pair available to a
+  // test makes calendar arithmetic and `Duration.inDays` agree. A test
+  // written from real dates can only assert what both already do, and passes
+  // just as happily against the broken arithmetic — there is no coverage to
+  // be had that way.
+  //
+  // So these swap the calendar itself for one that disagrees with the clock
+  // through `ScheduleService.calendarDay`, and read a streak back out. The
+  // disagreement changes an answer only if the production code actually
+  // consults the calendar, so reverting either call site in
+  // `currentStreakDays` to `Duration.inDays` fails them.
+  //
+  // Each substitute steps once at a cutoff date and is the real ordinal
+  // everywhere else, so dates never come back out of sequence: what is
+  // modelled stays a shifted calendar rather than an incoherent one. The two
+  // directions mirror the two real transitions — a widened step is the
+  // fall-back case (a genuine two-day gap the clock reads as one), a
+  // collapsed step the spring-forward case (two dates the clock cannot tell
+  // apart).
+  group('ScheduleService - streak reads the calendar, not the clock', () {
+    tearDown(() => ScheduleService.calendarDay = ScheduleService.dayNumber);
+
+    String key(DateTime d) => ScheduleService.dateKey(d);
+
+    DateTime daysAgo(int n) {
+      final now = DateTime.now();
+      return DateTime(now.year, now.month, now.day - n);
+    }
+
+    /// Installs a calendar that matches the real one before [from] and adds
+    /// [by] to every ordinal on or after it: the one step across [from]
+    /// measures `1 + by` days, every other step still measures one, and the
+    /// order of dates is preserved.
+    void stepAt(DateTime from, int by) {
+      final cutoff = ScheduleService.dayNumber(from);
+      ScheduleService.calendarDay = (d) {
+        final n = ScheduleService.dayNumber(d);
+        return n >= cutoff ? n + by : n;
+      };
+    }
+
+    test('the run between two logged days is a calendar difference', () {
+      // The clock says these two dates are adjacent; the calendar puts three
+      // extra days between them, so the run is one day, not two.
+      stepAt(daysAgo(0), 3);
+      expect(
+        ScheduleService.currentStreakDays([key(daysAgo(0)), key(daysAgo(1))]),
+        1,
+      );
+    });
+
+    test('the "today or yesterday" bound is measured the same way', () {
+      // One logged day, adjacent to today by the clock but four calendar
+      // days back: too old to keep the streak alive.
+      stepAt(daysAgo(0), 3);
+      expect(ScheduleService.currentStreakDays([key(daysAgo(1))]), 0);
+    });
+
+    test('a calendar that pulls two dates together keeps the run alive', () {
+      // The mirror case: the clock counts two days between these sessions,
+      // the calendar counts one, so the run is unbroken.
+      stepAt(daysAgo(1), -1);
+      expect(
+        ScheduleService.currentStreakDays([key(daysAgo(0)), key(daysAgo(2))]),
+        2,
+      );
     });
   });
 
@@ -180,6 +323,66 @@ void main() {
       expect(back.isCompleted, isTrue);
     });
 
+    test('day copyWith keeps identity, overrides given fields, and carries '
+        'warmups/finishers along with exercises', () {
+      final day = TrainingDay(
+        id: 'd1',
+        routineId: 'r1',
+        name: 'Push',
+        tag: 'MON',
+        orderIndex: 0,
+        focus: 'Chest',
+        note: 'Go slow',
+        isRestDay: false,
+      );
+
+      final exercises = [
+        ExerciseDef(
+          id: 'e1',
+          dayId: 'd1',
+          name: 'Bench Press',
+          targetSets: 4,
+          targetRepsMin: 8,
+          targetRepsMax: 12,
+        ),
+      ];
+      final warmups = [
+        WarmupItem(id: 'w1', dayId: 'd1', name: 'Arm circles', amt: '3 min', orderIndex: 0),
+      ];
+      final finishers = [
+        FinisherItem(id: 'f1', dayId: 'd1', name: 'Burpees', amt: '30s', orderIndex: 0),
+      ];
+
+      final hydrated = day.copyWith(
+        exercises: exercises,
+        warmups: warmups,
+        finishers: finishers,
+      );
+
+      // id and routineId are identity — never copied over, even though
+      // copyWith takes no id/routineId parameters to override them with.
+      expect(hydrated.id, 'd1');
+      expect(hydrated.routineId, 'r1');
+      // Fields not passed to copyWith fall back to the original.
+      expect(hydrated.name, 'Push');
+      expect(hydrated.tag, 'MON');
+      expect(hydrated.focus, 'Chest');
+      expect(hydrated.note, 'Go slow');
+      expect(hydrated.isRestDay, isFalse);
+      // The fields that were passed are the ones that change.
+      expect(hydrated.exercises, exercises);
+      expect(hydrated.warmups, warmups);
+      expect(hydrated.finishers, finishers);
+
+      final renamedRestDay = day.copyWith(name: 'Off', isRestDay: true);
+      expect(renamedRestDay.name, 'Off');
+      expect(renamedRestDay.isRestDay, isTrue);
+      // Untouched fields, including the lists, still fall back — copyWith
+      // does not silently drop what it wasn't asked to change.
+      expect(renamedRestDay.tag, 'MON');
+      expect(renamedRestDay.exercises, isEmpty);
+    });
+
     test('session duration label switches to hours past 60 minutes', () {
       SessionLog withDuration(int seconds) => SessionLog(
             id: 'x',
@@ -192,6 +395,140 @@ void main() {
 
       expect(withDuration(45 * 60).durationLabel, '45 min');
       expect(withDuration(95 * 60).durationLabel, '1h 35m');
+    });
+
+    // The INTEGER half of the tolerant-read sweep. `BodyEntry.fromMap`
+    // documents the vector: SQLite affinity is advisory, and a backup
+    // restored by a build older than `BackupService`'s import coercion can
+    // leave the literal text a hand-edited JSON file held in any numeric
+    // column. INTEGER columns were left as bare `map['reps']` assignments
+    // when the REAL ones were routed through `NumericGuard`, so they went
+    // on throwing `type 'String' is not a subtype of type 'int'` out of the
+    // very factories FOOD and LOG hydrate their lists through — before the
+    // `setState` that clears the spinner. Zero is the same honest
+    // "unreadable" value the doubles already land on.
+    group('an integer column holding text reads as a default, not a throw',
+        () {
+      Map<String, dynamic> poisoned(Map<String, dynamic> base,
+              Map<String, dynamic> overrides) =>
+          {...base, ...overrides};
+
+      test('SetLog set_index and reps', () {
+        final base = SetLog(
+          id: 's1',
+          sessionExerciseId: 'e1',
+          sessionId: 'sess1',
+          exerciseName: 'Back Squat',
+          setIndex: 1,
+          weightKg: 60,
+          reps: 10,
+        ).toMap();
+
+        final back = SetLog.fromMap(
+            poisoned(base, {'set_index': 'first', 'reps': 'lots'}));
+        expect(back.setIndex, 0);
+        expect(back.reps, 0);
+        expect(back.exerciseName, 'Back Squat',
+            reason: 'one unreadable column must not cost the readable ones');
+        // Numeric text still means the number it spells.
+        expect(SetLog.fromMap(poisoned(base, {'reps': '8'})).reps, 8);
+      });
+
+      test('SessionLog duration_seconds and total_sets', () {
+        final base = SessionLog(
+          id: 'x',
+          dayName: 'Push',
+          dateStr: '2026-09-07',
+          durationSeconds: 1800,
+          totalVolumeKg: 100,
+          status: 'completed',
+          totalSets: 12,
+        ).toMap();
+
+        final back = SessionLog.fromMap(poisoned(
+            base, {'duration_seconds': 'ages', 'total_sets': 'many'}));
+        expect(back.durationSeconds, 0);
+        expect(back.totalSets, 0);
+        expect(back.dayName, 'Push');
+        expect(back.durationLabel, '0 min',
+            reason: 'the label derives from the duration and must not throw '
+                'either');
+      });
+
+      test('FoodEntry kcal', () {
+        final base = FoodEntry(
+          id: 'f1',
+          dateStr: '2026-09-07',
+          mealSlot: 'Breakfast',
+          name: 'Oats',
+          kcal: 400,
+        ).toMap();
+
+        expect(FoodEntry.fromMap(poisoned(base, {'kcal': 'loads'})).kcal, 0);
+        expect(FoodEntry.fromMap(poisoned(base, {'kcal': '400'})).kcal, 400);
+        expect(FoodEntry.fromMap(poisoned(base, {'kcal': 'loads'})).name,
+            'Oats');
+      });
+
+      test('ExerciseDef targets, rest and order', () {
+        final base = ExerciseDef(
+          id: 'e1',
+          dayId: 'd1',
+          name: 'Lat Pulldown',
+          targetSets: 4,
+          targetRepsMin: 10,
+          targetRepsMax: 12,
+          restDefaultS: 90,
+          orderIndex: 2,
+        ).toMap();
+
+        final back = ExerciseDef.fromMap(poisoned(base, {
+          'target_sets': 'four',
+          'target_reps_min': 'ten',
+          'target_reps_max': 'twelve',
+          'rest_default_s': 'a while',
+          'order_index': 'second',
+        }));
+        expect(back.targetSets, 0);
+        expect(back.targetRepsMin, 0);
+        expect(back.targetRepsMax, 0);
+        // The column's own documented default, not zero: an unreadable rest
+        // has a sensible answer, and a zero-second timer has not.
+        expect(back.restDefaultS, 60);
+        expect(back.orderIndex, 0);
+        expect(back.targetLabel, '0x0',
+            reason: 'the label derives from the targets and must not throw');
+      });
+
+      test('TrainingDay, WarmupItem and FinisherItem order_index', () {
+        expect(
+            TrainingDay.fromMap({
+              'id': 'd1',
+              'routine_id': 'r1',
+              'name': 'Push',
+              'tag': 'MON',
+              'order_index': 'first',
+            }).orderIndex,
+            0);
+        expect(
+            WarmupItem.fromMap({
+              'id': 'w1',
+              'day_id': 'd1',
+              'name': 'Bike',
+              'amt': '3 min',
+              'order_index': 'first',
+            }).orderIndex,
+            0);
+        expect(
+            FinisherItem.fromMap({
+              'id': 'x1',
+              'day_id': 'd1',
+              'name': 'Plank',
+              'amt': '60 s',
+              'order_index': 'last',
+            }).orderIndex,
+            0);
+      });
     });
   });
 }

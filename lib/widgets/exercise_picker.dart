@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../data/exercise_library.dart';
-import '../theme/jinatra_tokens.dart';
+import '../data/food_search.dart';
+import '../theme/lockout_theme.dart';
+import 'lockout_card.dart';
+import 'sheet_scaffold.dart';
 
 /// Result of the picker: either a catalog entry or a user-typed custom name.
 class PickedExercise {
@@ -37,17 +40,17 @@ class PickedExercise {
 
 /// Full-height searchable catalog picker. Returns null when dismissed.
 Future<PickedExercise?> showExercisePicker(BuildContext context) {
-  return showModalBottomSheet<PickedExercise>(
+  return showLockoutRawSheet<PickedExercise>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: JinatraTokens.sweetCream,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-    builder: (_) => const _ExercisePickerSheet(),
+    builder: (_) => _ExercisePickerSheet(),
   );
 }
 
 class _ExercisePickerSheet extends StatefulWidget {
-  const _ExercisePickerSheet();
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  _ExercisePickerSheet();
 
   @override
   State<_ExercisePickerSheet> createState() => _ExercisePickerSheetState();
@@ -68,8 +71,8 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
     var list = _group == 'All'
         ? ExerciseLibrary.all
         : ExerciseLibrary.byGroup(_group);
-    if (_query.isNotEmpty) {
-      list = list.where((e) => e.matches(_query)).toList();
+    if (_query.trim().isNotEmpty) {
+      list = searchExercises(_query, source: list).map((h) => h.item).toList();
     }
     return list;
   }
@@ -81,6 +84,7 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final results = _results;
     final groups = ['All', ...ExerciseLibrary.muscleGroups];
 
@@ -92,122 +96,100 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              padding: const EdgeInsets.fromLTRB(
+                LockoutTheme.screenPadding,
+                LockoutTheme.spaceSm,
+                LockoutTheme.screenPadding,
+                0,
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('PICK EXERCISE', style: JinatraTokens.sectionHeader()),
-                  Text(
-                    '${results.length} FOUND',
-                    style: JinatraTokens.monoData(
-                      fontSize: 11,
-                      color: JinatraTokens.ink.withValues(alpha: 0.6),
-                    ),
-                  ),
+                  Text('Pick exercise', style: theme.textTheme.titleLarge),
+                  Text('${results.length} found',
+                      style: theme.textTheme.labelMedium),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: LockoutTheme.spaceMd),
 
             // Search field
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: JinatraTokens.paper,
-                  border: Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderControl),
-                ),
-                child: TextField(
-                  controller: _searchCtrl,
-                  autofocus: false,
-                  style: JinatraTokens.bodyText(fontWeight: FontWeight.w600),
-                  onChanged: (v) => setState(() => _query = v),
-                  decoration: InputDecoration(
-                    hintText: 'Search bench, squat, cable...',
-                    hintStyle: JinatraTokens.bodyText(
-                      color: JinatraTokens.ink.withValues(alpha: 0.45),
-                    ),
-                    prefixIcon: Icon(Icons.search, color: JinatraTokens.ink, size: 20),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: Icon(Icons.close, size: 18, color: JinatraTokens.ink),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() => _query = '');
-                            },
-                          ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: LockoutTheme.screenPadding),
+              child: TextField(
+                controller: _searchCtrl,
+                autofocus: false,
+                style: theme.textTheme.bodyLarge,
+                onChanged: (v) => setState(() => _query = v),
+                decoration: InputDecoration(
+                  hintText: 'Search bench, squat, cable...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.close,
+                              semanticLabel: 'Clear search'),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: LockoutTheme.spaceMd),
 
             // Muscle group filter strip
             SizedBox(
-              height: 38,
+              height: LockoutTheme.minTouchTarget,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: LockoutTheme.screenPadding),
                 itemCount: groups.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) =>
+                    const SizedBox(width: LockoutTheme.spaceSm),
                 itemBuilder: (_, i) {
                   final g = groups[i];
-                  final active = g == _group;
-                  return GestureDetector(
-                    onTap: () => setState(() => _group = g),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: active ? JinatraTokens.deepTeal : JinatraTokens.paper,
-                        border: Border.all(color: JinatraTokens.ink, width: 2),
-                        boxShadow: active ? null : [JinatraTokens.hardShadow(offset: 2)],
-                      ),
-                      child: Text(
-                        g.toUpperCase(),
-                        style: JinatraTokens.monoData(
-                          fontSize: 11,
-                          color: active ? JinatraTokens.onPrimary : JinatraTokens.ink,
-                        ),
-                      ),
-                    ),
+                  return ChoiceChip(
+                    label: Text(g),
+                    selected: g == _group,
+                    onSelected: (_) => setState(() => _group = g),
                   );
                 },
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: LockoutTheme.spaceMd),
 
             if (_canAddCustom)
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                child: GestureDetector(
+                padding: const EdgeInsets.fromLTRB(
+                  LockoutTheme.screenPadding,
+                  0,
+                  LockoutTheme.screenPadding,
+                  LockoutTheme.spaceMd,
+                ),
+                child: LockoutCard(
+                  color: theme.colorScheme.tertiaryContainer,
                   onTap: () => Navigator.pop(
                     context,
                     PickedExercise.custom(_searchCtrl.text.trim()),
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: JinatraTokens.signal,
-                      border: Border.all(color: JinatraTokens.ink, width: 2),
-                      boxShadow: [JinatraTokens.hardShadow(offset: 3)],
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.add, size: 18, color: JinatraTokens.ink),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'ADD CUSTOM: "${_searchCtrl.text.trim()}"',
-                            style: JinatraTokens.monoData(fontSize: 11),
-                            overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    children: [
+                      Icon(Icons.add, color: theme.colorScheme.onTertiaryContainer),
+                      const SizedBox(width: LockoutTheme.spaceSm),
+                      Expanded(
+                        child: Text(
+                          'Add custom: "${_searchCtrl.text.trim()}"',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: theme.colorScheme.onTertiaryContainer,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -216,16 +198,24 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
               child: results.isEmpty
                   ? Center(
                       child: Text(
-                        'NO MATCH IN CATALOG\nType a name to add it as custom.',
+                        'No match in catalog.\nType a name to add it as custom.',
                         textAlign: TextAlign.center,
-                        style: JinatraTokens.monoData(
-                          color: JinatraTokens.ink.withValues(alpha: 0.6),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(
+                        LockoutTheme.screenPadding,
+                        0,
+                        LockoutTheme.screenPadding,
+                        LockoutTheme.screenPadding +
+                            MediaQuery.viewPaddingOf(context).bottom,
+                      ),
                       itemCount: results.length,
+                      separatorBuilder: (_, _) =>
+                          const SizedBox(height: LockoutTheme.spaceSm),
                       itemBuilder: (_, i) => _ExerciseRow(
                         exercise: results[i],
                         onTap: () => Navigator.pop(
@@ -246,53 +236,61 @@ class _ExerciseRow extends StatelessWidget {
   final LibraryExercise exercise;
   final VoidCallback onTap;
 
-  const _ExerciseRow({required this.exercise, required this.onTap});
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  _ExerciseRow({required this.exercise, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: JinatraTokens.paper,
-          border: Border.all(color: JinatraTokens.ink, width: 2),
-          boxShadow: [JinatraTokens.hardShadow(offset: 3)],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    exercise.name,
-                    style: JinatraTokens.bodyText(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${exercise.muscleGroup.toUpperCase()} - ${exercise.equipment.toUpperCase()}',
-                    style: JinatraTokens.monoData(
-                      fontSize: 10,
-                      color: JinatraTokens.ink.withValues(alpha: 0.6),
+    final theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(LockoutTheme.cardPadding),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      exercise.name,
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.w600),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${exercise.muscleGroup} – ${exercise.equipment}',
+                      style: theme.textTheme.labelSmall,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: LockoutTheme.spaceSm),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(LockoutTheme.radiusPill),
+                ),
+                child: Text(
+                  '${exercise.defaultSets}x${exercise.defaultRepsMin}-'
+                  '${exercise.defaultRepsMax}',
+                  style: LockoutTheme.numeric(
+                    context,
+                    size: 11,
+                    color: theme.colorScheme.onSecondaryContainer,
                   ),
-                ],
+                ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: JinatraTokens.mistTeal,
-                border: Border.all(color: JinatraTokens.ink, width: 1),
-              ),
-              child: Text(
-                '${exercise.defaultSets}x${exercise.defaultRepsMin}-${exercise.defaultRepsMax}',
-                style: JinatraTokens.monoData(fontSize: 10),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

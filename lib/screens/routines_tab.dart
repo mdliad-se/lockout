@@ -3,18 +3,43 @@ import '../data/exercise_library.dart';
 import '../data/routine_templates.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../services/numeric_guard.dart';
 import '../services/routine_factory.dart';
+import '../services/routine_focus.dart';
 import '../services/schedule_service.dart';
-import '../theme/jinatra_tokens.dart';
+import '../theme/lockout_semantics.dart';
+import '../theme/lockout_theme.dart';
 import '../widgets/day_block.dart';
+import '../widgets/lockout_card.dart';
+import '../widgets/lockout_field.dart';
+import '../widgets/today_day_card.dart';
+import '../widgets/week_day_row.dart';
 import '../widgets/exercise_picker.dart';
-import '../widgets/jinatra_button.dart';
-import '../widgets/jinatra_card.dart';
-import '../widgets/jinatra_input.dart';
+import '../widgets/sheet_scaffold.dart';
 import 'exercise_video_screen.dart';
 
+/// Runs a nested sheet/pick action that resolves whether it changed
+/// anything, so the caller knows whether to refresh.
+typedef RefreshAfter = Future<void> Function(Future<bool?> Function() action);
+
+/// A fresh row id. Time-based rather than a counter/uuid dependency; every
+/// caller inserts immediately, so collision would require two inserts in the
+/// same microsecond.
+String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
+
 class RoutinesTab extends StatefulWidget {
-  const RoutinesTab({super.key});
+  /// Starts today's scheduled session from the featured-day card.
+  ///
+  /// `MainScreen` wires this to the Home tab's own session starter, so the
+  /// user presses Start once here instead of being sent to Home to press a
+  /// second button. Null when the tab is pumped standalone (widget tests), in
+  /// which case the card simply offers no Start.
+  final VoidCallback? onStartToday;
+
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  RoutinesTab({super.key, this.onStartToday});
 
   @override
   State<RoutinesTab> createState() => RoutinesTabState();
@@ -28,11 +53,6 @@ class RoutinesTabState extends State<RoutinesTab> {
   final Map<String, List<FinisherItem>> _dayFinishers = {};
   String _activeRoutineId = '';
   bool _isLoading = true;
-
-  /// Days currently expanded. Every day rendered open at once turned a 4-day
-  /// plan into an unreadable scroll, so days collapse to a summary row and
-  /// today's day is opened automatically.
-  final Set<String> _expandedDays = {};
 
   @override
   void initState() {
@@ -88,20 +108,8 @@ class RoutinesTabState extends State<RoutinesTab> {
         ..addAll(finishers);
       _activeRoutineId = active == null ? '' : active['id'] as String;
       _isLoading = false;
-
-      // Open today's day so the screen lands on what matters now.
-      final todayCode = ScheduleService.weekdayCode(DateTime.now());
-      for (final dayList in days.values) {
-        for (final d in dayList) {
-          if (d.tag.toUpperCase() == todayCode && !d.isRestDay) {
-            _expandedDays.add(d.id);
-          }
-        }
-      }
     });
   }
-
-  String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
 
   void _openVideo(String name, String url) {
     Navigator.push(
@@ -112,380 +120,75 @@ class RoutinesTabState extends State<RoutinesTab> {
     );
   }
 
+  /// A [TrainingDay] loaded from the DB never carries its exercises inline —
+  /// they live in [_dayExercises], loaded separately. Hydrate a copy so
+  /// [dayRowSummary] and [DayRow] see the real count.
+  TrainingDay _hydrated(TrainingDay day) =>
+      day.copyWith(exercises: _dayExercises[day.id] ?? []);
+
   // --- CREATE ROUTINE ---
 
-  void _showCreateRoutineModal() {
-    final nameCtrl = TextEditingController();
-    var mode = SchedulingMode.weekday;
-    var template = RoutineTemplate.all.first;
-
-    showModalBottomSheet(
+  /// Opens the create-routine form. `_CreateRoutineForm` owns its own
+  /// controller and selection state (see its class doc for why that, rather
+  /// than hoisting, is what keeps typed state alive across a non-dismissing
+  /// drag without also reintroducing a use-after-dispose).
+  Future<void> _openCreateRoutineSheet() async {
+    final saved = await showLockoutSheet<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: JinatraTokens.sweetCream,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheet) => Padding(
-          padding: EdgeInsets.only(
-            top: 24,
-            left: 20,
-            right: 20,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('CREATE NEW ROUTINE',
-                    style: JinatraTokens.sectionHeader()),
-                const SizedBox(height: 16),
-                JinatraInput(
-                  label: 'Routine Name',
-                  controller: nameCtrl,
-                  hint: 'e.g. Push / Pull / Legs',
-                ),
-                Text('SCHEDULING MODE',
-                    style: JinatraTokens.monoData(fontSize: 12)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _choice(
-                        label: 'WEEKDAY',
-                        selected: mode == SchedulingMode.weekday,
-                        onTap: () =>
-                            setSheet(() => mode = SchedulingMode.weekday),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _choice(
-                        label: 'ROTATING',
-                        selected: mode == SchedulingMode.rotating,
-                        onTap: () =>
-                            setSheet(() => mode = SchedulingMode.rotating),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  mode == SchedulingMode.weekday
-                      ? 'Each day is pinned to a weekday. Today\'s workout is whichever day matches today.'
-                      : 'Days cycle in order, one per calendar day, ignoring weekdays.',
-                  style: JinatraTokens.bodyText(
-                    fontSize: 12,
-                    color: JinatraTokens.ink.withValues(alpha: 0.7),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text('START FROM', style: JinatraTokens.monoData(fontSize: 12)),
-                const SizedBox(height: 8),
-                ...RoutineTemplate.all.map((t) {
-                  final selected = t.key == template.key;
-                  return GestureDetector(
-                    onTap: () => setSheet(() => template = t),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? JinatraTokens.mistTeal
-                            : JinatraTokens.paper,
-                        border: Border.all(
-                          color: selected
-                              ? JinatraTokens.deepTeal
-                              : JinatraTokens.ink,
-                          width: selected ? 3 : 2,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            selected
-                                ? Icons.check_box
-                                : Icons.check_box_outline_blank,
-                            size: 18,
-                            color: JinatraTokens.ink,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(t.name,
-                                    style: JinatraTokens.bodyText(
-                                        fontWeight: FontWeight.w700)),
-                                const SizedBox(height: 2),
-                                Text(
-                                  t.blurb,
-                                  style: JinatraTokens.monoData(
-                                    fontSize: 10,
-                                    color: JinatraTokens.ink
-                                        .withValues(alpha: 0.65),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 16),
-                JinatraButton(
-                  label: 'SAVE ROUTINE',
-                  onPressed: () async {
-                    final typed = nameCtrl.text.trim();
-                    final name = typed.isNotEmpty
-                        ? typed
-                        : (template.key == 'blank' ? '' : template.name);
-                    if (name.isEmpty) return;
-
-                    await RoutineFactory.createFromTemplate(
-                      name: name,
-                      mode: mode,
-                      template: template,
-                    );
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    await _loadAllRoutinesData();
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      title: 'CREATE NEW ROUTINE',
+      builder: (ctx) => _CreateRoutineForm(),
     );
-  }
-
-  Widget _choice({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: selected ? JinatraTokens.deepTeal : JinatraTokens.paper,
-          border: Border.all(color: JinatraTokens.ink, width: 3),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: JinatraTokens.monoData(
-              color: selected ? JinatraTokens.onPrimary : JinatraTokens.ink,
-            ),
-          ),
-        ),
-      ),
-    );
+    if (saved == true && mounted) await reload();
   }
 
   // --- ADD / EDIT TRAINING DAY ---
 
-  void _showDayModal(String routineId, {TrainingDay? existing}) {
-    final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final focusCtrl = TextEditingController(text: existing?.focus ?? '');
-    final noteCtrl = TextEditingController(text: existing?.note ?? '');
-    var tag = existing?.tag ?? ScheduleService.weekdayPickerOrder.first;
-    var isRest = existing?.isRestDay ?? false;
-
-    showModalBottomSheet(
+  /// Opens the training-day form. Resolves `true` only when the day was
+  /// actually saved, so a caller that must close a parent sheet (the day
+  /// detail sheet, on an edit) can tell a save apart from a dismiss.
+  Future<bool?> _openDayFormSheet(String routineId, {TrainingDay? existing}) {
+    final dayCount = (_routineDays[routineId] ?? []).length;
+    return showLockoutSheet<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: JinatraTokens.sweetCream,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheet) => Padding(
-          padding: EdgeInsets.only(
-            top: 24,
-            left: 20,
-            right: 20,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(existing == null ? 'ADD TRAINING DAY' : 'EDIT DAY',
-                    style: JinatraTokens.sectionHeader()),
-                const SizedBox(height: 14),
-                Text('DAY OF WEEK', style: JinatraTokens.monoData(fontSize: 12)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: ScheduleService.weekdayPickerOrder.map((d) {
-                    final selected = tag == d;
-                    return GestureDetector(
-                      onTap: () => setSheet(() => tag = d),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? JinatraTokens.signal
-                              : JinatraTokens.paper,
-                          border:
-                              Border.all(color: JinatraTokens.ink, width: 2),
-                          boxShadow: selected
-                              ? null
-                              : [JinatraTokens.hardShadow(offset: 2)],
-                        ),
-                        child: Text(d,
-                            style: JinatraTokens.monoData(
-                              fontSize: 12,
-                              color: selected
-                                  ? JinatraTokens.onAccent
-                                  : JinatraTokens.ink,
-                            )),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-                JinatraInput(
-                  label: 'Day Name',
-                  controller: nameCtrl,
-                  hint: 'e.g. Push',
-                ),
-                JinatraInput(
-                  label: 'Focus (muscle groups)',
-                  controller: focusCtrl,
-                  hint: 'e.g. Chest - Shoulders - Triceps',
-                ),
-                JinatraInput(
-                  label: 'Day Note (optional)',
-                  controller: noteCtrl,
-                  hint: 'Injury cautions, tempo rules...',
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text('MARK AS REST DAY',
-                          style: JinatraTokens.monoData(fontSize: 13)),
-                    ),
-                    Switch(
-                      value: isRest,
-                      activeThumbColor: JinatraTokens.deepTeal,
-                      onChanged: (v) => setSheet(() => isRest = v),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                JinatraButton(
-                  label: existing == null ? 'ADD DAY' : 'SAVE DAY',
-                  onPressed: () async {
-                    if (nameCtrl.text.trim().isEmpty) return;
-                    final dayCount = (_routineDays[routineId] ?? []).length;
-                    await DatabaseService.instance.insertDay(TrainingDay(
-                      id: existing?.id ?? _newId(),
-                      routineId: routineId,
-                      name: nameCtrl.text.trim(),
-                      tag: tag,
-                      orderIndex: existing?.orderIndex ?? dayCount,
-                      focus: focusCtrl.text.trim(),
-                      note: noteCtrl.text.trim(),
-                      isRestDay: isRest,
-                    ).toMap());
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    await _loadAllRoutinesData();
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
+      title: existing == null ? 'ADD TRAINING DAY' : 'EDIT DAY',
+      builder: (ctx) => _DayForm(
+        routineId: routineId,
+        existing: existing,
+        dayCount: dayCount,
       ),
     );
   }
 
   // --- WARMUP / FINISHER ROWS ---
 
-  Future<void> _addSubItem({
+  /// Opens the warm-up/finisher item form. Resolves `true` only if an item
+  /// was actually added.
+  Future<bool?> _openSubItemSheet({
     required String dayId,
     required bool isWarmup,
     required int index,
-  }) async {
-    final nameCtrl = TextEditingController();
-    final amtCtrl = TextEditingController();
-
-    await showModalBottomSheet(
+  }) {
+    return showLockoutSheet<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: JinatraTokens.sweetCream,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          top: 24,
-          left: 20,
-          right: 20,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(isWarmup ? 'ADD WARM-UP ITEM' : 'ADD FINISHER ITEM',
-                style: JinatraTokens.sectionHeader(fontSize: 17)),
-            const SizedBox(height: 14),
-            JinatraInput(
-              label: 'Movement',
-              controller: nameCtrl,
-              hint: isWarmup ? 'e.g. Arm circles' : 'e.g. Push-ups',
-            ),
-            JinatraInput(
-              label: 'Amount',
-              controller: amtCtrl,
-              hint: isWarmup ? 'e.g. 3-4 min' : 'e.g. 12-15 reps',
-            ),
-            JinatraButton(
-              label: 'ADD',
-              onPressed: () async {
-                if (nameCtrl.text.trim().isEmpty) return;
-                final db = DatabaseService.instance;
-                if (isWarmup) {
-                  await db.insertWarmup(WarmupItem(
-                    id: _newId(),
-                    dayId: dayId,
-                    name: nameCtrl.text.trim(),
-                    amt: amtCtrl.text.trim(),
-                    orderIndex: index,
-                  ).toMap());
-                } else {
-                  await db.insertFinisher(FinisherItem(
-                    id: _newId(),
-                    dayId: dayId,
-                    name: nameCtrl.text.trim(),
-                    amt: amtCtrl.text.trim(),
-                    orderIndex: index,
-                  ).toMap());
-                }
-                if (ctx.mounted) Navigator.pop(ctx);
-                await _loadAllRoutinesData();
-              },
-            ),
-          ],
-        ),
+      title: isWarmup ? 'ADD WARM-UP ITEM' : 'ADD FINISHER ITEM',
+      builder: (ctx) => _SubItemForm(
+        dayId: dayId,
+        isWarmup: isWarmup,
+        index: index,
       ),
     );
   }
 
-  // --- ADD EXERCISE ---
+  // --- ADD / EDIT EXERCISE ---
 
-  Future<void> _addExerciseToDay(String dayId) async {
+  /// Resolves `true` only if an exercise was added; `null`/`false` for a
+  /// cancelled pick or a dismissed sheet.
+  Future<bool?> _addExerciseToDay(String dayId) async {
     final picked = await showExercisePicker(context);
-    if (picked == null || !mounted) return;
+    if (picked == null || !mounted) return null;
 
     final existing = _dayExercises[dayId] ?? [];
-    await _showExerciseSheet(
+    return _openExerciseSheet(
       ExerciseDef(
         id: _newId(),
         dayId: dayId,
@@ -500,231 +203,45 @@ class RoutinesTabState extends State<RoutinesTab> {
     );
   }
 
-  Future<void> _showExerciseSheet(ExerciseDef ex, {bool isNew = false}) async {
-    final setsCtrl = TextEditingController(text: ex.targetSets.toString());
-    final repsMinCtrl = TextEditingController(text: ex.targetRepsMin.toString());
-    final repsMaxCtrl = TextEditingController(text: ex.targetRepsMax.toString());
-    final weightCtrl = TextEditingController(
-      text: ex.targetWeightKg == 0 ? '' : ex.targetWeightKg.toString(),
-    );
-    final restCtrl = TextEditingController(text: ex.restDefaultS.toString());
-    final noteCtrl = TextEditingController(text: ex.note);
-    final videoCtrl = TextEditingController(text: ex.videoUrl);
-
-    final group = ex.muscleGroup.isNotEmpty
-        ? ex.muscleGroup
-        : ExerciseLibrary.groupFor(ex.name);
-
-    await showModalBottomSheet(
+  /// Resolves `true` if the exercise was saved or removed — either way the
+  /// caller's list is stale and must refresh.
+  Future<bool?> _openExerciseSheet(ExerciseDef ex, {bool isNew = false}) {
+    return showLockoutSheet<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: JinatraTokens.sweetCream,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          top: 24,
-          left: 20,
-          right: 20,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(ex.name.toUpperCase(),
-                            style: JinatraTokens.sectionHeader(fontSize: 18)),
-                        if (group.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: JinatraTokens.mistTeal,
-                              border: Border.all(
-                                  color: JinatraTokens.ink, width: 2),
-                            ),
-                            child: Text(group.toUpperCase(),
-                                style: JinatraTokens.monoData(fontSize: 10)),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _openVideo(ex.name, videoCtrl.text.trim());
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: JinatraTokens.signal,
-                        border: Border.all(color: JinatraTokens.ink, width: 2),
-                        boxShadow: [JinatraTokens.hardShadow(offset: 3)],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.play_arrow,
-                              size: 15, color: JinatraTokens.onAccent),
-                          const SizedBox(width: 4),
-                          Text('WATCH',
-                              style: JinatraTokens.monoData(
-                                  fontSize: 11,
-                                  color: JinatraTokens.onAccent)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: JinatraInput(
-                      label: 'Sets',
-                      controller: setsCtrl,
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: JinatraInput(
-                      label: 'Min Reps',
-                      controller: repsMinCtrl,
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: JinatraInput(
-                      label: 'Max Reps',
-                      controller: repsMaxCtrl,
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: JinatraInput(
-                      label: 'Weight (kg)',
-                      controller: weightCtrl,
-                      hint: '0',
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: JinatraInput(
-                      label: 'Rest (sec)',
-                      controller: restCtrl,
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                ],
-              ),
-              JinatraInput(
-                label: 'Note',
-                controller: noteCtrl,
-                hint: 'Cues, injury notes, tempo...',
-              ),
-              JinatraInput(
-                label: 'Pinned Video URL (optional)',
-                controller: videoCtrl,
-                hint: 'Leave empty to auto-search YouTube',
-              ),
-              Text(
-                'Empty video URL means WATCH opens a YouTube search for a 3D / '
-                'animated form demo of this exercise. Paste a link to pin one.',
-                style: JinatraTokens.bodyText(
-                  fontSize: 11,
-                  color: JinatraTokens.ink.withValues(alpha: 0.65),
-                ),
-              ),
-              const SizedBox(height: 16),
-              JinatraButton(
-                label: isNew ? 'ADD TO DAY' : 'SAVE CHANGES',
-                onPressed: () async {
-                  final minReps =
-                      int.tryParse(repsMinCtrl.text) ?? ex.targetRepsMin;
-                  var maxReps =
-                      int.tryParse(repsMaxCtrl.text) ?? ex.targetRepsMax;
-                  if (maxReps < minReps) maxReps = minReps;
-
-                  await DatabaseService.instance.insertExercise(
-                    ex.copyWith(
-                      targetSets: int.tryParse(setsCtrl.text) ?? ex.targetSets,
-                      targetRepsMin: minReps,
-                      targetRepsMax: maxReps,
-                      targetWeightKg: double.tryParse(weightCtrl.text) ?? 0.0,
-                      restDefaultS:
-                          int.tryParse(restCtrl.text) ?? ex.restDefaultS,
-                      note: noteCtrl.text.trim(),
-                      videoUrl: videoCtrl.text.trim(),
-                      muscleGroup: group,
-                    ).toMap(),
-                  );
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  await _loadAllRoutinesData();
-                },
-              ),
-              if (!isNew) ...[
-                const SizedBox(height: 10),
-                JinatraButton(
-                  label: 'REMOVE EXERCISE',
-                  isSignal: true,
-                  onPressed: () async {
-                    await DatabaseService.instance.deleteExercise(ex.id);
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    await _loadAllRoutinesData();
-                  },
-                ),
-              ],
-            ],
-          ),
-        ),
+      title: isNew ? 'ADD EXERCISE' : 'EDIT EXERCISE',
+      builder: (ctx) => _ExerciseForm(
+        ex: ex,
+        isNew: isNew,
+        onWatch: _openVideo,
       ),
     );
   }
 
   Future<void> _confirmDeleteRoutine(Routine routine) async {
+    final semantics = LockoutSemantics.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: JinatraTokens.sweetCream,
-        shape: RoundedRectangleBorder(
-          side: BorderSide(color: JinatraTokens.ink, width: 3),
-          borderRadius: BorderRadius.zero,
-        ),
-        title: Text('DELETE ROUTINE?',
-            style: JinatraTokens.sectionHeader(fontSize: 16)),
+        title: const Text('Delete routine?'),
         content: Text(
           '"${routine.name}" and all of its training days and exercises will be '
           'removed. Past workout history is kept.',
-          style: JinatraTokens.bodyText(fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('CANCEL', style: JinatraTokens.monoData(fontSize: 12)),
+            child: const Text('Cancel'),
           ),
           TextButton(
+            // `semantics.danger`, not `colorScheme.error` — deleting a
+            // routine is a destructive confirmation, which is the role
+            // `LockoutSemantics` reserves `danger` for; `error` is what the
+            // framework also paints on an invalid form field (see that
+            // class's doc, and today_tab's discard dialog for the same
+            // rule).
+            style: TextButton.styleFrom(foregroundColor: semantics.danger),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('DELETE',
-                style: JinatraTokens.monoData(
-                    fontSize: 12, color: JinatraTokens.signal)),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -732,338 +249,65 @@ class RoutinesTabState extends State<RoutinesTab> {
 
     if (ok == true) {
       await DatabaseService.instance.deleteRoutine(routine.id);
+      if (!mounted) return;
       await _loadAllRoutinesData();
     }
   }
 
-  // --- BUILD ---
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Center(
-          child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
-    }
-
-    return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                    child: Text('WORKOUT ROUTINES',
-                        style: JinatraTokens.sectionHeader())),
-                JinatraButton(
-                    label: '+ NEW', onPressed: _showCreateRoutineModal),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _routines.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      itemCount: _routines.length,
-                      itemBuilder: (ctx, i) => _buildRoutineCard(_routines[i]),
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
+  Future<void> _setActive(Routine routine) async {
+    await DatabaseService.instance.setActiveRoutine(routine.id);
+    if (!mounted) return;
+    await _loadAllRoutinesData();
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: JinatraTokens.cardDecoration(),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.fitness_center, size: 48, color: JinatraTokens.ink),
-            const SizedBox(height: 12),
-            Text('NO ROUTINES YET',
-                style: JinatraTokens.sectionHeader(fontSize: 16)),
-            const SizedBox(height: 8),
-            Text(
-              'Tap "+ NEW" and pick a starter split. Every day arrives with a '
-              'warm-up, numbered exercises and a conditioning finisher already '
-              'filled in.',
-              textAlign: TextAlign.center,
-              style: JinatraTokens.bodyText(),
-            ),
-          ],
-        ),
+  // --- DAY DETAIL SHEET ---
+
+  /// Opens a day's detail in a sheet rather than expanding it inline.
+  ///
+  /// The routine list was three levels of bordered box deep; a sheet gives
+  /// the detail the whole screen and leaves the week scannable behind it.
+  Future<void> _openDaySheet(Routine routine, TrainingDay day) async {
+    await showLockoutSheet<void>(
+      context: context,
+      title: '${day.tag} - ${day.name}',
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheet) {
+          final exercises = _dayExercises[day.id] ?? [];
+          final warmups = _dayWarmups[day.id] ?? [];
+          final finishers = _dayFinishers[day.id] ?? [];
+          final semantics = LockoutSemantics.of(context);
+          final colours = DayColours.assign(
+            _routineDays[routine.id] ?? [],
+            semantics,
+          );
+          final accent = colours[day.id] ?? semantics.restDay;
+          final onAccent = DayColours.onColorFor(accent);
+          return _buildDayDetail(
+            ctx,
+            setSheet,
+            routine,
+            day,
+            exercises,
+            warmups,
+            finishers,
+            accent,
+            onAccent,
+          );
+        },
       ),
     );
-  }
-
-  Widget _buildRoutineCard(Routine routine) {
-    final days = _routineDays[routine.id] ?? [];
-    final isActive = routine.id == _activeRoutineId;
-    final todayCode = ScheduleService.weekdayCode(DateTime.now());
-
-    return JinatraCard(
-      shadowOffset: JinatraTokens.shadowLg,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(routine.name,
-                        style: JinatraTokens.sectionHeader(fontSize: 18)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _tag(routine.schedulingMode.name.toUpperCase(),
-                            JinatraTokens.mistTeal, JinatraTokens.ink),
-                        _tag('${days.length} DAYS', JinatraTokens.mistTeal,
-                            JinatraTokens.ink),
-                        if (isActive)
-                          _tag('ACTIVE', JinatraTokens.signal,
-                              JinatraTokens.onAccent),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: Icon(Icons.delete_outline, color: JinatraTokens.ink),
-                onPressed: () => _confirmDeleteRoutine(routine),
-              ),
-            ],
-          ),
-          if (!isActive) ...[
-            const SizedBox(height: 6),
-            GestureDetector(
-              onTap: () async {
-                await DatabaseService.instance.setActiveRoutine(routine.id);
-                await _loadAllRoutinesData();
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: JinatraTokens.paper,
-                  border: Border.all(color: JinatraTokens.ink, width: 2),
-                  boxShadow: [JinatraTokens.hardShadow(offset: 2)],
-                ),
-                child: Text('SET AS ACTIVE',
-                    style: JinatraTokens.monoData(fontSize: 10)),
-              ),
-            ),
-          ],
-          const Divider(height: 22, thickness: 2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('TRAINING WEEK', style: JinatraTokens.monoData(fontSize: 12)),
-              GestureDetector(
-                onTap: () => _showDayModal(routine.id),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: JinatraTokens.deepTeal,
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
-                  ),
-                  child: Text('+ ADD DAY',
-                      style: JinatraTokens.monoData(
-                          color: JinatraTokens.onPrimary, fontSize: 10)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (days.isEmpty)
-            Text(
-              'No training days yet. Tap "+ ADD DAY" to pin a workout to a weekday.',
-              style: JinatraTokens.bodyText(
-                fontSize: 12,
-                color: JinatraTokens.ink.withValues(alpha: 0.6),
-              ),
-            )
-          else
-            ...days.map((d) => _buildDayCard(
-                  routine,
-                  d,
-                  isToday: isActive &&
-                      routine.schedulingMode == SchedulingMode.weekday &&
-                      d.tag.toUpperCase() == todayCode,
-                )),
-        ],
-      ),
-    );
-  }
-
-  Widget _tag(String label, Color bg, Color fg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        border: Border.all(color: JinatraTokens.ink, width: 2),
-      ),
-      child: Text(label, style: JinatraTokens.monoData(fontSize: 10, color: fg)),
-    );
-  }
-
-  Widget _buildDayCard(Routine routine, TrainingDay day,
-      {required bool isToday}) {
-    final exercises = _dayExercises[day.id] ?? [];
-    final warmups = _dayWarmups[day.id] ?? [];
-    final finishers = _dayFinishers[day.id] ?? [];
-    final accent = DayPalette.forDay(day);
-    final onAccent = DayPalette.onColorFor(day);
-    final isOpen = _expandedDays.contains(day.id);
-
-    final setCount = exercises.fold<int>(0, (sum, e) => sum + e.targetSets);
-    // Kept terse: the count must survive on one line next to a long focus.
-    final summary = day.isRestDay
-        ? 'REST'
-        : exercises.isEmpty
-            ? 'EMPTY'
-            : '${exercises.length} EX - $setCount SETS';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: JinatraTokens.paper,
-        border: Border.all(
-          color: isToday ? JinatraTokens.deepTeal : JinatraTokens.ink,
-          width: isToday ? 3 : 2,
-        ),
-        boxShadow: [JinatraTokens.hardShadow(offset: isOpen ? 4 : 2)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // --- Summary row: the whole thing is the expand target ---
-          GestureDetector(
-            onTap: () => setState(() {
-              if (isOpen) {
-                _expandedDays.remove(day.id);
-              } else {
-                _expandedDays.add(day.id);
-              }
-            }),
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              // The whole bar carries the day's colour, as in the printed
-              // plan — a small tinted chip did not separate days enough.
-              color: accent,
-              padding: const EdgeInsets.all(11),
-              child: Row(
-                children: [
-                  Container(
-                    width: 46,
-                    padding: const EdgeInsets.symmetric(vertical: 5),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: onAccent,
-                      border: Border.all(color: JinatraTokens.ink, width: 2),
-                    ),
-                    child: Text(day.tag,
-                        style: JinatraTokens.monoData(
-                            fontSize: 11, color: accent)),
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                day.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: JinatraTokens.sectionHeader(
-                                    fontSize: 16, color: onAccent),
-                              ),
-                            ),
-                            if (isToday) ...[
-                              const SizedBox(width: 7),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: onAccent,
-                                  border: Border.all(
-                                      color: JinatraTokens.ink, width: 1),
-                                ),
-                                child: Text('TODAY',
-                                    style: JinatraTokens.monoData(
-                                        fontSize: 7, color: accent)),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            // Only the focus may truncate; the exercise and
-                            // set count always stays readable.
-                            if (day.focus.isNotEmpty)
-                              Flexible(
-                                child: Text(
-                                  day.focus,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: JinatraTokens.monoData(
-                                    fontSize: 9,
-                                    color: onAccent.withValues(alpha: 0.8),
-                                  ),
-                                ),
-                              ),
-                            if (day.focus.isNotEmpty)
-                              Text('  -  ',
-                                  style: JinatraTokens.monoData(
-                                    fontSize: 9,
-                                    color: onAccent.withValues(alpha: 0.8),
-                                  )),
-                            Text(
-                              summary,
-                              style: JinatraTokens.monoData(
-                                fontSize: 9,
-                                color: onAccent.withValues(alpha: 0.95),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    isOpen ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
-                    color: onAccent,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          if (isOpen) _buildDayDetail(routine, day, exercises, warmups,
-              finishers, accent, onAccent),
-        ],
-      ),
-    );
+    // No trailing `reload()` here: every mutation path reachable from
+    // `_buildDayDetail` (`refreshAfter`, the warm-up/finisher remove
+    // handlers, EDIT DAY, DELETE DAY) already calls `_loadAllRoutinesData()`
+    // itself the moment it changes something, so `RoutinesTabState` is
+    // already current by the time this sheet closes. Reloading again here
+    // would re-run the N+1x3 query walk over every routine and day for
+    // nothing — whether or not anything changed.
   }
 
   Widget _buildDayDetail(
+    BuildContext sheetCtx,
+    StateSetter setSheet,
     Routine routine,
     TrainingDay day,
     List<ExerciseDef> exercises,
@@ -1072,168 +316,491 @@ class RoutinesTabState extends State<RoutinesTab> {
     Color accent,
     Color onAccent,
   ) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(11, 4, 11, 11),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: JinatraTokens.ink, width: 2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (day.note.isNotEmpty)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 8, bottom: 4),
-              padding: const EdgeInsets.all(9),
-              decoration: BoxDecoration(
-                color: JinatraTokens.signal,
-                border: Border.all(color: JinatraTokens.ink, width: 2),
-              ),
+    // Runs a nested sheet/pick action, then refreshes the outer state and
+    // this sheet's own content only if something actually changed — the
+    // sheet route is a separate subtree from RoutinesTabState, so a reload
+    // there does not repaint content already on screen here.
+    Future<void> refreshAfter(Future<bool?> Function() action) async {
+      final changed = await action();
+      if (changed != true || !mounted) return;
+      await _loadAllRoutinesData();
+      if (sheetCtx.mounted) setSheet(() {});
+    }
+
+    final theme = Theme.of(sheetCtx);
+    final colors = theme.colorScheme;
+    final semantics = LockoutSemantics.of(sheetCtx);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // v1 showed the day's focus (muscle groups) on the card's summary
+        // row; `DayRow`'s signature is fixed and has no slot for it, so it
+        // surfaces here instead — read-only, the edit form is where it's set.
+        if (day.focus.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
+            child: Text(day.focus, style: theme.textTheme.bodySmall),
+          ),
+        if (day.note.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: LockoutTheme.spaceMd),
+            child: LockoutCard(
+              color: colors.tertiaryContainer,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('READ FIRST',
-                      style: JinatraTokens.monoData(
-                          fontSize: 9, color: JinatraTokens.onAccent)),
-                  const SizedBox(height: 3),
-                  Text(day.note,
-                      style: JinatraTokens.bodyText(
-                          fontSize: 12, color: JinatraTokens.onAccent)),
-                ],
-              ),
-            ),
-
-          if (day.isRestDay)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Row(
-                children: [
-                  Icon(Icons.bedtime_outlined,
-                      size: 18, color: JinatraTokens.ink),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text('Recovery is part of the plan.',
-                        style: JinatraTokens.bodyText(
-                          fontSize: 12,
-                          color: JinatraTokens.ink.withValues(alpha: 0.7),
-                        )),
+                  Text(
+                    'Read first',
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(color: colors.onTertiaryContainer),
+                  ),
+                  const SizedBox(height: LockoutTheme.spaceXs),
+                  Text(
+                    day.note,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: colors.onTertiaryContainer),
                   ),
                 ],
               ),
-            )
-          else ...[
-            // --- Warm-up ---
-            if (warmups.isEmpty)
-              AddLink(
-                label: '+ ADD WARM-UP',
-                onTap: () => _addSubItem(
-                    dayId: day.id, isWarmup: true, index: 0),
-              )
-            else ...[
-              SectionHeading(
-                title: 'Warm-Up',
-                amount: '~6-8 min',
-                onAdd: () => _addSubItem(
-                    dayId: day.id, isWarmup: true, index: warmups.length),
-              ),
-              ...warmups.asMap().entries.map((e) => SubItemRow(
-                    name: e.value.name,
-                    amt: e.value.amt,
-                    onRemove: () async {
-                      await DatabaseService.instance
-                          .deleteWarmup(e.value.id);
-                      await _loadAllRoutinesData();
-                    },
-                  )),
-              const SizedBox(height: 6),
-            ],
-
-            // --- Exercises ---
-            SectionHeading(
-              title: 'Exercises',
-              amount: exercises.isEmpty ? '' : '${exercises.length}',
             ),
-            if (exercises.isEmpty)
-              AddLink(
-                label: '+ ADD EXERCISE',
-                onTap: () => _addExerciseToDay(day.id),
-              )
-            else ...[
-              ...exercises.asMap().entries.map(
-                    (e) => _buildExerciseRow(
-                        e.key + 1, e.value, accent, onAccent),
-                  ),
-              AddLink(
-                label: '+ ADD EXERCISE',
-                onTap: () => _addExerciseToDay(day.id),
-              ),
-            ],
+          ),
 
-            // --- Finisher ---
-            if (finishers.isEmpty)
-              AddLink(
-                label: '+ ADD FINISHER',
-                onTap: () => _addSubItem(
-                    dayId: day.id, isWarmup: false, index: 0),
-              )
-            else ...[
-              SectionHeading(
-                title: 'Conditioning Finisher',
-                amount: 'x3 rounds',
-                onAdd: () => _addSubItem(
-                    dayId: day.id, isWarmup: false, index: finishers.length),
-              ),
-              ...finishers.asMap().entries.map((e) => SubItemRow(
-                    name: e.value.name,
-                    amt: e.value.amt,
-                    onRemove: () async {
-                      await DatabaseService.instance
-                          .deleteFinisher(e.value.id);
-                      await _loadAllRoutinesData();
-                    },
-                  )),
-            ],
-          ],
-
-          // --- Day actions, only while open ---
+        if (day.isRestDay)
           Padding(
-            padding: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.symmetric(
+              vertical: LockoutTheme.spaceMd,
+            ),
             child: Row(
               children: [
-                GestureDetector(
-                  onTap: () => _showDayModal(routine.id, existing: day),
-                  behavior: HitTestBehavior.opaque,
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit_outlined,
-                          size: 14, color: JinatraTokens.ink),
-                      const SizedBox(width: 5),
-                      Text('EDIT DAY',
-                          style: JinatraTokens.monoData(fontSize: 9)),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 18),
-                GestureDetector(
-                  onTap: () async {
-                    await DatabaseService.instance.deleteDay(day.id);
-                    await _loadAllRoutinesData();
-                  },
-                  behavior: HitTestBehavior.opaque,
-                  child: Row(
-                    children: [
-                      Icon(Icons.close, size: 14, color: JinatraTokens.signal),
-                      const SizedBox(width: 5),
-                      Text('DELETE DAY',
-                          style: JinatraTokens.monoData(
-                              fontSize: 9, color: JinatraTokens.signal)),
-                    ],
+                Icon(Icons.bedtime_outlined, color: colors.onSurfaceVariant),
+                const SizedBox(width: LockoutTheme.spaceSm),
+                Expanded(
+                  child: Text(
+                    'Recovery is part of the plan.',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: colors.onSurfaceVariant),
                   ),
                 ),
               ],
+            ),
+          )
+        else ...[
+          // Every section is built the same way: heading, rows, labelled
+          // add link. The heading never carries its own `+` and the link is
+          // never swapped out once the section fills up, so the control the
+          // user just pressed is still where they left it.
+          // --- Warm-up ---
+          SectionHeading(
+            title: 'Warm-Up',
+            amount: warmups.isEmpty ? '' : '~6-8 min',
+          ),
+          ...warmups.asMap().entries.map((e) => SubItemRow(
+                name: e.value.name,
+                amt: e.value.amt,
+                onRemove: () async {
+                  await DatabaseService.instance.deleteWarmup(e.value.id);
+                  if (!mounted) return;
+                  await _loadAllRoutinesData();
+                  if (sheetCtx.mounted) setSheet(() {});
+                },
+              )),
+          AddLink(
+            label: '+ ADD WARM-UP',
+            onTap: () => refreshAfter(() => _openSubItemSheet(
+                dayId: day.id, isWarmup: true, index: warmups.length)),
+          ),
+
+          // --- Exercises ---
+          SectionHeading(
+            title: 'Exercises',
+            amount: exercises.isEmpty ? '' : '${exercises.length}',
+          ),
+          ...exercises.asMap().entries.map(
+                (e) => _buildExerciseRow(
+                    e.key + 1, e.value, accent, onAccent, refreshAfter, theme),
+              ),
+          AddLink(
+            label: '+ ADD EXERCISE',
+            onTap: () => refreshAfter(() => _addExerciseToDay(day.id)),
+          ),
+
+          // --- Finisher ---
+          SectionHeading(
+            title: 'Conditioning Finisher',
+            amount: finishers.isEmpty ? '' : 'x3 rounds',
+          ),
+          ...finishers.asMap().entries.map((e) => SubItemRow(
+                name: e.value.name,
+                amt: e.value.amt,
+                onRemove: () async {
+                  await DatabaseService.instance.deleteFinisher(e.value.id);
+                  if (!mounted) return;
+                  await _loadAllRoutinesData();
+                  if (sheetCtx.mounted) setSheet(() {});
+                },
+              )),
+          AddLink(
+            label: '+ ADD FINISHER',
+            onTap: () => refreshAfter(() => _openSubItemSheet(
+                dayId: day.id, isWarmup: false, index: finishers.length)),
+          ),
+        ],
+
+        // --- Day actions ---
+        Padding(
+          padding: const EdgeInsets.only(top: LockoutTheme.spaceSm),
+          child: Row(
+            children: [
+              TextButton.icon(
+                onPressed: () async {
+                  final saved =
+                      await _openDayFormSheet(routine.id, existing: day);
+                  if (saved != true || !mounted) return;
+                  await _loadAllRoutinesData();
+                  if (sheetCtx.mounted) Navigator.of(sheetCtx).maybePop();
+                },
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('Edit day'),
+              ),
+              const SizedBox(width: LockoutTheme.spaceSm),
+              TextButton.icon(
+                onPressed: () async {
+                  await DatabaseService.instance.deleteDay(day.id);
+                  if (!mounted) return;
+                  await _loadAllRoutinesData();
+                  if (sheetCtx.mounted) Navigator.of(sheetCtx).maybePop();
+                },
+                // `semantics.danger`, not `colors.error` — this deletes a
+                // day outright, and the trigger has to match the role the
+                // confirmation it belongs to already uses. `error` is the
+                // invalid-form-field role; `ThemeController._harmonised`
+                // pins it to the wallpaper's red under a dynamic scheme
+                // while `danger` comes from the authored fallback, so the
+                // two drift apart and one screen ends up painting the same
+                // class of action in two colours.
+                style: TextButton.styleFrom(foregroundColor: semantics.danger),
+                icon: const Icon(Icons.close, size: 18),
+                label: const Text('Delete day'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Number, name, then target and WATCH on a second line — a long name and a
+  /// target chip competing for one row forced three-line wraps.
+  /// One exercise line inside the day sheet.
+  ///
+  /// Deliberately a line, not a card. Each of the three sections used to
+  /// draw its rows differently — warm-ups and finishers as plain text, the
+  /// exercises as bordered, shadowed cards — so one sheet spoke three visual
+  /// languages for three lists of the same kind of thing, and the exercises
+  /// read as a wall of rectangles between them. Now every row in the sheet
+  /// is a name on the left, its prescription in mono on the right, and a
+  /// 40dp control at the end. Only the number chip and WATCH tell an
+  /// exercise apart, and those carry information the other rows do not have.
+  Widget _buildExerciseRow(
+    int number,
+    ExerciseDef ex,
+    Color accent,
+    Color onAccent,
+    RefreshAfter refreshAfter,
+    // The sheet's own theme, not the tab's — this row only ever renders
+    // inside the day sheet, whose context `_buildDayDetail` already resolves
+    // two frames up as `Theme.of(sheetCtx)`. Reading `Theme.of(context)` here
+    // (the tab's element) is harmless only while the sheet shares the tab's
+    // tree today; it stops being harmless the moment a sheet wraps its own
+    // `Theme`.
+    ThemeData theme,
+  ) {
+    return GestureDetector(
+      onTap: () => refreshAfter(() => _openExerciseSheet(ex)),
+      behavior: HitTestBehavior.opaque,
+      child: ConstrainedBox(
+        constraints:
+            const BoxConstraints(minHeight: LockoutTheme.minTouchTarget),
+        child: Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: accent,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '$number',
+                style: LockoutTheme.numeric(context, size: 11, color: onAccent),
+              ),
+            ),
+            const SizedBox(width: LockoutTheme.spaceSm),
+            Expanded(
+              child: Text(
+                ex.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+            const SizedBox(width: LockoutTheme.spaceSm),
+            Text(
+              ex.targetWeightKg > 0
+                  ? '${ex.targetLabel} @ ${ex.targetWeightKg}kg'
+                  : ex.targetLabel,
+              style: theme.textTheme.labelSmall,
+            ),
+            // Sits where the remove glyph sits on a warm-up or finisher row,
+            // on the same 40dp box, so the right edge of the sheet is one
+            // column of controls rather than three.
+            GestureDetector(
+              onTap: () => _openVideo(ex.name, ex.videoUrl),
+              behavior: HitTestBehavior.opaque,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minWidth: LockoutTheme.minTouchTarget,
+                  minHeight: LockoutTheme.minTouchTarget,
+                ),
+                child: Icon(
+                  Icons.play_circle_outline,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- BUILD ---
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      // SafeArea(bottom: false): MainScreen dropped its global AppBar in the
+      // five-tab restructure, so each tab now owns its top inset. Without it
+      // the header paints under the status bar on an edge-to-edge window and
+      // swallows taps there. Bottom is left alone — BottomNav carries its own
+      // inset and content should scroll under it.
+      body: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.all(LockoutTheme.screenPadding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Workout',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                  ),
+                  // A tonal button rather than the old pill: the label and its
+                  // icon overflowed an 11dp-narrow Row on a 360dp window.
+                  FilledButton.tonalIcon(
+                    onPressed: _openCreateRoutineSheet,
+                    icon: const Icon(Icons.add),
+                    label: const Text('New'),
+                  ),
+                ],
+              ),
+            const SizedBox(height: LockoutTheme.spaceMd),
+            Expanded(
+              child: _routines.isEmpty
+                  ? _buildEmptyState()
+                  : ListView.builder(
+                      itemCount: _routines.length,
+                      itemBuilder: (ctx, i) => _buildRoutineCard(_routines[i]),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final theme = Theme.of(context);
+    return Center(
+      child: LockoutCard(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.fitness_center,
+                size: 48, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: LockoutTheme.spaceSm),
+            Text('No routines yet', style: theme.textTheme.titleMedium),
+            const SizedBox(height: LockoutTheme.spaceXs),
+            Text(
+              'Tap New and pick a starter split. Every day arrives with a '
+              'warm-up, numbered exercises and a conditioning finisher already '
+              'filled in.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoutineCard(Routine routine) {
+    final theme = Theme.of(context);
+    // Hoisted alongside `theme`, the same shape `_buildDayDetail` uses: a
+    // method that reads semantics more than once resolves it once at the top
+    // rather than again inside each callback. Both spellings were correct —
+    // the popup's `itemBuilder` runs against a mounted element — so this is
+    // consistency, not a fix.
+    final semantics = LockoutSemantics.of(context);
+    final days = _routineDays[routine.id] ?? [];
+    final isActive = routine.id == _activeRoutineId;
+    final todayCode = ScheduleService.weekdayCode(DateTime.now());
+
+    // Not elevated: the featured `TodayDayCard` inside is the card that
+    // leads on this screen (see `LockoutCard`'s own doc), so the container
+    // stays flat and lets that one lift.
+    return LockoutCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(routine.name, style: theme.textTheme.titleLarge),
+              ),
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'active') _setActive(routine);
+                  if (v == 'delete') _confirmDeleteRoutine(routine);
+                },
+                // v1 hid SET AS ACTIVE once the routine was already active;
+                // a fixed two-item menu can't express that, so filter here.
+                itemBuilder: (_) => [
+                  if (!isActive)
+                    const PopupMenuItem(
+                      value: 'active',
+                      child: Text('Set as active'),
+                    ),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Text(
+                      'Delete',
+                      // Same rule as the delete confirmation this opens and
+                      // as "Delete day" in the day sheet: a destructive
+                      // trigger is `semantics.danger`. `colorScheme.error`
+                      // is the invalid-input role and can resolve to a
+                      // different red under a dynamic scheme.
+                      style: TextStyle(color: semantics.danger),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: LockoutTheme.spaceSm),
+          Wrap(
+            spacing: LockoutTheme.spaceSm,
+            runSpacing: LockoutTheme.spaceSm,
+            children: [
+              _tag(routine.schedulingMode.name.toUpperCase()),
+              _tag('${days.length} DAYS'),
+              if (isActive) _tag('ACTIVE', filled: true),
+            ],
+          ),
+          const Divider(),
+          if (days.isEmpty)
+            Text(
+              'No training days yet. Open the week and tap "Add day" to pin a '
+              'workout to a weekday.',
+              style: Theme.of(context).textTheme.bodySmall,
+            )
+          else
+            // One colour assignment per routine: the uniqueness rule is only
+            // meaningful across the whole week, so it is computed once here
+            // and shared by the featured card and the collapsed rows.
+            ...(() {
+              final colours = DayColours.assign(days, semantics);
+              final focus = RoutineFocus.resolve(
+                routine: routine,
+                days: days,
+                now: DateTime.now(),
+                isActive: isActive,
+              );
+
+              return [
+                if (focus != null) ...[
+                  if (focus.day == null)
+                    _buildNothingScheduledCard(focus.kind)
+                  else
+                    _buildFeaturedDay(routine, focus, colours),
+                  const SizedBox(height: LockoutTheme.spaceMd),
+                ],
+                _buildWeekExpander(routine, days, colours, todayCode, isActive),
+              ];
+            })(),
+        ],
+      ),
+    );
+  }
+
+  /// The featured day: the one the routine is actually on right now.
+  Widget _buildFeaturedDay(
+    Routine routine,
+    RoutineFocusResult focus,
+    Map<String, Color> colours,
+  ) {
+    final day = focus.day!;
+    final hydrated = _hydrated(day);
+    // A rest day has nothing to start, and neither does a day whose exercises
+    // have not been added yet — offering START SESSION there would open a
+    // session with zero exercises.
+    final startable = !hydrated.isRestDay && hydrated.exercises.isNotEmpty;
+
+    return TodayDayCard(
+      day: hydrated,
+      accent: colours[day.id] ?? LockoutSemantics.of(context).restDay,
+      summary: dayRowSummary(hydrated),
+      kind: focus.kind,
+      onTap: () => _openDaySheet(routine, day),
+      onStart: startable ? widget.onStartToday : null,
+    );
+  }
+
+  /// Shown when the routine is the active one but has nothing scheduled right
+  /// now — a gap in the week, or a rotation that has not started yet.
+  Widget _buildNothingScheduledCard(FeaturedDayKind kind) {
+    final theme = Theme.of(context);
+
+    return LockoutCard(
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            kind == FeaturedDayKind.today ? 'TODAY' : 'NEXT',
+            style: theme.textTheme.labelSmall,
+          ),
+          const SizedBox(height: LockoutTheme.spaceXs),
+          Text('Nothing scheduled today', style: theme.textTheme.titleLarge),
+          const SizedBox(height: LockoutTheme.spaceXs),
+          Text(
+            'Open the week to add a day, or train off-plan.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -1241,84 +808,659 @@ class RoutinesTabState extends State<RoutinesTab> {
     );
   }
 
-  /// Number, name, then target and WATCH on a second line — a long name and a
-  /// target chip competing for one row forced three-line wraps.
-  Widget _buildExerciseRow(
-      int number, ExerciseDef ex, Color accent, Color onAccent) {
-    return GestureDetector(
-      onTap: () => _showExerciseSheet(ex),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 7),
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-        decoration: BoxDecoration(
-          color: JinatraTokens.sweetCream,
-          border: Border.all(color: JinatraTokens.ink, width: 2),
+  /// The rest of the week, collapsed by default.
+  ///
+  /// The expansion state is deliberately NOT persisted: reopening the tab
+  /// returns to the focused view, which is the entire point of featuring one
+  /// day. `+ Add day` lives inside, so building a routine means opening the
+  /// week rather than the week being permanently open for the sake of one
+  /// button.
+  Widget _buildWeekExpander(
+    Routine routine,
+    List<TrainingDay> days,
+    Map<String, Color> colours,
+    String todayCode,
+    bool isActive,
+  ) {
+    final theme = Theme.of(context);
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+    );
+
+    return ExpansionTile(
+      shape: shape,
+      collapsedShape: shape,
+      tilePadding: const EdgeInsets.symmetric(
+        horizontal: LockoutTheme.spaceSm,
+      ),
+      childrenPadding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
+      title: Text(
+        'Full week (${days.length})',
+        style: theme.textTheme.titleSmall,
+      ),
+      children: [
+        for (final d in days)
+          WeekDayRow(
+            day: _hydrated(d),
+            accent: colours[d.id] ?? LockoutSemantics.of(context).restDay,
+            summary: dayRowSummary(_hydrated(d)),
+            isToday: isActive &&
+                routine.schedulingMode == SchedulingMode.weekday &&
+                d.tag.trim().toUpperCase() == todayCode,
+            onTap: () => _openDaySheet(routine, d),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () async {
+              final saved = await _openDayFormSheet(routine.id);
+              if (saved == true && mounted) await reload();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Add day'),
+          ),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 20,
-              height: 20,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: accent,
-                border: Border.all(color: JinatraTokens.ink, width: 1),
+      ],
+    );
+  }
+
+  /// A day tag/status chip. Outline by default; filled only for the
+  /// currently-active routine's ACTIVE badge, so the header reads calmer.
+  Widget _tag(String label, {bool filled = false}) {
+    final colors = Theme.of(context).colorScheme;
+    return Chip(
+      label: Text(label),
+      backgroundColor: filled ? colors.primaryContainer : null,
+      labelStyle: filled
+          ? TextStyle(color: colors.onPrimaryContainer)
+          : null,
+      side: filled ? BorderSide.none : null,
+    );
+  }
+}
+
+// --- FORM WIDGETS ---
+//
+// Each of the four sheet forms below is its own `StatefulWidget` rather than
+// a builder function fed hoisted controllers/locals. `showLockoutSheet`'s
+// `builder` is re-invoked on every rebuild of the sheet's own drag-handling
+// state (`_BottomSheetState._handleDragStart`/`_handleDragEnd`, both call
+// `setState`), but re-invoking a builder only recreates the `Widget`
+// description — a `StatefulWidget`'s `State` (and everything it owns,
+// including its `TextEditingController`s) survives that exactly the way a
+// `StatefulBuilder`'s closure state used to. The difference is disposal:
+// `State.dispose()` runs when the widget is actually removed from the tree,
+// which for a modal route is when its exit animation finishes — not when
+// `showLockoutSheet`'s returned Future completes, which fires when the pop
+// *starts* (`Route.didPop` -> `didComplete`), roughly 200ms earlier while
+// the sheet is still mounted and rebuilding. Disposing controllers in a
+// `finally` around that `await` (the previous fix wave's approach) tore them
+// down while `EditableText` was still subscribed to them, producing a
+// use-after-dispose the instant a field had been focused/edited before
+// close. Owning the controllers in `State` ties disposal to the same
+// lifecycle event that removes the widget, so there is no window where the
+// controller is gone but something in the tree still points at it.
+
+class _CreateRoutineForm extends StatefulWidget {
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  _CreateRoutineForm();
+
+  @override
+  State<_CreateRoutineForm> createState() => _CreateRoutineFormState();
+}
+
+class _CreateRoutineFormState extends State<_CreateRoutineForm> {
+  final _nameCtrl = TextEditingController();
+  var _mode = SchedulingMode.weekday;
+
+  // Deliberately null, not `RoutineTemplate.all.first`. That first entry is
+  // `blank`, so a pre-selected default meant the fastest path through this
+  // form — type a name, hit SAVE — produced a routine with no days, while
+  // the empty state behind the sheet promises every day arrives already
+  // filled in. Nothing is ticked until the user picks, and SAVE waits.
+  RoutineTemplate? _template;
+  var _showTemplateError = false;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LockoutField(
+          label: 'Routine name',
+          controller: _nameCtrl,
+          hint: 'e.g. Push / Pull / Legs',
+        ),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        Text('Scheduling mode', style: theme.textTheme.labelMedium),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<SchedulingMode>(
+            segments: const [
+              ButtonSegment(
+                value: SchedulingMode.weekday,
+                label: Text('Weekday'),
               ),
-              child: Text('$number',
-                  style:
-                      JinatraTokens.monoData(fontSize: 9, color: onAccent)),
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    ex.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: JinatraTokens.bodyText(
-                        fontWeight: FontWeight.w700, fontSize: 13),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    ex.targetWeightKg > 0
-                        ? '${ex.targetLabel} @ ${ex.targetWeightKg}kg'
-                        : ex.targetLabel,
-                    style: JinatraTokens.monoData(
-                      fontSize: 10,
-                      color: JinatraTokens.ink.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ],
+              ButtonSegment(
+                value: SchedulingMode.rotating,
+                label: Text('Rotating'),
               ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => _openVideo(ex.name, ex.videoUrl),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+            ],
+            selected: {_mode},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) => setState(() => _mode = s.first),
+          ),
+        ),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        Text(
+          _mode == SchedulingMode.weekday
+              ? 'Each day is pinned to a weekday. Today\'s workout is whichever day matches today.'
+              : 'Days cycle in order, one per calendar day, ignoring weekdays.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: LockoutTheme.spaceLg),
+        Text('Start from', style: theme.textTheme.labelMedium),
+        const SizedBox(height: LockoutTheme.spaceXs),
+        Text(
+          _showTemplateError
+              ? 'Pick a starter split, or Blank Routine to add your own days.'
+              : 'A starter split arrives with warm-ups, numbered exercises '
+                  'and a finisher already filled in.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: _showTemplateError ? theme.colorScheme.error : null,
+          ),
+        ),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        ...RoutineTemplate.all.map((t) {
+          final selected = t.key == _template?.key;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
+            child: InkWell(
+              onTap: () => setState(() {
+                _template = t;
+                _showTemplateError = false;
+              }),
+              borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+              // Ink, not Container: Container's opaque BoxDecoration paints
+              // over the InkWell's splash (which draws on the ancestor
+              // Material), so a selected tile — the one with a fill — gave no
+              // press feedback while an unselected one still did. Ink paints
+              // its decoration onto that same ancestor Material, underneath
+              // any splash, instead of into a new layer on top of it.
+              child: Ink(
+                padding: const EdgeInsets.all(LockoutTheme.spaceMd),
                 decoration: BoxDecoration(
-                  color: JinatraTokens.paper,
-                  border: Border.all(color: JinatraTokens.ink, width: 2),
+                  color: selected ? theme.colorScheme.secondaryContainer : null,
+                  borderRadius:
+                      BorderRadius.circular(LockoutTheme.radiusButton),
+                  border: Border.all(
+                    color: selected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.outlineVariant,
+                    width: selected ? 2 : 1,
+                  ),
                 ),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.play_arrow, size: 11, color: JinatraTokens.ink),
-                    const SizedBox(width: 3),
-                    Text('WATCH', style: JinatraTokens.monoData(fontSize: 8)),
+                    Icon(
+                      selected
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      color: selected ? theme.colorScheme.primary : null,
+                    ),
+                    const SizedBox(width: LockoutTheme.spaceSm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(t.name, style: theme.textTheme.titleSmall),
+                          const SizedBox(height: LockoutTheme.spaceXs),
+                          Text(t.blurb, style: theme.textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
+          );
+        }),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        FilledButton(onPressed: () async {
+            final template = _template;
+            if (template == null) {
+              setState(() => _showTemplateError = true);
+              return;
+            }
+            final typed = _nameCtrl.text.trim();
+            final name =
+                typed.isNotEmpty ? typed : (template.key == 'blank' ? '' : template.name);
+            if (name.isEmpty) return;
+
+            await RoutineFactory.createFromTemplate(
+              name: name,
+              mode: _mode,
+              template: template,
+            );
+            if (!context.mounted) return;
+            Navigator.pop(context, true);
+          }, child: Text('Save routine')),
+      ],
+    );
+  }
+}
+
+class _DayForm extends StatefulWidget {
+  final String routineId;
+  final TrainingDay? existing;
+  final int dayCount;
+
+  const _DayForm({
+    required this.routineId,
+    required this.dayCount,
+    this.existing,
+  });
+
+  @override
+  State<_DayForm> createState() => _DayFormState();
+}
+
+class _DayFormState extends State<_DayForm> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _focusCtrl;
+  late final TextEditingController _noteCtrl;
+  late String _tag;
+  late bool _isRest;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    _nameCtrl = TextEditingController(text: existing?.name ?? '');
+    _focusCtrl = TextEditingController(text: existing?.focus ?? '');
+    _noteCtrl = TextEditingController(text: existing?.note ?? '');
+    _tag = existing?.tag ?? ScheduleService.weekdayPickerOrder.first;
+    _isRest = existing?.isRestDay ?? false;
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _focusCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final existing = widget.existing;
+    final theme = Theme.of(context);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Day of week', style: theme.textTheme.labelMedium),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        Wrap(
+          spacing: LockoutTheme.spaceSm,
+          runSpacing: LockoutTheme.spaceSm,
+          children: ScheduleService.weekdayPickerOrder.map((d) {
+            final selected = _tag == d;
+            return ChoiceChip(
+              label: Text(d),
+              selected: selected,
+              onSelected: (_) => setState(() => _tag = d),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        LockoutField(
+          label: 'Day name',
+          controller: _nameCtrl,
+          hint: 'e.g. Push',
+        ),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        LockoutField(
+          label: 'Focus (muscle groups)',
+          controller: _focusCtrl,
+          hint: 'e.g. Chest - Shoulders - Triceps',
+        ),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        LockoutField(
+          label: 'Day note (optional)',
+          controller: _noteCtrl,
+        ),
+        // Guidance the user needs before typing, not a hint hidden inside
+        // the field until focus — `LockoutField` has no `helperText` slot
+        // (out of scope for this file), so this stands in for one.
+        const SizedBox(height: LockoutTheme.spaceXs),
+        Text('Injury cautions, tempo rules...', style: theme.textTheme.bodySmall),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Mark as rest day'),
+          value: _isRest,
+          onChanged: (v) => setState(() => _isRest = v),
+        ),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        FilledButton(onPressed: () async {
+            if (_nameCtrl.text.trim().isEmpty) return;
+            await DatabaseService.instance.insertDay(TrainingDay(
+              id: existing?.id ?? _newId(),
+              routineId: widget.routineId,
+              name: _nameCtrl.text.trim(),
+              tag: _tag,
+              orderIndex: existing?.orderIndex ?? widget.dayCount,
+              focus: _focusCtrl.text.trim(),
+              note: _noteCtrl.text.trim(),
+              isRestDay: _isRest,
+            ).toMap());
+            if (!context.mounted) return;
+            Navigator.pop(context, true);
+          },
+          // 'Create day', not 'Add day': the week expander's own action is
+          // already called Add day, and two controls with the same words
+          // one tap apart is ambiguous.
+          child: Text(widget.existing == null ? 'Create day' : 'Save day'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SubItemForm extends StatefulWidget {
+  final String dayId;
+  final bool isWarmup;
+  final int index;
+
+  const _SubItemForm({
+    required this.dayId,
+    required this.isWarmup,
+    required this.index,
+  });
+
+  @override
+  State<_SubItemForm> createState() => _SubItemFormState();
+}
+
+class _SubItemFormState extends State<_SubItemForm> {
+  final _nameCtrl = TextEditingController();
+  final _amtCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _amtCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LockoutField(
+          label: 'Movement',
+          controller: _nameCtrl,
+          hint: widget.isWarmup ? 'e.g. Arm circles' : 'e.g. Push-ups',
+        ),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        LockoutField(
+          label: 'Amount',
+          controller: _amtCtrl,
+          hint: widget.isWarmup ? 'e.g. 3-4 min' : 'e.g. 12-15 reps',
+        ),
+        const SizedBox(height: LockoutTheme.spaceSm),
+        FilledButton(onPressed: () async {
+            if (_nameCtrl.text.trim().isEmpty) return;
+            final db = DatabaseService.instance;
+            if (widget.isWarmup) {
+              await db.insertWarmup(WarmupItem(
+                id: _newId(),
+                dayId: widget.dayId,
+                name: _nameCtrl.text.trim(),
+                amt: _amtCtrl.text.trim(),
+                orderIndex: widget.index,
+              ).toMap());
+            } else {
+              await db.insertFinisher(FinisherItem(
+                id: _newId(),
+                dayId: widget.dayId,
+                name: _nameCtrl.text.trim(),
+                amt: _amtCtrl.text.trim(),
+                orderIndex: widget.index,
+              ).toMap());
+            }
+            if (!context.mounted) return;
+            Navigator.pop(context, true);
+          }, child: Text('Add')),
+      ],
+    );
+  }
+}
+
+class _ExerciseForm extends StatefulWidget {
+  final ExerciseDef ex;
+  final bool isNew;
+  final void Function(String name, String videoUrl) onWatch;
+
+  const _ExerciseForm({
+    required this.ex,
+    required this.onWatch,
+    this.isNew = false,
+  });
+
+  @override
+  State<_ExerciseForm> createState() => _ExerciseFormState();
+}
+
+class _ExerciseFormState extends State<_ExerciseForm> {
+  late final TextEditingController _setsCtrl;
+  late final TextEditingController _repsMinCtrl;
+  late final TextEditingController _repsMaxCtrl;
+  late final TextEditingController _weightCtrl;
+  late final TextEditingController _restCtrl;
+  late final TextEditingController _noteCtrl;
+  late final TextEditingController _videoCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final ex = widget.ex;
+    _setsCtrl = TextEditingController(text: ex.targetSets.toString());
+    _repsMinCtrl = TextEditingController(text: ex.targetRepsMin.toString());
+    _repsMaxCtrl = TextEditingController(text: ex.targetRepsMax.toString());
+    _weightCtrl = TextEditingController(
+      text: ex.targetWeightKg == 0 ? '' : ex.targetWeightKg.toString(),
+    );
+    _restCtrl = TextEditingController(text: ex.restDefaultS.toString());
+    _noteCtrl = TextEditingController(text: ex.note);
+    _videoCtrl = TextEditingController(text: ex.videoUrl);
+  }
+
+  @override
+  void dispose() {
+    _setsCtrl.dispose();
+    _repsMinCtrl.dispose();
+    _repsMaxCtrl.dispose();
+    _weightCtrl.dispose();
+    _restCtrl.dispose();
+    _noteCtrl.dispose();
+    _videoCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ex = widget.ex;
+    final group = ex.muscleGroup.isNotEmpty
+        ? ex.muscleGroup
+        : ExerciseLibrary.groupFor(ex.name);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Not a titleLarge: the SheetScaffold title above
+                  // ("ADD EXERCISE" / "EDIT EXERCISE") already carries that
+                  // weight, so this is a secondary line, not a second
+                  // heading.
+                  Text(ex.name, style: theme.textTheme.titleMedium),
+                  if (group.isNotEmpty) ...[
+                    const SizedBox(height: LockoutTheme.spaceXs),
+                    Chip(
+                      label: Text(group),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: () {
+                Navigator.pop(context);
+                widget.onWatch(ex.name, _videoCtrl.text.trim());
+              },
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Watch'),
+            ),
           ],
         ),
-      ),
+        const SizedBox(height: LockoutTheme.spaceLg),
+        Row(
+          children: [
+            Expanded(
+              child: LockoutField(
+                label: 'Sets',
+                controller: _setsCtrl,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: LockoutTheme.spaceSm),
+            Expanded(
+              child: LockoutField(
+                label: 'Min reps',
+                controller: _repsMinCtrl,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: LockoutTheme.spaceSm),
+            Expanded(
+              child: LockoutField(
+                label: 'Max reps',
+                controller: _repsMaxCtrl,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        Row(
+          children: [
+            Expanded(
+              child: LockoutField(
+                label: 'Weight (kg)',
+                controller: _weightCtrl,
+                hint: '0',
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: LockoutTheme.spaceSm),
+            Expanded(
+              child: LockoutField(
+                label: 'Rest (sec)',
+                controller: _restCtrl,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        LockoutField(
+          label: 'Note',
+          controller: _noteCtrl,
+        ),
+        // Guidance the user needs before typing, not a hint hidden inside
+        // the field until focus — `LockoutField` has no `helperText` slot
+        // (out of scope for this file), so this stands in for one.
+        const SizedBox(height: LockoutTheme.spaceXs),
+        Text('Cues, injury notes, tempo...', style: theme.textTheme.bodySmall),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        LockoutField(
+          label: 'Pinned video URL (optional)',
+          controller: _videoCtrl,
+        ),
+        const SizedBox(height: LockoutTheme.spaceXs),
+        Text(
+          'Empty video URL means Watch opens a YouTube search for a 3D / '
+          'animated form demo of this exercise. Paste a link to pin one.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        FilledButton(onPressed: () async {
+            final minReps =
+                int.tryParse(_repsMinCtrl.text) ?? ex.targetRepsMin;
+            var maxReps =
+                int.tryParse(_repsMaxCtrl.text) ?? ex.targetRepsMax;
+            if (maxReps < minReps) maxReps = minReps;
+
+            await DatabaseService.instance.insertExercise(
+              ex.copyWith(
+                targetSets: int.tryParse(_setsCtrl.text) ?? ex.targetSets,
+                targetRepsMin: minReps,
+                targetRepsMax: maxReps,
+                // `double.tryParse` accepts 'Infinity' and 'NaN', and this
+                // field has no `inputFormatters`. A non-finite target weight
+                // is copied into every live set the exercise starts,
+                // multiplied into the session's `total_volume_kg`, and
+                // persisted — after which LOG's `toInt()` throws on every
+                // launch and the archive row that would let the user delete
+                // the session is the thing that fails to paint.
+                // `NumericGuard.sanitiseKg` is the same guard Settings and
+                // BODY's measurement form already apply.
+                targetWeightKg: NumericGuard.sanitiseKg(_weightCtrl.text),
+                restDefaultS:
+                    int.tryParse(_restCtrl.text) ?? ex.restDefaultS,
+                note: _noteCtrl.text.trim(),
+                videoUrl: _videoCtrl.text.trim(),
+                muscleGroup: group,
+              ).toMap(),
+            );
+            if (!context.mounted) return;
+            Navigator.pop(context, true);
+          },
+          child: Text(widget.isNew ? 'Add to day' : 'Save changes'),
+        ),
+        if (!widget.isNew) ...[
+          const SizedBox(height: LockoutTheme.spaceSm),
+          FilledButton.tonal(onPressed: () async {
+              await DatabaseService.instance.deleteExercise(ex.id);
+              if (!context.mounted) return;
+              Navigator.pop(context, true);
+            }, child: Text('Remove exercise')),
+        ],
+      ],
     );
   }
 }

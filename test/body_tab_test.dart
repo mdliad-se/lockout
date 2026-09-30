@@ -1,0 +1,1244 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'package:lockout/models/models.dart';
+import 'package:lockout/screens/body_tab.dart';
+import 'package:lockout/services/database_service.dart';
+import 'package:lockout/services/goal_service.dart';
+import 'package:lockout/widgets/calm_row.dart';
+import 'package:lockout/widgets/weight_card.dart';
+import 'package:lockout/widgets/sheet_scaffold.dart';
+import 'package:lockout/widgets/sparkline.dart';
+import 'package:lockout/widgets/stat_tile.dart';
+
+import 'test_helpers.dart';
+
+Future<void> _insertLog(
+  DatabaseService db, {
+  required String id,
+  required String dateStr,
+  required double weightKg,
+  double waistCm = 0.0,
+}) async {
+  await db.insertBodyLog(BodyEntry(
+    id: id,
+    dateStr: dateStr,
+    weightKg: weightKg,
+    waistCm: waistCm,
+  ).toMap());
+}
+
+void main() {
+  setUpAll(() {
+    databaseFactory = databaseFactoryFfiNoIsolate;
+    DatabaseService.testDatabasePath = inMemoryDatabasePath;
+  });
+
+  setUp(() async {
+    await wipeDatabaseAndReseed(DatabaseService.instance);
+  });
+
+  group('sparklineNormalise', () {
+    test('maps the range onto 0..1', () {
+      expect(sparklineNormalise([70.0, 72.0, 74.0]), [0.0, 0.5, 1.0]);
+    });
+
+    test('a flat series sits in the middle rather than dividing by zero', () {
+      expect(sparklineNormalise([72.0, 72.0, 72.0]), [0.5, 0.5, 0.5]);
+    });
+
+    test('a series too short to draw returns nothing', () {
+      expect(sparklineNormalise([72.0]), isEmpty);
+      expect(sparklineNormalise(const []), isEmpty);
+    });
+
+    test('a descending series normalises without reordering', () {
+      expect(sparklineNormalise([74.0, 72.0, 70.0]), [1.0, 0.5, 0.0]);
+    });
+
+    test('a single outlier still normalises the rest against the full range',
+        () {
+      // Q3: an outlier must not be silently clipped out of the range — every
+      // other point still lands correctly relative to a range the outlier
+      // itself defines.
+      expect(
+        sparklineNormalise([72.0, 72.5, 73.0, 100.0]),
+        [0.0, 0.017857142857142856, 0.03571428571428571, 1.0],
+      );
+    });
+  });
+
+  group('Sparkline', () {
+    testWidgets('draws when it has data', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
+        home: Scaffold(
+          body: Sparkline(
+            values: const [70.0, 71.5, 71.0, 72.4],
+            lineColor: Colors.black,
+          ),
+        ),
+      ));
+
+      expect(find.byType(CustomPaint), findsWidgets);
+    });
+
+    testWidgets('renders an empty box rather than failing on one point',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
+        home: Scaffold(
+          body: Sparkline(values: const [70.0], lineColor: Colors.black),
+        ),
+      ));
+
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  // BODY's ListView is long enough (hero, sparkline, stat grid, four
+  // reference rows) that the default 800x600 test surface only realises the
+  // rows near the top — `ListView`'s sliver children beyond the viewport +
+  // cache extent are never built, so `find.text` on a row like GOAL
+  // PROGRESS returns zero widgets even though scrolling to it on a real
+  // device works fine. A tall surface keeps the whole screen realised
+  // without every test having to scroll first.
+  Future<void> pumpBody(WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
+  }
+
+  group('BodyTab', () {
+    testWidgets('empty state: no data yet, no sparkline, zero entries',
+        (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, isNull);
+      expect(card.deltaKg, isNull);
+      expect(find.byType(Sparkline), findsNothing);
+
+      final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
+      final byLabel = {for (final t in tiles) t.label: t.value};
+      expect(byLabel['BMI'], '--');
+      expect(byLabel['Target'], '--');
+      expect(byLabel['Entries'], '0');
+    });
+
+    testWidgets(
+        'one entry: shows the weight but no delta and no sparkline yet',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 80.0);
+      expect(card.deltaKg, isNull);
+      expect(find.byType(Sparkline), findsNothing);
+    });
+
+    testWidgets('a rising trend across two days shows a signed delta and '
+        'a sparkline', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 82.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 82.0);
+      expect(card.deltaKg, 2.0);
+      expect(find.byType(Sparkline), findsOneWidget);
+      // Finding 2: `_bodyLogs` is newest-first, so the production code
+      // reverses it before handing it to `Sparkline` — deleting that
+      // `.reversed` leaves every other assertion in this file green (they
+      // only check `findsOneWidget`/`findsNothing`) while silently drawing
+      // a weight GAIN as a downward line. Reading `.values` locks the
+      // chronological (oldest-first) order the widget actually receives.
+      final sparkline = tester.widget<Sparkline>(find.byType(Sparkline));
+      expect(sparkline.values, [80.0, 82.0]);
+    });
+
+    testWidgets('a falling trend does not get a plus sign', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 82.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 80.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.deltaKg, -2.0);
+    });
+
+    // Ambiguity resolution 2: two weigh-ins on the same calendar day are a
+    // morning-vs-evening swing, not a day-over-day change, and must compare
+    // against each other by id, highest first (`getBodyLogs`'s `id DESC`
+    // tiebreak — a textual comparison of a clock-derived id, not literally
+    // "insertion order"; the two coincide here and for any forward-moving
+    // clock, but diverge if the device clock is ever set backwards between
+    // two saves. Third-round review, Finding 7.) rather than an order that
+    // could invert the sign.
+    testWidgets(
+        'two same-day entries compare by id, highest (latest by clock) '
+        'first, not an accidentally inverted order', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-05', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-05', weightKg: 79.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      // The second insert (79.0) is the latest by id; the delta must be
+      // 79.0 - 80.0, not the other way round.
+      expect(card.weightKg, 79.0);
+      expect(card.deltaKg, -1.0);
+    });
+
+    testWidgets('the stat grid reflects a configured goal snapshot exactly',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '75.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      final snap = await GoalService.instance.snapshot();
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
+      final byLabel = {for (final t in tiles) t.label: t.value};
+      expect(byLabel['BMI'], snap.bmi!.toStringAsFixed(1));
+      expect(byLabel['Target'], '75.0 kg');
+      expect(byLabel['Daily intake'], '${snap.calorieTarget} kcal');
+      expect(byLabel['Entries'], '1');
+    });
+
+    testWidgets('every reference row is present, LOG HISTORY carries the '
+        'entry count', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 81.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      expect(find.text('Goal progress'), findsOneWidget);
+      expect(find.text('Recommended plan'), findsOneWidget);
+      expect(find.text('How this BMI is calculated'), findsOneWidget);
+      final historyRow =
+          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'Weight history'));
+      expect(historyRow.value, '2');
+    });
+
+    testWidgets('tapping the BMI row opens a sheet that spells the '
+        'calculation out', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('How this BMI is calculated'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('BMI'), findsWidgets);
+      expect(find.textContaining('80.0 kg /'), findsOneWidget);
+    });
+
+    testWidgets(
+        'tapping GOAL PROGRESS with no goal configured shows the prompt '
+        'instead of crashing', (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Goal progress'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('NO GOAL SET'), findsOneWidget);
+    });
+
+    // Task 15c: the goal-progress bar swapped a hand-rolled
+    // Container/FractionallySizedBox pair for a themed `LinearProgressIndicator`
+    // — a different widget class, so a test that only checked `findsOneWidget`
+    // on the old shape would silently stop finding anything rather than
+    // failing loudly. This drives the sheet with a seeded, deterministic goal
+    // (80.0kg start -> 70.0kg target, 75.0kg current is exactly halfway) and
+    // reads the new widget's own `value`, so a broken progress calculation is
+    // caught here rather than only by eye.
+    testWidgets(
+        'the GOAL PROGRESS bar value matches the fraction of the weight '
+        'change already done', (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '70.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-05', weightKg: 75.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Goal progress'));
+      await tester.pumpAndSettle();
+
+      final bar = tester
+          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+      expect(bar.value, closeTo(0.5, 0.0001));
+    });
+
+    // Task 15c review, Finding 1: `LockoutCard` renders a `Card`, which sizes
+    // to its child, and inside a `Column(crossAxisAlignment: .start)` the
+    // incoming constraints are loose — so the tinted DAILY INTAKE TARGET
+    // callout silently shrink-wrapped to roughly the width of its shortest
+    // line ('P 180g - C 250g - F 70g') instead of staying full-bleed like the
+    // rest of the sheet. `LinearProgressIndicator` (a couple of widgets
+    // above it in the same Column) is a reliable full-width reference: its
+    // `Container` sets `minWidth: double.infinity`, so it always fills the
+    // Column's available width regardless of looseness.
+    testWidgets(
+        'the DAILY INTAKE TARGET callout spans the same width as the '
+        'progress bar above it, not just its own shortest line',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '70.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Goal progress'));
+      await tester.pumpAndSettle();
+
+      final barWidth =
+          tester.getSize(find.byType(LinearProgressIndicator)).width;
+
+      final intakeCard = find
+          .ancestor(
+            of: find.text('DAILY INTAKE TARGET'),
+            matching: find.byType(Card),
+          )
+          .first;
+      final cardWidth = tester.getSize(intakeCard).width;
+
+      expect(cardWidth, closeTo(barWidth, 0.5),
+          reason: 'the intake callout must span full width like the rest '
+              'of the sheet, not shrink-wrap to its shortest line');
+    });
+
+    testWidgets(
+        'logging a measurement through the hero sheet inserts it and the '
+        'grid picks it up', (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Log measurement'));
+      await tester.pumpAndSettle();
+      expect(find.text('Log body metrics'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, '77.5');
+      await tester.pump();
+      await tester.tap(find.text('Save measurement'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.byType(SheetScaffold), findsNothing);
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 77.5);
+      final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
+      final byLabel = {for (final t in tiles) t.label: t.value};
+      expect(byLabel['Entries'], '1');
+    });
+
+    // Regression lock for the disposable-controller lesson this branch paid
+    // for twice already (see routines_tab.dart:807-827 / food_tab_test.dart).
+    testWidgets(
+        'a sheet drag that does not dismiss does not clear a typed weight',
+        (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Log measurement'));
+      await tester.pumpAndSettle();
+
+      const typed = '68.2';
+      await tester.enterText(find.byType(TextField).first, typed);
+      await tester.pump();
+      expect(find.text(typed), findsOneWidget);
+
+      await tester.drag(find.text('Log body metrics'), const Offset(0, 40));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Log body metrics'), findsOneWidget,
+          reason: 'the small drag must not have dismissed the sheet');
+      expect(find.text(typed), findsOneWidget,
+          reason: 'the typed weight must survive a non-dismissing drag');
+    });
+
+    testWidgets(
+        'typing into the measurement sheet then closing via the X does not '
+        'throw', (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Log measurement'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, '68.2');
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SheetScaffold), findsNothing);
+    });
+
+    testWidgets(
+        'the LOG HISTORY delete affordance has at least a 40dp tappable '
+        'area and removes the row live', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 81.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Weight history'));
+      await tester.pumpAndSettle();
+
+      // The delete glyph is deliberately not `Icons.close` in this sheet —
+      // `SheetScaffold` already uses `Icons.close` for its own dismiss
+      // button, and reusing it for "delete this row" inside the very sheet
+      // that also uses it for "close this sheet" is exactly the kind of
+      // ambiguity a hit-target test like this one is meant to catch.
+      expect(find.byIcon(Icons.delete_outline), findsNWidgets(2));
+
+      final detector = find
+          .ancestor(
+            of: find.byIcon(Icons.delete_outline).first,
+            matching: find.byType(GestureDetector),
+          )
+          .first;
+      final size = tester.getSize(detector);
+      expect(size.width, greaterThanOrEqualTo(40));
+      expect(size.height, greaterThanOrEqualTo(40));
+
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      // The row disappeared from the still-open sheet without needing to
+      // close and reopen it.
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close)); // SheetScaffold's dismiss
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final historyRow =
+          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'Weight history'));
+      expect(historyRow.value, '1');
+
+      // The delete above queued an UNDO banner with a 5s auto-dismiss
+      // Timer (see `showUndoBanner`). `flutter_test` runs inside a fake
+      // clock, so that Timer is real and still pending at this point —
+      // advancing past its duration lets it fire and cancel itself, rather
+      // than leaving a Timer alive when the test ends.
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    // Finding 3 / Ruling F: a single tap with no confirmation destroyed
+    // logged history that cannot be reconstructed. This locks the undo
+    // window: the delete happens immediately, but the exact row — same id,
+    // same weight, same waist, same date — comes back on UNDO.
+    testWidgets(
+        'deleting a body log offers UNDO, which restores the exact row',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(
+          db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0, waistCm: 91.5);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 81.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Weight history'));
+      await tester.pumpAndSettle();
+
+      // 'b' (2026-09-02) sorts first (newest-first), so 'a' is the second
+      // delete affordance.
+      await tester.tap(find.byIcon(Icons.delete_outline).at(1));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final afterDelete = await db.getBodyLogs();
+      expect(afterDelete.any((r) => r['id'] == 'a'), isFalse,
+          reason: 'the row is deleted immediately, not just hidden');
+
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final restored = await db.getBodyLogs();
+      final row = restored.firstWhere((r) => r['id'] == 'a');
+      expect(row['weight_kg'], 80.0);
+      expect(row['waist_cm'], 91.5);
+      expect(row['date_str'], '2026-09-01');
+      expect(restored.length, 2);
+    });
+
+    // The banner's whole reason to exist is Finding 1's failure mode: a
+    // ScaffoldMessenger SnackBar shown from inside this sheet would render
+    // behind it. This proves the undo affordance is not a descendant of the
+    // sheet's own subtree by surviving the sheet closing entirely.
+    testWidgets(
+        'the UNDO banner survives the LOG HISTORY sheet closing, and undo '
+        'still restores the row afterwards', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 81.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Weight history'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('UNDO'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close)); // SheetScaffold's dismiss
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.byType(SheetScaffold), findsNothing);
+      expect(find.text('UNDO'), findsOneWidget,
+          reason: 'undo must not have been a child of the closed sheet');
+
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final historyRow =
+          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'Weight history'));
+      expect(historyRow.value, '2');
+    });
+
+    // Second-round review, Finding 1: the banner is deliberately reachable
+    // without closing the sheet it was triggered from, and undo tapped from
+    // there used to leave the still-open sheet showing the deleted row's
+    // absence forever — only closing and reopening it picked the restore
+    // back up, while the tab behind it (and the DB) already agreed the row
+    // was back. `_HistoryList` now listens to the same `ValueNotifier`
+    // `reload()` updates, so it hears the restore live.
+    testWidgets(
+        'undo tapped while the LOG HISTORY sheet is still open updates '
+        'that open sheet, not just the tab behind it', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 81.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Weight history'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      // The sheet is still open throughout this test — never closed.
+      expect(find.byType(SheetScaffold), findsOneWidget);
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget,
+          reason: 'the delete already removed the row from the open sheet');
+
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      // The still-open sheet shows the restored row without having been
+      // closed and reopened, and the count behind it agrees.
+      expect(find.byType(SheetScaffold), findsOneWidget);
+      expect(find.byIcon(Icons.delete_outline), findsNWidgets(2),
+          reason: 'the open sheet must reflect the restore live');
+      final historyRow =
+          tester.widget<CalmRow>(find.widgetWithText(CalmRow, 'Weight history'));
+      expect(historyRow.value, '2');
+    });
+
+    // Second-round review, Finding 2: `insertBodyLog`'s restore keeps every
+    // column, including `id`, but SQLite mints a brand new `rowid` on the
+    // reinsert. Ordering `getBodyLogs()` on `rowid DESC` therefore made a
+    // restored same-day entry look like the *latest* weigh-in even when it
+    // was logged first that day, silently rewriting the headline weight and
+    // flipping the delta's sign. `id` (a `microsecondsSinceEpoch` value) is
+    // untouched by the restore, so ordering on `id DESC` instead keeps it in
+    // its original chronological slot.
+    testWidgets(
+        'a same-day delete then undo does not flip the headline weight or '
+        'the delta sign', (tester) async {
+      final db = DatabaseService.instance;
+      // 'm2' > 'm1' lexicographically, matching insertion order the same
+      // way a real `microsecondsSinceEpoch` id would.
+      await _insertLog(db, id: 'm1', dateStr: '2026-09-05', weightKg: 80.0);
+      await _insertLog(db, id: 'm2', dateStr: '2026-09-05', weightKg: 79.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      var card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 79.0);
+      expect(card.deltaKg, -1.0);
+
+      await tester.tap(find.text('Weight history'));
+      await tester.pumpAndSettle();
+
+      // 'm2' (79.0) sorts first (newest), so it's the first delete
+      // affordance.
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      await tester.tap(find.byIcon(Icons.close)); // SheetScaffold's dismiss
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 79.0,
+          reason: 'the restored later weigh-in must still be the latest');
+      expect(card.deltaKg, -1.0,
+          reason: 'the delta sign must not flip after a same-day restore');
+
+      final order = (await db.getBodyLogs()).map((r) => r['id']).toList();
+      expect(order, ['m2', 'm1']);
+    });
+
+    // Third-round review, Finding 1: the test above deletes and restores the
+    // NEWEST same-day row ('m2'), which — because a fresh restore also lands
+    // on the newest SQLite rowid — comes back on top under the old,
+    // `rowid DESC` ordering too, so it cannot distinguish the fix from the
+    // bug. Deleting and restoring the OLDER of a same-day pair does
+    // discriminate. Mutation-verified: fails (headline title becomes
+    // '80.0 KG', q1, instead of '79.0 KG') with `getBodyLogs()`'s `orderBy`
+    // reverted to `'date_str DESC, rowid DESC'`, passes at HEAD.
+    testWidgets(
+        'deleting and undoing the OLDER of a same-day pair does not steal '
+        'the headline', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'q1', dateStr: '2026-09-05', weightKg: 80.0);
+      await _insertLog(db, id: 'q2', dateStr: '2026-09-05', weightKg: 79.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      var card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 79.0);
+      expect(card.deltaKg, -1.0);
+
+      await tester.tap(find.text('Weight history'));
+      await tester.pumpAndSettle();
+
+      // q2 (79.0, newest) sorts first, so it's delete affordance .first;
+      // q1 (80.0, older) is .at(1) — deliberately delete the older one.
+      await tester.tap(find.byIcon(Icons.delete_outline).at(1));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      await tester.tap(find.byIcon(Icons.close)); // SheetScaffold's dismiss
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 79.0,
+          reason: 'q2 was never touched; restoring the older q1 must not '
+              'steal the headline');
+      expect(card.deltaKg, -1.0,
+          reason: 'the delta sign must not flip after restoring the older '
+              'entry');
+
+      final order = (await db.getBodyLogs()).map((r) => r['id']).toList();
+      expect(order, ['q2', 'q1']);
+    });
+
+    // Third-round review, Finding 1, second discriminating shape: delete a
+    // row, log a newer entry in the interim, then restore the deleted row.
+    // Under `rowid DESC` the restore always lands on the highest rowid in
+    // the table, so it wrongly outranks even a row logged after it was
+    // deleted; under `id DESC` its untouched, smaller id keeps it behind
+    // that newer row. Mutation-verified: fails (headline title becomes
+    // '80.0 KG', r1, instead of '78.0 KG', r3) with `getBodyLogs()`'s
+    // `orderBy` reverted to `'date_str DESC, rowid DESC'`, passes at HEAD.
+    testWidgets(
+        'restoring a row after a newer one was logged meanwhile does not '
+        'steal the headline', (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'r1', dateStr: '2026-09-05', weightKg: 80.0);
+      await _insertLog(db, id: 'r2', dateStr: '2026-09-05', weightKg: 79.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Weight history'));
+      await tester.pumpAndSettle();
+
+      // Delete r1 (80.0, the older entry) — .at(1), same as above.
+      await tester.tap(find.byIcon(Icons.delete_outline).at(1));
+      await tester.pumpAndSettle();
+      await settle(tester);
+      expect(find.text('UNDO'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close)); // SheetScaffold's dismiss
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      // A newer same-day weigh-in logged while r1's undo window is still
+      // open — inserted directly to isolate the ordering behaviour from an
+      // unrelated form flow; `_restoreLog`'s own `reload()` below is what
+      // must pick this row up correctly.
+      await _insertLog(db, id: 'r3', dateStr: '2026-09-05', weightKg: 78.0);
+
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 78.0,
+          reason: 'r3 was logged after r1 was deleted and must remain the '
+              'headline even after r1 is restored');
+      expect(card.deltaKg, -1.0,
+          reason: 'r3 vs r2 (79.0), not r3 vs the restored r1');
+
+      final order = (await db.getBodyLogs()).map((r) => r['id']).toList();
+      expect(order, ['r3', 'r2', 'r1']);
+    });
+
+    // Finding 1: the button visibly did nothing — the routine WAS created,
+    // but its SnackBar rendered behind the still-open sheet and barrier.
+    // Also closes Finding 4's coverage gap: no prior test opened the
+    // RECOMMENDED PLAN sheet or exercised CREATE THIS ROUTINE at all.
+    testWidgets(
+        'CREATE THIS ROUTINE creates the routine, closes the sheet and '
+        'confirms', (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '75.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      final snap = await GoalService.instance.snapshot();
+      final expectedName = snap.training!.template.name;
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Recommended plan'));
+      await tester.pumpAndSettle();
+      // Task 15c, Finding 3: the in-sheet heading that used to repeat this
+      // in all-caps was removed as pure duplication of the sheet's own
+      // title bar, so this now pins that title bar text instead.
+      expect(find.text('Recommended training plan'), findsWidgets);
+
+      await tester.tap(find.text('Create this routine'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      // The sheet is gone — the confirmation is no longer trapped behind
+      // it — and the routine actually exists.
+      expect(find.byType(SheetScaffold), findsNothing);
+      expect(find.textContaining('created and set active'), findsOneWidget);
+
+      final routines = await db.getRoutines();
+      expect(routines.length, 1);
+      expect(routines.first['name'], expectedName);
+
+      // Flush the SnackBar's own auto-dismiss Timer so none is left
+      // pending when the test ends.
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    // Finding 4: the report claimed coverage it did not have — no test
+    // exercised `_buildPlanCard`'s no-recommendation fallback either.
+    testWidgets(
+        'RECOMMENDED PLAN with no goal configured shows the fallback '
+        'prompt instead of an empty sheet', (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Recommended plan'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining(
+            'log one body weight, to get a recommended training split'),
+        findsOneWidget,
+      );
+      expect(find.text('Create this routine'), findsNothing);
+    });
+
+    // Finding 5: `targetWeightKg` used to be gated on `isConfigured`
+    // (age > 0 && targetWeight > 0), so a user who set a target weight but
+    // never entered an age saw `--` in a tile labelled TARGET even though
+    // they plainly had set one.
+    testWidgets(
+        'the TARGET tile shows a set target weight even with no age on '
+        'file', (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('target_weight_kg', '70.0');
+      // age deliberately left at the seeded default (0 / unset).
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
+      final byLabel = {for (final t in tiles) t.label: t.value};
+      expect(byLabel['Target'], '70.0 kg');
+      // The plan-derived number still correctly has nothing to show,
+      // because it genuinely cannot be calculated without an age.
+      expect(byLabel['Daily intake'], '${DatabaseService.defaultCalorieTarget} kcal');
+    });
+
+    // Findings 6 & 9: `double.tryParse` accepts "Infinity"/"-Infinity" and
+    // the old `?? 0` fallback silently stored a bogus zero for unparseable
+    // text — both are reachable from the keyboard and both used to save
+    // without complaint.
+    testWidgets(
+        'typing a non-finite weight is rejected at the form, not persisted',
+        (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Log measurement'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, 'Infinity');
+      await tester.pump();
+      await tester.tap(find.text('Save measurement'));
+      await tester.pump();
+
+      expect(find.byType(SheetScaffold), findsOneWidget,
+          reason: 'an invalid weight must not close the sheet');
+      expect(find.textContaining('valid weight'), findsOneWidget);
+
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect(rows, isEmpty);
+    });
+
+    testWidgets(
+        'an empty SAVE MEASUREMENT tap shows a message instead of doing '
+        'nothing silently', (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Log measurement'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save measurement'));
+      await tester.pump();
+
+      expect(find.byType(SheetScaffold), findsOneWidget);
+      expect(find.textContaining('valid weight'), findsOneWidget);
+    });
+
+    // Second-round review, Finding 8: a blank waist field silently stored
+    // `0.0` ("not measured"), but typing the more explicit "0" was rejected
+    // as an invalid measurement — two different answers to the same
+    // question. Both must now agree.
+    testWidgets(
+        'typing "0" for waist is accepted the same way a blank field is',
+        (tester) async {
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Log measurement'));
+      await tester.pumpAndSettle();
+
+      final fields = find.byType(TextField);
+      await tester.enterText(fields.first, '77.0');
+      await tester.enterText(fields.at(1), '0');
+      await tester.pump();
+      await tester.tap(find.text('Save measurement'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.byType(SheetScaffold), findsNothing,
+          reason: 'a waist of "0" must not be treated as invalid input');
+      final rows = await DatabaseService.instance.getBodyLogs();
+      expect(rows.single['waist_cm'], 0.0);
+    });
+
+    // Second-round review, Finding 5: two deletes fired before either
+    // banner's 5s window has closed used to paint at the exact same
+    // `left`/`right`/`bottom` rect, so the newer one hid the older
+    // entirely. Both undos still worked (this was a presentation bug, not
+    // data loss), but the hidden one was untappable until the top one
+    // cleared.
+    testWidgets(
+        'two banners on screen at once stack instead of hiding one another',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 81.0);
+      await _insertLog(db, id: 'c', dateStr: '2026-09-03', weightKg: 82.0);
+
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Weight history'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final undoTexts = find.text('UNDO');
+      expect(undoTexts, findsNWidgets(2));
+
+      // Third-round review, Finding 3: comparing the two "UNDO" `Text`
+      // rects cannot catch a card overlap, because that offset
+      // (`stackSlot * _stackSpacing`) is applied to the whole card — the
+      // two `Text`s are exactly `_stackSpacing` apart *by construction* no
+      // matter what `_stackSpacing` is set to, even a value smaller than
+      // the card's actual rendered height. Comparing the cards themselves
+      // (keyed `undo_banner_card_<slot>`, third-round review Finding 3)
+      // is what actually proves one card is not painted over by the
+      // other. (There is no ink border to hide any more — what an overlap
+      // would swallow now is the lower card's own rounded surface and the
+      // elevation shadow under it.)
+      final firstCard =
+          find.byKey(const ValueKey('undo_banner_card_0'));
+      final secondCard =
+          find.byKey(const ValueKey('undo_banner_card_1'));
+      expect(firstCard, findsOneWidget);
+      expect(secondCard, findsOneWidget);
+
+      final firstRect = tester.getRect(firstCard);
+      final secondRect = tester.getRect(secondCard);
+      expect(firstRect.overlaps(secondRect), isFalse,
+          reason:
+              'a second delete must not paint its banner over the first');
+
+      // Flush both banners' 5s auto-dismiss Timers so none is left pending
+      // when the test ends.
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    // Second-round review, Finding 6: the UNDO tap target measured
+    // 64.8x33.0dp — short of the 40dp bar this same file holds the delete
+    // glyph to — and its semantics merged into one node with the message
+    // and a bare `tap` action, so a screen-reader tap anywhere on the
+    // banner fired undo, not just on the button.
+    testWidgets(
+        'UNDO has at least a 40dp tap target and its own button semantics',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      final semanticsHandle = tester.ensureSemantics();
+      await pumpBody(tester);
+      await settle(tester);
+
+      await tester.tap(find.text('Weight history'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.text('UNDO'), findsOneWidget);
+      final undoDetector = find
+          .ancestor(
+              of: find.text('UNDO'), matching: find.byType(GestureDetector))
+          .first;
+      final size = tester.getSize(undoDetector);
+      expect(size.width, greaterThanOrEqualTo(40));
+      expect(size.height, greaterThanOrEqualTo(40));
+
+      final undoNode = tester.getSemantics(find.text('UNDO'));
+      final undoData = undoNode.getSemanticsData();
+      expect(undoData.flagsCollection.isButton, isTrue);
+      expect(undoData.label, 'Undo',
+          reason: 'the UNDO node must not have merged with the message '
+              'text into one node');
+
+      semanticsHandle.dispose();
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    // Second-round review, Finding 7: `_createRecommendedRoutine` popped
+    // whatever was topmost on the Navigator after its `await`, unguarded —
+    // if the sheet's own route was no longer current by then (dragged away
+    // mid-flight), that popped the *next* route down instead, which in the
+    // app is `MainScreen`'s own route. Pushing `BodyTab` on top of a base
+    // screen here makes an errant pop observable the way a standalone
+    // `pumpWidget(BodyTab())` cannot (there is nothing else on the stack to
+    // wrongly pop there).
+    testWidgets(
+        'dismissing the sheet mid-flight during CREATE THIS ROUTINE does '
+        'not pop an unrelated route behind it', (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '75.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => BodyTab()),
+                ),
+                child: const Text('OPEN BODY'),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await settle(tester);
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.tap(find.text('OPEN BODY'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      await tester.tap(find.text('Recommended plan'));
+      await tester.pumpAndSettle();
+
+      // Starts `_createRecommendedRoutine`, which awaits
+      // `RoutineFactory.createFromTemplate` — a real, asynchronous sqflite
+      // write, so this returns before that await resolves. Dismissing the
+      // sheet immediately afterwards, with no `pump` in between to let the
+      // create finish first, simulates the sheet closing out from under
+      // the in-flight call.
+      await tester.tap(find.text('Create this routine'));
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      expect(find.byType(BodyTab), findsOneWidget,
+          reason: 'an unguarded pop would have closed this route instead, '
+              'since the sheet\'s own route was no longer current');
+      expect(find.text('OPEN BODY'), findsNothing);
+
+      final routines = await db.getRoutines();
+      expect(routines.length, 1,
+          reason: 'the routine is still created regardless of the pop');
+
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    // Finding 11: every other test in this file runs at the 800x2000
+    // surface `pumpBody` fixes, so the `GridView.count(childAspectRatio:
+    // 2.4)` stat tiles never get measured at anything close to a real
+    // phone's width. This is a smoke test, not a pixel-exact one: the
+    // reviewer already confirmed nothing overflows at 390x844 today, so
+    // this just keeps that true going forward.
+    testWidgets('nothing overflows at a 390x844 phone width', (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('target_weight_kg', '75.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+      await _insertLog(db, id: 'b', dateStr: '2026-09-02', weightKg: 79.0);
+
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(WeightCard), findsOneWidget);
+      expect(find.byType(Sparkline), findsOneWidget);
+    });
+
+    // The stat grid's tiles are a FIXED height (`LockoutTheme.statTileHeight`)
+    // rather than a `childAspectRatio`, so their headroom no longer grows with
+    // the screen. That makes text scale, not device width, the thing that can
+    // overflow them — and nothing in this suite looked at text scale at all
+    // until this test, which is how a height that fitted at 1.0 and burst at
+    // 1.10 got shipped as an improvement.
+    //
+    // 1.15 is Android's "Large" font setting, the largest step a user reaches
+    // without opening accessibility settings, so it is the floor we hold.
+    // Measured against the shipped theme, a `StatTile` needs 66dp at scale
+    // 1.0, 68 at 1.05, 71 at 1.10 and 72 at 1.15 — which is why the token is
+    // 72 and why 68 does not survive this test.
+    testWidgets('the stat tiles do not overflow at text scale 1.15',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('height_cm', '180');
+      await db.saveSetting('target_weight_kg', '75.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(1.15)),
+            child: BodyTab(),
+          ),
+        ),
+      ));
+      await settle(tester);
+
+      final tiles = find.byType(StatTile);
+      expect(tiles, findsNWidgets(4));
+
+      for (var i = 0; i < tiles.evaluate().length; i++) {
+        final box = tester.renderObject<RenderBox>(tiles.at(i));
+        final needed = box.getMaxIntrinsicHeight(box.size.width);
+        expect(
+          box.size.height,
+          greaterThanOrEqualTo(needed),
+          reason: 'tile $i is ${box.size.height}dp tall but its label and '
+              'value need ${needed}dp at text scale 1.15; raise '
+              'LockoutTheme.statTileHeight rather than letting the column '
+              'clip',
+        );
+      }
+
+      // The height assertion above is the discriminating one; this catches
+      // any other part of the screen that the larger text bursts.
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  /// A poisoned `user_settings` row is reachable without Settings ever being
+  /// used: `BackupService.importFromJson` writes restored rows verbatim, and
+  /// any build that predates the Settings write-side guard could have written
+  /// one itself. BODY must survive it.
+  group('BodyTab with a poisoned goal row', () {
+    testWidgets('a non-finite target weight still renders the screen',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('target_weight_kg', 'Infinity');
+      await db.saveSetting('age', '30');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
+      await settle(tester);
+
+      // Before the read-side clamp `GoalService.snapshot()` threw
+      // `Unsupported operation: Infinity or NaN toInt` out of
+      // `NutritionPlanner.build`, `_loadData` aborted, and BODY rendered its
+      // loading state forever — no TARGET tile at all, not even a wrong one.
+      expect(tester.takeException(), isNull);
+      expect(find.text('Infinity kg'), findsNothing);
+
+      final card = tester.widget<WeightCard>(find.byType(WeightCard));
+      expect(card.weightKg, 80.0);
+
+      final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
+      final byLabel = {for (final t in tiles) t.label: t.value};
+      expect(byLabel['Target'], '--');
+    });
+
+    testWidgets('a non-finite height still renders a finite BMI',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('height_cm', 'Infinity');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+
+      final tiles = tester.widgetList<StatTile>(find.byType(StatTile));
+      final byLabel = {for (final t in tiles) t.label: t.value};
+      // 175cm default, 80kg -> 26.1. A non-finite height gave '0.0' or NaN.
+      expect(byLabel['BMI'], '26.1');
+    });
+  });
+  // `BackupService` used to write a backup's JSON values verbatim into
+  // REAL-affinity columns, so `"weight_kg": "heavy"` became the literal text
+  // 'heavy' in `body_logs`. Every app-facing read of it — `snapshot()`,
+  // `weightDeltaKg`, `BodyEntry.fromMap` — cast it with `as num` and threw a
+  // `TypeError` from inside `_loadData()`, before its
+  // `setState(_isLoading = false)`. No error surface, no retry: the tab sat
+  // on its spinner until the row was overwritten, which is only possible
+  // from the tab that will not load. The import now coerces, but a database
+  // written by an older build still holds one, so this pins the read side.
+  group('BodyTab with a non-numeric weight column', () {
+    /// Writes the exact shape an older `restoreTables` produced: text in a
+    /// REAL column. `rawInsert`, because the typed helper cannot express it.
+    Future<void> poisonWeight(String id, String dateStr, Object value) async {
+      final database = await DatabaseService.instance.database;
+      await database.rawInsert(
+        'INSERT INTO body_logs (id, date_str, weight_kg, waist_cm) '
+        'VALUES (?, ?, ?, ?)',
+        [id, dateStr, value, 0.0],
+      );
+    }
+
+    testWidgets('leaves its loading state instead of spinning forever',
+        (tester) async {
+      await poisonWeight('b1', '2026-09-10', 'heavy');
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(CircularProgressIndicator), findsNothing,
+          reason: 'BODY never left its loading state');
+      expect(find.byType(WeightCard), findsWidgets,
+          reason: 'the screen body must actually be on screen');
+    });
+
+    testWidgets('a good row logged after a poisoned one still headlines',
+        (tester) async {
+      await poisonWeight('b1', '2026-09-09', 'heavy');
+      await _insertLog(DatabaseService.instance,
+          id: 'b2', dateStr: '2026-09-10', weightKg: 79.5);
+
+      await tester.binding.setSurfaceSize(const Size(800, 2000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(theme: lockoutTestTheme(), home: BodyTab()));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      final card = tester.widget<WeightCard>(find.byType(WeightCard).first);
+      expect(card.weightKg, 79.5);
+    });
+  });
+}

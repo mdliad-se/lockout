@@ -3,6 +3,8 @@
 // demonstrations. Queries are used instead of hardcoded video IDs so the links
 // never rot; a user-pinned video URL on ExerciseDef overrides the search.
 
+import 'food_search.dart';
+
 class LibraryExercise {
   final String name;
   final String muscleGroup;
@@ -100,6 +102,8 @@ class ExerciseLibrary {
     LibraryExercise(name: 'Overhead Press', muscleGroup: 'Shoulders', equipment: 'Barbell', defaultSets: 4, defaultRepsMin: 6, defaultRepsMax: 10),
     LibraryExercise(name: 'Seated Dumbbell Shoulder Press', muscleGroup: 'Shoulders', equipment: 'Dumbbell', defaultSets: 4, defaultRepsMin: 8, defaultRepsMax: 12),
     LibraryExercise(name: 'Arnold Press', muscleGroup: 'Shoulders', equipment: 'Dumbbell', defaultSets: 3, defaultRepsMin: 10, defaultRepsMax: 12),
+    LibraryExercise(name: 'Dumbbell Shoulder Press', muscleGroup: 'Shoulders', equipment: 'Dumbbell', defaultSets: 4, defaultRepsMin: 8, defaultRepsMax: 12),
+    LibraryExercise(name: 'Single-Arm Dumbbell Shoulder Press', muscleGroup: 'Shoulders', equipment: 'Dumbbell', defaultSets: 3, defaultRepsMin: 8, defaultRepsMax: 12),
     LibraryExercise(name: 'Push Press', muscleGroup: 'Shoulders', equipment: 'Barbell', defaultSets: 3, defaultRepsMin: 5, defaultRepsMax: 8),
     LibraryExercise(name: 'Lateral Raise', muscleGroup: 'Shoulders', equipment: 'Dumbbell', defaultSets: 4, defaultRepsMin: 12, defaultRepsMax: 15),
     LibraryExercise(name: 'Cable Lateral Raise', muscleGroup: 'Shoulders', equipment: 'Cable', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 15),
@@ -234,13 +238,53 @@ class ExerciseLibrary {
     LibraryExercise(name: 'Leg Swings', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 10, defaultRepsMax: 15),
     LibraryExercise(name: 'Childs Pose', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 30, defaultRepsMax: 45),
     LibraryExercise(name: 'Couch Stretch', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 30, defaultRepsMax: 45),
+
+    // --- FREEHAND / LOW-IMPACT ---
+    // Chair-, floor- and wall-based movements that need no equipment and no
+    // load. The catalog above was built around loaded gym work, so a deload,
+    // a rehab block or a no-equipment day had nothing to draw on and users
+    // were typing these into the free-text finisher rows instead. Grouped
+    // together rather than scattered into the sections above so the reason
+    // they exist stays legible; `muscleGroup` still routes each one to the
+    // right filter in the picker.
+    LibraryExercise(name: 'Seated Marches', muscleGroup: 'Legs', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 20, defaultRepsMax: 30),
+    LibraryExercise(name: 'Seated Leg Extension', muscleGroup: 'Legs', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 20),
+    LibraryExercise(name: 'Standing Knee Raise', muscleGroup: 'Legs', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 20),
+    LibraryExercise(name: 'Standing Hamstring Curl', muscleGroup: 'Legs', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 20),
+    LibraryExercise(name: 'Sit-to-Stand', muscleGroup: 'Legs', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 8, defaultRepsMax: 15),
+    LibraryExercise(name: 'Short-Arc Quad', muscleGroup: 'Legs', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 20),
+    LibraryExercise(name: 'Straight-Leg Raise', muscleGroup: 'Legs', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 10, defaultRepsMax: 15),
+    LibraryExercise(name: 'Heel Slide', muscleGroup: 'Legs', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 10, defaultRepsMax: 15),
+    LibraryExercise(name: 'Standing Hip Abduction', muscleGroup: 'Glutes', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 20),
+    LibraryExercise(name: 'Side-Lying Leg Raise', muscleGroup: 'Glutes', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 20),
+    LibraryExercise(name: 'Prone Leg Raise', muscleGroup: 'Glutes', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 10, defaultRepsMax: 15),
+    LibraryExercise(name: 'Glute Squeeze', muscleGroup: 'Glutes', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 10, defaultRepsMax: 20),
+    LibraryExercise(name: 'Seated Heel Raise', muscleGroup: 'Calves', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 15, defaultRepsMax: 25),
+    LibraryExercise(name: 'Seated Knee Raise', muscleGroup: 'Core', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 10, defaultRepsMax: 20),
+    LibraryExercise(name: 'Seated Torso Twist', muscleGroup: 'Core', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 15, defaultRepsMax: 25),
+    LibraryExercise(name: 'Reverse Crunch', muscleGroup: 'Core', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 20),
+    LibraryExercise(name: 'Flutter Kicks', muscleGroup: 'Core', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 20, defaultRepsMax: 40),
+    LibraryExercise(name: 'Heel Taps', muscleGroup: 'Core', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 15, defaultRepsMax: 25),
+    LibraryExercise(name: 'Wall Push-Up', muscleGroup: 'Chest', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 20),
+    LibraryExercise(name: 'Knee Push-Up', muscleGroup: 'Chest', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 10, defaultRepsMax: 15),
+    LibraryExercise(name: 'Scapular Retraction', muscleGroup: 'Back', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 12, defaultRepsMax: 20),
+    LibraryExercise(name: 'Superman', muscleGroup: 'Back', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 10, defaultRepsMax: 15),
+    LibraryExercise(name: 'Standing March', muscleGroup: 'Cardio', equipment: 'Bodyweight', defaultSets: 3, defaultRepsMin: 30, defaultRepsMax: 60),
+    LibraryExercise(name: 'Wall Angel', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 8, defaultRepsMax: 12),
+    LibraryExercise(name: 'Chin Tuck', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 10, defaultRepsMax: 15),
+    LibraryExercise(name: 'Shoulder Rolls', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 10, defaultRepsMax: 15),
+    LibraryExercise(name: 'Neck Rotation', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 8, defaultRepsMax: 12),
+    LibraryExercise(name: 'Ankle Pumps', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 15, defaultRepsMax: 25),
+    LibraryExercise(name: 'Seated Forward Fold', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 30, defaultRepsMax: 45),
+    LibraryExercise(name: 'Figure-Four Stretch', muscleGroup: 'Mobility', equipment: 'Bodyweight', defaultSets: 2, defaultRepsMin: 30, defaultRepsMax: 45),
   ];
 
   static List<LibraryExercise> byGroup(String group) =>
       all.where((e) => e.muscleGroup == group).toList();
 
+  /// Ranked search, shared with the food picker's pipeline.
   static List<LibraryExercise> search(String needle) =>
-      all.where((e) => e.matches(needle)).toList();
+      searchExercises(needle).map((h) => h.item).toList();
 
   static LibraryExercise? findByName(String name) {
     final lower = name.toLowerCase().trim();

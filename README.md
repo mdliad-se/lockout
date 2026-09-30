@@ -4,7 +4,7 @@ An offline-first strength training tracker for Android, built with Flutter.
 
 Routines, workout logs, nutrition and body metrics live in a local SQLite database on your device. No account, no analytics, no ads, no server. The network is used for exactly one thing: streaming exercise form videos from YouTube when you tap **WATCH**.
 
-Interface follows a neubrutalist design system — zero border-radius, 3px ink borders, zero-blur hard shadows — with eight selectable palettes.
+Interface follows the Lockout design system — Material 3, a rounded shape scale, tonal surface elevation and Inter/JetBrains Mono bundled with the app — with six selectable colour schemes.
 
 ---
 
@@ -50,16 +50,15 @@ Interface follows a neubrutalist design system — zero border-radius, 3px ink b
 - Import validates the entire document before writing a single row, then restores inside one transaction. A malformed file leaves your data untouched.
 
 ### Themes
-Eight neubrutalist palettes, four light and four dark, applied instantly and persisted:
+Six Material 3 colour schemes, three light and three dark, applied instantly and persisted:
 
 | Light | Dark |
 |---|---|
-| Jinatra Cream | Carbon Lime |
-| Paper Press | Midnight Cyan |
-| Mint Lab | Ash Amber |
-| Sunblock | Void Magenta |
+| Paper | Graphite |
+| Linen | Ember |
+| Frost | Indigo |
 
-Dark palettes invert the role of `ink` to a light tone so hard borders and zero-blur shadows still read against a dark canvas.
+Every foreground role is contrast-checked against the surface it sits on, and each scheme carries an eight-colour category ramp plus semantic success, warning, danger and rest-day tones. A theme key written by the previous palette system is migrated to the nearest scheme of the same brightness, so an existing install never wakes up light after choosing dark.
 
 ---
 
@@ -85,7 +84,7 @@ The release APK lands at `build/app/outputs/flutter-apk/app-release.apk`. Prebui
 flutter test
 ```
 
-77 tests covering unit conversion and BMI, BMR/TDEE and goal clamping, streak edge cases, weekday resolution, catalog integrity and cuisine balance, palette contrast ratios, and a full backup export/import round-trip against a real SQLite database via `sqflite_common_ffi` — including six classes of malformed input that must be rejected without touching existing data.
+580+ tests covering unit conversion and BMI, BMR/TDEE and goal clamping, streak edge cases, weekday resolution, catalog integrity and cuisine balance, WCAG contrast across every colour scheme, the Material 3 theme and its widgets, and a full backup export/import round-trip against a real SQLite database via `sqflite_common_ffi` — including six classes of malformed input that must be rejected without touching existing data.
 
 ---
 
@@ -97,11 +96,11 @@ lib/
 ├── models/         # Entities and their SQLite row mapping
 ├── screens/        # One file per tab, plus settings and the video view
 ├── services/       # Database, scheduling, nutrition/training planners, backup, notifications
-├── theme/          # Palettes and design tokens
-└── widgets/        # Shared neubrutalist components
+├── theme/          # Colour schemes, semantic tokens and the Material 3 theme
+└── widgets/        # Shared components
 ```
 
-Colour tokens resolve through the active palette at build time rather than being compile-time constants, so a theme change repaints the whole app without touching call sites.
+Colour, type and shape resolve through `Theme.of(context)`, `ColorScheme` and the `LockoutSemantics` theme extension rather than through compile-time constants, so a scheme change repaints the whole app without touching call sites. Literal colours live only in `lib/theme/schemes.dart`, and a test fails the build if one appears anywhere else.
 
 The database migrates in place across schema versions; existing installs keep their data.
 

@@ -6,76 +6,9 @@ import 'package:lockout/data/food_library.dart';
 import 'package:lockout/data/routine_templates.dart';
 import 'package:lockout/services/nutrition_planner.dart';
 import 'package:lockout/services/training_planner.dart';
-import 'package:lockout/theme/app_palette.dart';
 import 'package:lockout/widgets/food_picker.dart';
 
 void main() {
-  group('AppPalette', () {
-    test('ships four light and four dark palettes', () {
-      expect(AppPalette.light.length, 4);
-      expect(AppPalette.dark.length, 4);
-      expect(AppPalette.all.length, 8);
-    });
-
-    test('light palettes are light and dark palettes are dark', () {
-      for (final p in AppPalette.light) {
-        expect(p.isDark, isFalse, reason: p.key);
-      }
-      for (final p in AppPalette.dark) {
-        expect(p.isDark, isTrue, reason: p.key);
-      }
-    });
-
-    test('palette keys and names are unique', () {
-      final keys = AppPalette.all.map((p) => p.key).toList();
-      final names = AppPalette.all.map((p) => p.name).toList();
-      expect(keys.toSet().length, keys.length);
-      expect(names.toSet().length, names.length);
-    });
-
-    test('an unknown key falls back rather than throwing', () {
-      expect(AppPalette.byKey('does_not_exist').key, AppPalette.fallback.key);
-      expect(AppPalette.byKey('carbon_lime').name, 'Carbon Lime');
-    });
-
-    test('applying a palette bumps the revision exactly once', () {
-      AppPalette.applyKey(AppPalette.fallback.key);
-      final before = AppPalette.revision.value;
-
-      AppPalette.apply(AppPalette.voidMagenta);
-      expect(AppPalette.revision.value, before + 1);
-      expect(AppPalette.current.key, 'void_magenta');
-
-      // Re-applying the same palette must not trigger a needless rebuild.
-      AppPalette.apply(AppPalette.voidMagenta);
-      expect(AppPalette.revision.value, before + 1);
-
-      AppPalette.apply(AppPalette.fallback);
-    });
-
-    test('ink contrasts with canvas in every palette', () {
-      for (final p in AppPalette.all) {
-        final inkLum = p.ink.computeLuminance();
-        final canvasLum = p.canvas.computeLuminance();
-        expect((inkLum - canvasLum).abs(), greaterThan(0.4), reason: p.key);
-      }
-    });
-
-    test('text on primary and accent stays readable', () {
-      // Neubrutalism puts label text directly on saturated fills; if onPrimary
-      // does not contrast with primary the button becomes unreadable.
-      for (final p in AppPalette.all) {
-        final primaryGap =
-            (p.onPrimary.computeLuminance() - p.primary.computeLuminance())
-                .abs();
-        final accentGap =
-            (p.onAccent.computeLuminance() - p.accent.computeLuminance()).abs();
-        expect(primaryGap, greaterThan(0.25), reason: '${p.key} primary');
-        expect(accentGap, greaterThan(0.25), reason: '${p.key} accent');
-      }
-    });
-  });
-
   group('FoodLibrary', () {
     test('catalog is large and spans many cuisines', () {
       expect(FoodLibrary.all.length, greaterThan(300));
@@ -387,6 +320,128 @@ void main() {
             direction: GoalDirection.maintain, daysPerWeek: d);
         expect(rec.rationale.trim(), isNotEmpty, reason: '$d days');
       }
+    });
+  });
+
+  // Reported from the device: a user building a light, controlled leg day
+  // had to type "Seated Marches" and "Lying Leg Rise" into the FINISHER
+  // free-text rows, because the exercise picker could not offer them — the
+  // catalog was built around loaded gym work and thin on the chair-, floor-
+  // and wall-based movements a deload, a rehab block or a no-equipment day
+  // is made of.
+  group('freehand catalog', () {
+    test('the catalog covers low-impact freehand movements', () {
+      const expected = [
+        'Seated Marches',
+        'Seated Knee Raise',
+        'Seated Leg Extension',
+        'Seated Heel Raise',
+        'Seated Torso Twist',
+        'Standing March',
+        'Standing Knee Raise',
+        'Standing Hip Abduction',
+        'Standing Hamstring Curl',
+        'Sit-to-Stand',
+        'Short-Arc Quad',
+        'Straight-Leg Raise',
+        'Heel Slide',
+        'Side-Lying Leg Raise',
+        'Prone Leg Raise',
+        'Glute Squeeze',
+        'Wall Push-Up',
+        'Knee Push-Up',
+        'Scapular Retraction',
+        'Superman',
+        'Reverse Crunch',
+        'Flutter Kicks',
+        'Heel Taps',
+        'Wall Angel',
+        'Chin Tuck',
+        'Shoulder Rolls',
+        'Neck Rotation',
+        'Ankle Pumps',
+        'Seated Forward Fold',
+        'Figure-Four Stretch',
+      ];
+      final missing = [
+        for (final name in expected)
+          if (ExerciseLibrary.findByName(name) == null) name,
+      ];
+      expect(missing, isEmpty);
+    });
+
+    test('every freehand addition needs no equipment', () {
+      const freehand = [
+        'Seated Marches',
+        'Sit-to-Stand',
+        'Wall Push-Up',
+        'Superman',
+        'Chin Tuck',
+      ];
+      for (final name in freehand) {
+        expect(ExerciseLibrary.findByName(name)!.equipment, 'Bodyweight',
+            reason: name);
+      }
+    });
+
+    // The reported spelling was "Lying Leg Rise", and that entry already
+    // existed as "Lying Leg Raise" — so the picker missing it was a search
+    // problem, not a catalog one. Both halves are pinned here.
+    // Reported as "many more missing, like Cable chest flyes, lateral
+    // raises, Shoulder press (no machine)". None of those were missing:
+    // `Cable Crossover`, `Low Cable Fly`, `Lateral Raise`, `Overhead Press`
+    // and `Seated Dumbbell Shoulder Press` were all already in the catalog.
+    // The picker could not reach them, because the query was a plural the
+    // search had no alias for, or it named the body part ("chest") which
+    // lives on `muscleGroup` rather than in the name.
+    test('plural gym vocabulary reaches the singular entry', () {
+      const cases = {
+        'lateral raises': 'Lateral Raise',
+        'dumbbell flyes': 'Dumbbell Fly',
+        'bicep curls': 'Dumbbell Curl',
+        'barbell rows': 'Barbell Row',
+        'triceps pushdowns': 'Triceps Pushdown',
+        'leg extensions': 'Leg Extension',
+        'walking lunges': 'Walking Lunge',
+        'crunches': 'Crunch',
+        'seated marches': 'Seated Marches',
+      };
+      cases.forEach((query, expected) {
+        expect(ExerciseLibrary.search(query).map((e) => e.name), contains(expected),
+            reason: query);
+      });
+    });
+
+    test('a query may name the body part as well as the movement', () {
+      expect(
+        ExerciseLibrary.search('cable chest flyes').map((e) => e.name),
+        anyOf(contains('Cable Crossover'), contains('Low Cable Fly')),
+      );
+      expect(
+        ExerciseLibrary.search('shoulder press').map((e) => e.name),
+        contains('Dumbbell Shoulder Press'),
+      );
+      expect(
+        ExerciseLibrary.search('bodyweight legs').map((e) => e.name),
+        contains('Bodyweight Squat'),
+      );
+    });
+
+    test('a free-weight shoulder press is reachable without a machine', () {
+      final press = ExerciseLibrary.findByName('Dumbbell Shoulder Press');
+      expect(press, isNotNull);
+      expect(press!.equipment, 'Dumbbell');
+    });
+
+    test('search reaches a freehand move from the spelling a user types', () {
+      expect(
+        ExerciseLibrary.search('lying leg rise').map((e) => e.name),
+        contains('Lying Leg Raise'),
+      );
+      expect(
+        ExerciseLibrary.search('seated march').map((e) => e.name),
+        contains('Seated Marches'),
+      );
     });
   });
 

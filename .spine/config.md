@@ -1,7 +1,7 @@
 # .spine/config.md — pinned cross-cutting context (asserted before task one)
-- Stack:            Flutter 3.x (Dart) + SQLite (sqflite) (GPL-3.0-or-later, zero-network, native Android APK)
-- Test runner:      flutter test
-- DB / project / env: sqflite SQLite local storage engine (offline, local device only)
+- Stack:            Flutter 3.47.2 / Dart 3.13.2 (SDK at C:\src\flutter, NOT on PATH — invoke C:\src\flutter\bin\flutter.bat by absolute path) + SQLite (sqflite). GPL-3.0-or-later, zero-network at runtime, native Android APK. New UI dependency: `dynamic_color` (Material You). `google_fonts` is REMOVED — it fetched typefaces over HTTP, which never resolves on an offline device.
+- Test runner:      `C:\src\flutter\bin\flutter.bat test --concurrency=1` — MUST be serial. Suites share one sqflite database file, so the default parallel run produces ~10 spurious failures. Serial baseline at 73c35e9: 91 passed.
+- DB / project / env: sqflite SQLite local storage engine, on-device only (offline). Schema version 3, `lib/services/database_service.dart`; migrations use the idempotent add-column helper at line 39, never a destructive recreate. THIS BRANCH IS UI-ONLY: no schema change, no migration, no service-layer behaviour change.
 - Auth context:     None (100% offline, local device only)
-- Conventions:      Jinatra Neubrutalist Product System v1.1 (0px border-radius, 3px Ink border, zero-blur shadow)
-- Boot assertion:   Offline SQLite database initialization check
+- Conventions:      Lockout Material 3 Expressive system (supersedes Jinatra Neubrutalist v2 entirely — no 3px ink borders, no zero-blur hard shadows, no `JinatraTokens`). Colour, type and shape resolve through `Theme.of(context)` / `ColorScheme`, never a static token class and never a compile-time constant. Shape scale 12/16/20/28dp (button 14, card 18, dialog 24, sheet 28, field 14). 8dp spacing grid; card padding 16, screen padding 20, section gap 24. Type: Inter + JetBrains Mono bundled under `assets/fonts/`. Seven themes: 3 authored dark + 3 authored light + 1 dynamic (Material You, `dynamic_color`); app name stays LOCKOUT. Motion uses the framework `Durations`/`Easing` M3 tokens, 200–300ms, no bounce.
+- Boot assertion:   `C:\src\flutter\bin\flutter.bat test --concurrency=1 test/backup_roundtrip_test.dart` — exercises real sqflite open/create/migrate/round-trip against the offline database and fails loudly if the storage engine or schema version is wrong.

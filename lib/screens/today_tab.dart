@@ -1,12 +1,20 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+
+import 'progress_tab.dart' show ProgressSegment;
+import '../theme/lockout_semantics.dart';
+import '../theme/lockout_theme.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../services/energy_estimator.dart';
+import '../services/goal_service.dart';
+import '../services/numeric_guard.dart';
 import '../services/schedule_service.dart';
-import '../theme/jinatra_tokens.dart';
+import '../widgets/action_grid.dart';
 import '../widgets/exercise_picker.dart';
-import '../widgets/jinatra_button.dart';
-import '../widgets/jinatra_card.dart';
+import '../widgets/home_hub.dart';
+import '../widgets/lockout_card.dart';
+import '../widgets/sheet_scaffold.dart';
 import 'exercise_video_screen.dart';
 
 /// One set inside a running session.
@@ -47,7 +55,27 @@ class _LiveExercise {
 }
 
 class TodayTab extends StatefulWidget {
-  const TodayTab({super.key});
+  /// Switches tabs by id — 'routines', 'food', 'body', 'log'. Supplied by
+  /// MainScreen; null in tests that pump this tab on its own.
+  /// Switches tabs by id.
+  ///
+  /// [segment] is meaningful only for `'progress'`, which hosts both the
+  /// weight view and the session history behind one tab id — "Weigh in" and
+  /// "History" must not open the same half.
+  final void Function(String tabId, {ProgressSegment? segment})? onNavigate;
+
+  /// Whether the Food tab is currently reachable. When false, the hub must
+  /// not offer a tap target that silently does nothing.
+  final bool foodTabEnabled;
+
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  TodayTab({
+    super.key,
+    this.onNavigate,
+    this.foodTabEnabled = true,
+  });
 
   @override
   State<TodayTab> createState() => TodayTabState();
@@ -57,6 +85,14 @@ class TodayTabState extends State<TodayTab> {
   ScheduledDay? _scheduled;
   bool _isLoading = true;
 
+  HomeHubSummary _summary = const HomeHubSummary(
+    kcalEaten: 0,
+    kcalTarget: null,
+    weightKg: null,
+    weightDeltaKg: null,
+    burnedTodayKcal: null,
+  );
+
   bool _sessionActive = false;
   DateTime? _startedAt;
   String _sessionTitle = '';
@@ -64,13 +100,17 @@ class TodayTabState extends State<TodayTab> {
 
   int _elapsedSeconds = 0;
   int _restSeconds = 0;
+  // The rest duration `_beginRest` was called with, kept only so
+  // `_buildRestBar` can paint a remaining-time progress bar; the countdown
+  // itself is still driven solely by `_restSeconds`/`_restRunning` below.
+  int _restTotalSeconds = 0;
   bool _restRunning = false;
   Timer? _ticker;
 
   @override
   void initState() {
     super.initState();
-    _loadSchedule();
+    reload();
   }
 
   @override
@@ -80,19 +120,109 @@ class TodayTabState extends State<TodayTab> {
   }
 
   /// Called by MainScreen when the user returns to this tab, so a routine
-  /// edited on the Routines tab shows up here without an app restart.
-  Future<void> reload() => _loadSchedule();
+  /// edited on the Routines tab, or a log entered on another tab, shows up
+  /// here without an app restart.
+  ///
+  /// `_isLoading` only clears once both loads resolve. Clearing it after
+  /// just the schedule load let the hub render its "not on record" prompts
+  /// — `SET A GOAL`, `LOG A WEIGHT`, `NO SESSION YET` — for a frame or more
+  /// even when the summary data exists but simply hasn't arrived yet, which
+  /// reads as a lie rather than a loading state.
+  Future<void> reload() async {
+    await _loadSchedule();
+    await _loadSummary();
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+  }
 
   Future<void> _loadSchedule() async {
     final resolved = await ScheduleService.resolveToday();
     if (!mounted) return;
+    setState(() => _scheduled = resolved);
+  }
+
+  /// Resolves everything the hub shows. Every value can legitimately be
+  /// unknown, and the hub renders a prompt for a null rather than a zero.
+  Future<void> _loadSummary() async {
+    final today = ScheduleService.dateKey(DateTime.now());
+    final db = DatabaseService.instance;
+
+    final foodRows = await db.getFoodLogsForDate(today);
+    final eaten = foodRows.fold<int>(
+      0,
+      (sum, row) => sum + (NumericGuard.readInt(row['kcal']) ?? 0),
+    );
+    // Guarded like the kcal sum above: a hand-edited backup can put a
+    // non-numeric protein_g in the table, and an unguarded fold would put a
+    // NaN straight into a progress bar.
+    final proteinEaten = foodRows.fold<double>(
+      0.0,
+      (sum, row) => sum + (NumericGuard.read(row['protein_g']) ?? 0.0),
+    );
+
+    // snapshot() already fetches body logs for currentWeightKg and resolves
+    // the shared calorie target (Ruling A); reuse both instead of a second
+    // getBodyLogs() call or re-deriving the target here.
+    final snapshot = await GoalService.instance.snapshot();
+    final delta = GoalService.weightDeltaKg(snapshot.bodyLogs);
+
+    final sessionRows = await db.getSessionLogsForDate(today);
+    // Null means "no session logged today" — the honest NO SESSION YET case.
+    // A session that *was* logged but couldn't be estimated (no bodyweight
+    // on record) sums to 0.0, which is a real, different state: the row
+    // must not claim there was no session at all. See `HomeHub._burnValue`.
+    final burnedToday = sessionRows.isEmpty
+        ? null
+        : sessionRows.fold<double>(
+            0.0,
+            (sum, r) => sum + (NumericGuard.read(r['kcal_burned']) ?? 0.0),
+          );
+
+    if (!mounted) return;
     setState(() {
-      _scheduled = resolved;
-      _isLoading = false;
+      _summary = HomeHubSummary(
+        kcalEaten: eaten,
+        kcalTarget: snapshot.calorieTarget,
+        weightKg: snapshot.currentWeightKg,
+        weightDeltaKg: delta,
+        burnedTodayKcal: burnedToday,
+        // A target weight of 0 means "not configured" in the stored profile,
+        // so it maps to null rather than a goal of zero kilos.
+        targetWeightKg: snapshot.profile.targetWeightKg > 0
+            ? snapshot.profile.targetWeightKg
+            : null,
+        proteinEatenG: proteinEaten,
+        proteinTargetG: snapshot.nutrition?.proteinG,
+        weightSeries: _weightSeries(snapshot.bodyLogs),
+      );
     });
   }
 
+  /// The last few weigh-ins, oldest first, for the trend line.
+  ///
+  /// Capped because the card draws a fixed-width sparkline: past a couple of
+  /// dozen points the line stops reading as a direction and starts reading as
+  /// noise. Unreadable rows are dropped rather than defaulted — a 0.0 would
+  /// put a false cliff in the trend.
+  static List<double> _weightSeries(List<Map<String, dynamic>> bodyLogs) {
+    final weights = <double>[];
+    for (final row in bodyLogs) {
+      final w = NumericGuard.read(row['weight_kg']);
+      if (w != null && w > 0) weights.add(w);
+    }
+    final recent = weights.length > 30 ? weights.sublist(0, 30) : weights;
+    // getBodyLogs returns newest first; a trend line reads oldest to newest.
+    return recent.reversed.toList();
+  }
+
   // --- SESSION LIFECYCLE ---
+
+  /// Starts today's scheduled session.
+  ///
+  /// Public so the Workout tab's featured-day card can start the session the
+  /// user is looking at, rather than sending them to Home to press a second
+  /// button. `MainScreen` owns the wiring; this stays the only implementation.
+  Future<void> startScheduledSession() => _startScheduledSession();
 
   Future<void> _startScheduledSession() async {
     final sched = _scheduled;
@@ -133,6 +263,7 @@ class TodayTabState extends State<TodayTab> {
       _startedAt = DateTime.now();
       _elapsedSeconds = 0;
       _restSeconds = 0;
+      _restTotalSeconds = 0;
       _restRunning = false;
     });
     _startTicker();
@@ -169,6 +300,7 @@ class TodayTabState extends State<TodayTab> {
   void _beginRest(int seconds) {
     setState(() {
       _restSeconds = seconds;
+      _restTotalSeconds = seconds;
       _restRunning = true;
     });
   }
@@ -224,6 +356,44 @@ class TodayTabState extends State<TodayTab> {
     final duration = DateTime.now().difference(started).inSeconds;
     final sched = _scheduled;
 
+    // Only completed sets are archived — an untouched set is not a data point.
+    final sessionSets = <SetLog>[];
+    final setRows = <Map<String, dynamic>>[];
+    var seq = 0;
+    for (final ex in _liveExercises) {
+      for (var i = 0; i < ex.sets.length; i++) {
+        final s = ex.sets[i];
+        if (!s.completed) continue;
+        final setLog = SetLog(
+          id: '$sessionId-${seq++}',
+          sessionExerciseId: ex.exerciseId,
+          sessionId: sessionId,
+          exerciseName: ex.name,
+          setIndex: i + 1,
+          weightKg: s.weightKg,
+          reps: s.reps,
+          isCompleted: true,
+        );
+        sessionSets.add(setLog);
+        setRows.add(setLog.toMap());
+      }
+    }
+
+    // Bodyweight for the estimate: what the user last logged, else their
+    // stated target, else no estimate at all.
+    final snapshot = await GoalService.instance.snapshot();
+    final bodyweightKg = snapshot.currentWeightKg ??
+        (snapshot.profile.isConfigured
+            ? snapshot.profile.targetWeightKg
+            : null);
+
+    final burn = EnergyEstimator.estimate(
+      sets: sessionSets,
+      dayName: _sessionTitle,
+      bodyweightKg: bodyweightKg,
+      durationSeconds: duration,
+    );
+
     final session = SessionLog(
       id: sessionId,
       dayName: _sessionTitle,
@@ -234,69 +404,61 @@ class TodayTabState extends State<TodayTab> {
       routineId: sched?.routine.id ?? '',
       dayId: sched?.day.id ?? '',
       totalSets: _sessionCompletedSets,
+      kcalBurned: burn ?? 0.0,
     );
 
-    // Only completed sets are archived — an untouched set is not a data point.
-    final setRows = <Map<String, dynamic>>[];
-    var seq = 0;
-    for (final ex in _liveExercises) {
-      for (var i = 0; i < ex.sets.length; i++) {
-        final s = ex.sets[i];
-        if (!s.completed) continue;
-        setRows.add(SetLog(
-          id: '$sessionId-${seq++}',
-          sessionExerciseId: ex.exerciseId,
-          sessionId: sessionId,
-          exerciseName: ex.name,
-          setIndex: i + 1,
-          weightKg: s.weightKg,
-          reps: s.reps,
-          isCompleted: true,
-        ).toMap());
-      }
-    }
+    // One transaction, not two writes: a kill between a header insert and
+    // its sets leaves a session claiming `totalSets: N` with nothing behind
+    // it, which nothing downstream can tell apart from a legitimately
+    // detail-free entry. Same argument `deleteSessionLog` and
+    // `restoreSessionLog` were given transactions for.
+    await DatabaseService.instance
+        .insertSessionWithSets(session.toMap(), setRows);
 
-    await DatabaseService.instance.insertSessionLog(session.toMap());
-    await DatabaseService.instance.insertSetLogs(setRows);
-
+    if (!mounted) return;
+    // Refresh BURNED TODAY (and the rest of the summary) so the hub the user
+    // lands back on reflects the session just saved, rather than reporting
+    // "not on record" about data that was just recorded.
+    await _loadSummary();
     if (!mounted) return;
     _endSessionState();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: JinatraTokens.deepTeal,
         content: Text(
           'SESSION SAVED - ${setRows.length} sets, ${_fmtWeight(session.totalVolumeKg)} kg volume',
-          style: JinatraTokens.monoData(color: JinatraTokens.onPrimary, fontSize: 12),
         ),
       ),
     );
   }
 
   Future<bool?> _confirmDiscard() {
+    final semantics = LockoutSemantics.of(context);
     return showDialog<bool>(
       context: context,
+      // No `backgroundColor`/`shape` here — `LockoutTheme.build`'s
+      // `dialogTheme` already supplies both.
       builder: (ctx) => AlertDialog(
-        backgroundColor: JinatraTokens.sweetCream,
-        shape: RoundedRectangleBorder(
-          side: BorderSide(color: JinatraTokens.ink, width: 3),
-          borderRadius: BorderRadius.zero,
-        ),
-        title: Text('DISCARD SESSION?', style: JinatraTokens.sectionHeader(fontSize: 16)),
+        title: const Text('Discard session?'),
         content: Text(
-          'No sets were logged, so there is nothing to archive. End the session?',
-          style: JinatraTokens.bodyText(fontSize: 13),
+          _sessionCompletedSets > 0
+              ? '$_sessionCompletedSets logged '
+                  '${_sessionCompletedSets == 1 ? 'set' : 'sets'} will be '
+                  'lost. Discard ${_sessionCompletedSets == 1 ? 'it' : 'them'}?'
+              : 'No sets were logged, so there is nothing to archive. End the session?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('KEEP GOING', style: JinatraTokens.monoData(fontSize: 12)),
+            child: const Text('Keep going'),
           ),
           TextButton(
+            // `semantics.danger`, not `colorScheme.error` — this is a
+            // destructive confirmation, exactly what that role is reserved
+            // for (see `LockoutSemantics`'s doc on `danger` vs `error`, and
+            // `log_tab.dart`'s DELETE ENTRY for the same rule).
+            style: TextButton.styleFrom(foregroundColor: semantics.danger),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'DISCARD',
-              style: JinatraTokens.monoData(fontSize: 12, color: JinatraTokens.signal),
-            ),
+            child: const Text('Discard'),
           ),
         ],
       ),
@@ -310,6 +472,8 @@ class TodayTabState extends State<TodayTab> {
       _liveExercises = [];
       _startedAt = null;
       _restRunning = false;
+      _restSeconds = 0;
+      _restTotalSeconds = 0;
       _elapsedSeconds = 0;
     });
   }
@@ -331,355 +495,320 @@ class TodayTabState extends State<TodayTab> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
+      return const Center(child: CircularProgressIndicator());
     }
 
     return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: _sessionActive ? _buildActiveSession() : _buildPreSession(),
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      // SafeArea(bottom: false): MainScreen dropped its global AppBar in the
+      // five-tab restructure, so each tab now owns its top inset. Without
+      // this the header paints under the status bar on an edge-to-edge
+      // window and swallows taps. Bottom is left alone — BottomNav carries
+      // its own inset, and this tab's content should scroll under it.
+      body: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.all(LockoutTheme.screenPadding),
+          child:
+              _sessionActive ? _buildActiveSession() : _buildPreSession(context),
+        ),
+      ),
+      // Kept visible while the exercise list scrolls, rather than inline in
+      // the body. This is TodayTab's own Scaffold (nested inside MainScreen's
+      // IndexedStack), so it does not compete with MainScreen's BottomNav.
+      bottomNavigationBar:
+          (_sessionActive && _restRunning) ? _buildRestBar() : null,
+    );
+  }
+
+  // --- PRE-SESSION (the HOME hub) ---
+
+  Widget _buildPreSession(BuildContext context) {
+    final sched = _scheduled;
+    final code = ScheduleService.weekdayCode(DateTime.now());
+    final isRest = sched == null;
+    // A day can be scheduled with no exercises on it yet (routine still
+    // being built). That is not a rest day, but it also has nothing to
+    // start live — offer guidance to the Routines tab instead of a session
+    // that would open with zero exercises.
+    final isEmptyDay = sched != null && sched.exercises.isEmpty;
+
+    return SingleChildScrollView(
+      child: HomeHub(
+        eyebrow: 'TODAY · $code',
+        title: isRest ? 'Rest day' : sched.day.name,
+        subtitle: isRest
+            ? 'Nothing scheduled. Train off-plan or take the day.'
+            : isEmptyDay
+                ? 'This training day has no exercises yet. Add them on the '
+                    'Routines tab, then come back to start the session.'
+                : _scheduleSubtitle(sched),
+        heroColor: LockoutSemantics.of(context).categoryAt(isRest ? 7 : 0),
+        heroActions: [
+          if (!isRest && !isEmptyDay)
+            FilledButton(
+              onPressed: _startScheduledSession,
+              child: const Text('Start session'),
+            ),
+          FilledButton.tonal(
+            onPressed: _startCustomSession,
+            child: const Text('Custom session'),
+          ),
+        ],
+        summary: _summary,
+        foodTabEnabled: widget.foodTabEnabled,
+        onOpenFood: widget.foodTabEnabled
+            ? () => widget.onNavigate?.call('food')
+            : null,
+        onOpenBody: () =>
+            widget.onNavigate?.call('progress', segment: ProgressSegment.weight),
+        onOpenLog: () =>
+            widget.onNavigate?.call('progress', segment: ProgressSegment.history),
+        actions: _quickActions(context),
       ),
     );
   }
 
-  // --- PRE-SESSION ---
-
-  Widget _buildPreSession() {
-    final sched = _scheduled;
-    final today = DateTime.now();
-    final code = ScheduleService.weekdayCode(today);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('TODAY WORKOUT', style: JinatraTokens.sectionHeader()),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: JinatraTokens.signal,
-                border: Border.all(color: JinatraTokens.ink, width: 2),
-              ),
-              child: Text(code, style: JinatraTokens.monoData(fontSize: 12)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Expanded(
-          child: sched == null ? _buildRestDay() : _buildScheduledPreview(sched),
-        ),
-      ],
-    );
+  String _scheduleSubtitle(ScheduledDay sched) {
+    final sets = sched.exercises.fold<int>(0, (s, e) => s + e.targetSets);
+    final plural = sched.exercises.length == 1 ? 'exercise' : 'exercises';
+    return '${sched.exercises.length} $plural · $sets sets';
   }
 
-  Widget _buildRestDay() {
-    return ListView(
-      children: [
-        JinatraCard(
-          shadowOffset: JinatraTokens.shadowLg,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('REST DAY', style: JinatraTokens.displayHeader(fontSize: 26)),
-              const SizedBox(height: 8),
-              Text(
-                'No training day is scheduled for today in your active routine. '
-                'Add a day for this weekday on the Routines tab, or train something off-plan.',
-                style: JinatraTokens.bodyText(),
-              ),
-              const SizedBox(height: 18),
-              JinatraButton(
-                label: 'START CUSTOM SESSION',
-                isSignal: true,
-                onPressed: _startCustomSession,
-              ),
-            ],
-          ),
+  List<ActionItem> _quickActions(BuildContext context) {
+    final go = widget.onNavigate;
+    return [
+      // Hidden entirely when the Food tab is off, rather than left as a
+      // tile that taps to nowhere: `_goToTab` already no-ops for a hidden
+      // tab id, so a visible "LOG FOOD" tile would silently do nothing.
+      if (widget.foodTabEnabled)
+        ActionItem(
+          label: 'Log food',
+          icon: Icons.restaurant,
+          color: LockoutSemantics.of(context).categoryAt(0),
+          onTap: () => go?.call('food'),
         ),
-      ],
-    );
-  }
-
-  Widget _buildScheduledPreview(ScheduledDay sched) {
-    final hasExercises = sched.exercises.isNotEmpty;
-
-    return ListView(
-      children: [
-        // Day header
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: JinatraTokens.deepTeal,
-            border: Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderHero),
-            boxShadow: [JinatraTokens.hardShadow(offset: JinatraTokens.shadowMd)],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                sched.day.name.toUpperCase(),
-                style: JinatraTokens.displayHeader(color: JinatraTokens.onPrimary, fontSize: 22),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${sched.routine.name}  -  ${sched.exercises.length} EXERCISES',
-                style: JinatraTokens.monoData(color: JinatraTokens.sweetCream, fontSize: 11),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-
-        if (!hasExercises)
-          JinatraCard(
-            child: Text(
-              'This training day has no exercises yet. Add them on the Routines tab, '
-              'then come back to start the session.',
-              style: JinatraTokens.bodyText(fontSize: 13),
-            ),
-          )
-        else
-          ...sched.exercises.asMap().entries.map((entry) {
-            final i = entry.key;
-            final ex = entry.value;
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: JinatraTokens.paper,
-                border: Border.all(color: JinatraTokens.ink, width: 2),
-                boxShadow: [JinatraTokens.hardShadow(offset: 3)],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 26,
-                    height: 26,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: JinatraTokens.mistTeal,
-                      border: Border.all(color: JinatraTokens.ink, width: 2),
-                    ),
-                    child: Text('${i + 1}', style: JinatraTokens.monoData(fontSize: 11)),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      ex.name,
-                      style: JinatraTokens.bodyText(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(ex.targetLabel, style: JinatraTokens.monoData(fontSize: 11)),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _openVideo(ex.name, ex.videoUrl),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: JinatraTokens.sweetCream,
-                        border: Border.all(color: JinatraTokens.ink, width: 2),
-                      ),
-                      child: Icon(Icons.play_arrow, size: 14, color: JinatraTokens.ink),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-
-        const SizedBox(height: 8),
-        if (hasExercises)
-          JinatraButton(label: 'START LIVE SESSION', onPressed: _startScheduledSession),
-        const SizedBox(height: 10),
-        JinatraButton(
-          label: 'START CUSTOM SESSION',
-          background: JinatraTokens.paper,
-          textColor: JinatraTokens.ink,
-          onPressed: _startCustomSession,
-        ),
-      ],
-    );
+      ActionItem(
+        label: 'Weigh in',
+        icon: Icons.monitor_weight,
+        color: LockoutSemantics.of(context).categoryAt(1),
+        onTap: () => go?.call('progress', segment: ProgressSegment.weight),
+      ),
+      ActionItem(
+        label: 'Workout',
+        icon: Icons.fitness_center,
+        color: LockoutSemantics.of(context).categoryAt(2),
+        onTap: () => go?.call('workout'),
+      ),
+      ActionItem(
+        label: 'History',
+        icon: Icons.calendar_month,
+        color: LockoutSemantics.of(context).categoryAt(3),
+        onTap: () => go?.call('progress', segment: ProgressSegment.history),
+      ),
+      ActionItem(
+        label: 'Custom',
+        icon: Icons.add,
+        color: LockoutSemantics.of(context).categoryAt(4),
+        onTap: _startCustomSession,
+      ),
+      ActionItem(
+        label: 'Streak',
+        icon: Icons.local_fire_department,
+        color: LockoutSemantics.of(context).categoryAt(5),
+        onTap: () => go?.call('progress', segment: ProgressSegment.history),
+      ),
+      ActionItem(
+        label: 'Plan',
+        icon: Icons.insights,
+        color: LockoutSemantics.of(context).categoryAt(6),
+        onTap: () => go?.call('progress', segment: ProgressSegment.weight),
+      ),
+      ActionItem(
+        label: 'Exercises',
+        icon: Icons.list,
+        color: LockoutSemantics.of(context).categoryAt(7),
+        onTap: () => go?.call('workout'),
+      ),
+    ];
   }
 
   // --- ACTIVE SESSION ---
 
   Widget _buildActiveSession() {
+    final totalExercises = _liveExercises.length;
+    final completedExercises = totalExercises == 0
+        ? 0
+        : _liveExercises
+            .where((e) => e.sets.isNotEmpty && e.completedCount == e.sets.length)
+            .length;
+    final exerciseProgress =
+        totalExercises == 0 ? 0.0 : completedExercises / totalExercises;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Session header
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: JinatraTokens.deepTeal,
-            border: Border.all(color: JinatraTokens.ink, width: JinatraTokens.borderControl),
-          ),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      _sessionTitle.toUpperCase(),
-                      style: JinatraTokens.monoData(color: JinatraTokens.onPrimary, fontSize: 14),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Text(
-                    _elapsedLabel,
-                    style: JinatraTokens.monoData(
-                      color: JinatraTokens.signal,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'SETS: $_sessionCompletedSets / $_sessionTotalSets',
-                    style: JinatraTokens.monoData(
-                      color: JinatraTokens.sweetCream,
-                      fontSize: 12,
-                    ),
-                  ),
-                  Text(
-                    'VOLUME: ${_fmtWeight(_sessionVolumeKg)} kg',
-                    style: JinatraTokens.monoData(
-                      color: JinatraTokens.onPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        Expanded(
-          child: _liveExercises.isEmpty
-              ? Center(
-                  child: Text(
-                    'EMPTY SESSION\nTap "+ ADD EXERCISE" to begin.',
-                    textAlign: TextAlign.center,
-                    style: JinatraTokens.monoData(
-                      color: JinatraTokens.ink.withValues(alpha: 0.6),
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _liveExercises.length + 1,
-                  itemBuilder: (ctx, idx) {
-                    if (idx == _liveExercises.length) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: GestureDetector(
-                          onTap: _addExerciseMidSession,
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: JinatraTokens.mistTeal,
-                              border: Border.all(color: JinatraTokens.ink, width: 2),
-                            ),
-                            child: Center(
-                              child: Text(
-                                '+ ADD EXERCISE',
-                                style: JinatraTokens.monoData(fontSize: 12),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                    return _buildExerciseCard(_liveExercises[idx]);
-                  },
-                ),
-        ),
-
-        if (_restRunning) _buildRestBar(),
-
-        JinatraButton(label: 'FINISH SESSION & SAVE', onPressed: _finishSession),
+        _buildSessionHeader(exerciseProgress),
+        const SizedBox(height: LockoutTheme.spaceMd),
+        Expanded(child: _buildExerciseList()),
       ],
     );
   }
 
-  Widget _buildExerciseCard(_LiveExercise ex) {
-    final done = ex.completedCount == ex.sets.length && ex.sets.isNotEmpty;
+  /// Item 0 is the leg-safety notice, the last item is `Add exercise`, and
+  /// everything between is one exercise card (or the empty-state message
+  /// when there are none) — kept a `ListView.builder` rather than a plain
+  /// `ListView` so a long session does not eagerly build every card and
+  /// every set row up front.
+  Widget _buildExerciseList() {
+    final theme = Theme.of(context);
+    final hasExercises = _liveExercises.isNotEmpty;
+    final itemCount = (hasExercises ? _liveExercises.length : 1) + 2;
+    final lastIndex = itemCount - 1;
 
-    return JinatraCard(
-      margin: const EdgeInsets.only(bottom: 14),
-      background: done ? JinatraTokens.mistTeal : JinatraTokens.paper,
+    return ListView.builder(
+      itemCount: itemCount,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: LockoutTheme.spaceMd),
+            child: _buildLegSafetyNotice(),
+          );
+        }
+        if (index == lastIndex) {
+          // Plain text, not `.icon` — an `Icons.add` glyph here would sit
+          // alongside the weight/rep stepper's own plus buttons and get
+          // swept into any test that walks every `Icons.add` on screen
+          // expecting a stepper.
+          return OutlinedButton(
+            onPressed: _addExerciseMidSession,
+            child: const Text('Add exercise'),
+          );
+        }
+        if (!hasExercises) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: LockoutTheme.spaceLg,
+            ),
+            child: Text(
+              'No exercises yet. Add one to begin.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+          );
+        }
+        return _buildExerciseCard(_liveExercises[index - 1], index - 1);
+      },
+    );
+  }
+
+  /// The three-figure Duration / Volume / Sets row, a Finish action, and the
+  /// exercise-completion bar beneath it — see `_FinishSummarySheet` for what
+  /// tapping Finish opens.
+  Widget _buildSessionHeader(double exerciseProgress) {
+    final theme = Theme.of(context);
+    return LockoutCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // v1's `HeroCard` stated "IN SESSION - $_sessionTitle" so a live
+          // session always named which day was running; the rebuilt header
+          // otherwise never paints `_sessionTitle` anywhere on screen.
+          Text(
+            _sessionTitle,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: LockoutTheme.spaceXs),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      ex.name.toUpperCase(),
-                      style: JinatraTokens.sectionHeader(fontSize: 15),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      ex.lastPerformance.isEmpty
-                          ? 'TARGET ${ex.targetLabel}  -  NO HISTORY'
-                          : 'TARGET ${ex.targetLabel}  -  LAST ${ex.lastPerformance}',
-                      style: JinatraTokens.monoData(
-                        fontSize: 10,
-                        color: JinatraTokens.ink.withValues(alpha: 0.65),
-                      ),
-                    ),
-                  ],
+                child: _SessionStat(label: 'Duration', value: _elapsedLabel),
+              ),
+              Expanded(
+                child: _SessionStat(
+                  // The unit lives in the label, not the value: at 360dp
+                  // the three stats share ~69dp each once the `Finish`
+                  // button takes its own ~88dp, and a four-digit
+                  // `1234.5 kg` needs ~110dp at `numeric(size: 20)` — it
+                  // ellipsises long before the figure itself would.
+                  // Dropping " kg" from the value buys back exactly the
+                  // width the unit cost.
+                  label: 'Volume (kg)',
+                  value: _fmtWeight(_sessionVolumeKg),
                 ),
               ),
-              GestureDetector(
-                onTap: () => _openVideo(ex.name, ex.videoUrl),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: JinatraTokens.sweetCream,
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
-                    boxShadow: [JinatraTokens.hardShadow(offset: 2)],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.play_arrow, size: 13, color: JinatraTokens.ink),
-                      const SizedBox(width: 4),
-                      Text('WATCH', style: JinatraTokens.monoData(fontSize: 10)),
-                    ],
-                  ),
+              Expanded(
+                child: _SessionStat(
+                  label: 'Sets',
+                  value: '$_sessionCompletedSets/$_sessionTotalSets',
                 ),
+              ),
+              FilledButton.tonal(
+                onPressed: _confirmFinishSession,
+                child: const Text('Finish'),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          ...ex.sets.asMap().entries.map((e) => _buildSetRow(ex, e.key, e.value)),
-          const SizedBox(height: 4),
-          GestureDetector(
-            onTap: () {
-              final last = ex.sets.isNotEmpty ? ex.sets.last : null;
-              setState(() => ex.sets.add(_LiveSet(
-                    weightKg: last?.weightKg ?? 0,
-                    reps: last?.reps ?? 10,
-                  )));
-            },
+          const SizedBox(height: LockoutTheme.spaceMd),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(LockoutTheme.radiusPill),
+            child: LinearProgressIndicator(value: exerciseProgress),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Opens the finish summary — the same Duration/Volume/Sets triple the
+  /// header shows, so the numbers the log will carry are confirmed before
+  /// the write rather than discovered after it. `Save` calls the existing
+  /// `_finishSession` unchanged; `Discard` ends the session with no write.
+  Future<void> _confirmFinishSession() async {
+    final action = await showLockoutSheet<String>(
+      context: context,
+      title: 'Finish session',
+      builder: (_) => _FinishSummarySheet(
+        duration: _elapsedLabel,
+        volume: _fmtWeight(_sessionVolumeKg),
+        sets: '$_sessionCompletedSets/$_sessionTotalSets',
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'save') {
+      await _finishSession();
+    } else if (action == 'discard') {
+      // A session with logged sets is real data, not an empty draft — the
+      // same "Discard session?" gate `_finishSession` already applies when
+      // there is nothing logged must also guard the one-tap Discard here
+      // once there is something to lose.
+      if (_sessionCompletedSets > 0) {
+        final confirmed = await _confirmDiscard();
+        if (confirmed != true || !mounted) return;
+      }
+      _endSessionState();
+    }
+  }
+
+  Widget _buildLegSafetyNotice() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return LockoutCard(
+      color: colors.tertiaryContainer,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber, color: colors.onTertiaryContainer),
+          const SizedBox(width: LockoutTheme.spaceSm),
+          Expanded(
             child: Text(
-              '+ ADD SET',
-              style: JinatraTokens.monoData(fontSize: 10, color: JinatraTokens.deepTeal),
+              'Pain-free movement only. Use moderate load, avoid forcing '
+              'painful reps.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colors.onTertiaryContainer,
+              ),
             ),
           ),
         ],
@@ -687,74 +816,157 @@ class TodayTabState extends State<TodayTab> {
     );
   }
 
-  Widget _buildSetRow(_LiveExercise ex, int index, _LiveSet set) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: set.completed ? JinatraTokens.mistTeal : JinatraTokens.sweetCream,
-        border: Border.all(color: JinatraTokens.ink, width: 2),
+  Widget _buildExerciseCard(_LiveExercise ex, int exerciseIndex) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: LockoutTheme.spaceMd),
+      child: LockoutCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(ex.name, style: theme.textTheme.titleMedium),
+                      const SizedBox(height: LockoutTheme.spaceXs),
+                      Text(
+                        'Target ${ex.targetLabel}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: LockoutTheme.spaceXs),
+                      Text(
+                        ex.lastPerformance.isEmpty
+                            ? 'No previous data'
+                            : 'Last ${ex.lastPerformance}',
+                        style: theme.textTheme.labelSmall,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Watch video',
+                  onPressed: () => _openVideo(ex.name, ex.videoUrl),
+                  icon: const Icon(Icons.play_circle_outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: LockoutTheme.spaceSm),
+            for (var i = 0; i < ex.sets.length; i++)
+              _buildSetRow(ex, exerciseIndex, i, ex.sets[i]),
+            Align(
+              alignment: Alignment.centerLeft,
+              // Plain text, not `.icon` — see the "Add exercise" button above
+              // for why an `Icons.add` glyph does not belong here either.
+              child: TextButton(
+                onPressed: () {
+                  final last = ex.sets.isNotEmpty ? ex.sets.last : null;
+                  setState(() => ex.sets.add(_LiveSet(
+                        weightKg: last?.weightKg ?? 0,
+                        reps: last?.reps ?? 10,
+                      )));
+                },
+                child: const Text('Add set'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSetRow(
+    _LiveExercise ex,
+    int exerciseIndex,
+    int setIndex,
+    _LiveSet set,
+  ) {
+    final theme = Theme.of(context);
+    final semantics = LockoutSemantics.of(context);
+    // Two lines, not one: SET + PREVIOUS + delete + the complete tick on top,
+    // the two steppers beneath. A single `Row` carrying all of it needs
+    // ~332dp of non-shrinkable children (set number, both steppers, the
+    // filled complete button) before the row's own padding, which overflows
+    // a 360-390dp phone.
+    //
+    // The tick lives on the *first* line rather than sitting beside the
+    // steppers: that line only otherwise carries a 24dp set number and a
+    // 48dp delete button, with an ellipsised label taking whatever is left,
+    // so a fifth 48dp control fits it without pressure. That leaves the
+    // second line for the two steppers alone — each `Expanded` half gets
+    // ~140dp at 360dp width. Putting the tick beside the steppers instead
+    // (the previous layout) left the value only ~20dp of that, forcing
+    // `FittedBox` to shrink a multi-digit weight far below the reps column's
+    // single digit — the two columns visibly changed scale against each
+    // other, which is what `LockoutTheme.numeric` exists to prevent.
+    // `_numberStepper` below caps the value's slot at an explicit width
+    // rather than letting it silently take whatever the ~140dp has left
+    // over from the steppers' buttons, so the value's scale stops
+    // depending on incidental neighbour layout — see its own comment.
+    final rowContent = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: LockoutTheme.spaceSm,
+        vertical: LockoutTheme.spaceXs,
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'SET ${index + 1}',
-                style: JinatraTokens.monoData(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  color: set.completed ? JinatraTokens.deepTeal : JinatraTokens.ink,
+              SizedBox(
+                width: LockoutTheme.spaceLg,
+                child: Text(
+                  '${setIndex + 1}',
+                  style: LockoutTheme.numeric(context, size: 14),
                 ),
               ),
-              Row(
-                children: [
-                  if (ex.sets.length > 1)
-                    GestureDetector(
-                      onTap: () => setState(() => ex.sets.removeAt(index)),
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 10),
-                        child: Icon(Icons.close, size: 16, color: JinatraTokens.ink),
-                      ),
-                    ),
-                  GestureDetector(
-                    onTap: () {
-                      final wasDone = set.completed;
-                      setState(() => set.completed = !wasDone);
-                      if (!wasDone) _beginRest(ex.restSeconds);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 60),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: set.completed
-                            ? JinatraTokens.deepTeal
-                            : JinatraTokens.paper,
-                        border: Border.all(color: JinatraTokens.ink, width: 2),
-                        boxShadow: [
-                          JinatraTokens.hardShadow(offset: set.completed ? 0 : 2),
-                        ],
-                      ),
-                      child: Text(
-                        set.completed ? 'LOGGED' : 'LOG SET',
-                        style: JinatraTokens.monoData(
-                          color: set.completed ? JinatraTokens.onPrimary : JinatraTokens.ink,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              Expanded(
+                child: Text(
+                  ex.lastPerformance.isEmpty ? '-' : ex.lastPerformance,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove set',
+                icon: const Icon(Icons.close),
+                onPressed: ex.sets.length > 1
+                    ? () => setState(() => ex.sets.removeAt(setIndex))
+                    : null,
+              ),
+              IconButton.filled(
+                key: ValueKey('set-complete-$exerciseIndex-$setIndex'),
+                tooltip: set.completed
+                    ? 'Mark set incomplete'
+                    : 'Mark set complete',
+                style: IconButton.styleFrom(
+                  backgroundColor: set.completed
+                      ? semantics.success
+                      : theme.colorScheme.surfaceContainerHighest,
+                  foregroundColor: set.completed
+                      ? semantics.onSuccess
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+                icon: const Icon(Icons.check),
+                onPressed: () {
+                  final wasDone = set.completed;
+                  setState(() => set.completed = !wasDone);
+                  if (!wasDone) _beginRest(ex.restSeconds);
+                },
               ),
             ],
           ),
-          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
-                child: _stepper(
-                  label: '${_fmtWeight(set.weightKg)} kg',
+                child: _numberStepper(
+                  label: 'weight',
+                  value: _fmtWeight(set.weightKg),
                   onMinus: () {
                     if (set.weightKg >= 2.5) {
                       setState(() => set.weightKg -= 2.5);
@@ -765,10 +977,10 @@ class TodayTabState extends State<TodayTab> {
                   onPlus: () => setState(() => set.weightKg += 2.5),
                 ),
               ),
-              const SizedBox(width: 8),
               Expanded(
-                child: _stepper(
-                  label: '${set.reps} reps',
+                child: _numberStepper(
+                  label: 'reps',
+                  value: '${set.reps}',
                   onMinus: () {
                     if (set.reps > 1) setState(() => set.reps--);
                   },
@@ -780,95 +992,255 @@ class TodayTabState extends State<TodayTab> {
         ],
       ),
     );
+
+    // A completed row tints its whole background, not just the tick — a
+    // TweenAnimationBuilder rather than a plain DecoratedBox so the tint
+    // eases in over the M3 "standard" motion token instead of snapping,
+    // while the keyed widget the tests read stays a real `DecoratedBox`.
+    final targetColor = set.completed
+        ? semantics.success.withValues(alpha: 0.12)
+        : Colors.transparent;
+    return TweenAnimationBuilder<Color?>(
+      key: ObjectKey(set),
+      tween: ColorTween(end: targetColor),
+      duration: Durations.medium1,
+      curve: Easing.standard,
+      builder: (context, color, child) => DecoratedBox(
+        key: ValueKey('set-row-$exerciseIndex-$setIndex'),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+        ),
+        child: child,
+      ),
+      child: rowContent,
+    );
   }
 
-  Widget _stepper({
+  Widget _numberStepper({
     required String label,
+    required String value,
     required VoidCallback onMinus,
     required VoidCallback onPlus,
   }) {
-    Widget btn(String glyph, VoidCallback onTap) => GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: JinatraTokens.mistTeal,
-              border: Border.all(color: JinatraTokens.ink, width: 1),
+    const constraints = BoxConstraints(
+      minWidth: LockoutTheme.minTouchTarget,
+      minHeight: LockoutTheme.minTouchTarget,
+    );
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          tooltip: 'Decrease $label',
+          icon: const Icon(Icons.remove),
+          constraints: constraints,
+          onPressed: onMinus,
+        ),
+        // `Flexible` still, so this can never overflow its Row regardless
+        // of what else shares the line — but capped with an explicit
+        // `maxWidth` rather than left to take "whatever is left": the
+        // previous uncapped `Flexible` grew or shrank with viewport *and*
+        // sibling layout together, so it could match the reps column's
+        // scale by coincidence at one combination and diverge from it at
+        // the next (round-2 finding B). `LockoutTheme.spaceXl + spaceMd`
+        // (48dp) is the budget: each stepper's own two 48dp buttons leave
+        // ~44dp of its ~140dp `Expanded` half at 360dp width (140 - 96 =
+        // 44), and a five-character value at `numeric(size: 14)` needs
+        // ~43dp at the default text scale, so 48dp fits it at 1.0 scale
+        // with a small margin rather than forcing `FittedBox` to shrink it
+        // below the reps column's scale. It still shrinks below 48dp if a
+        // neighbour (e.g. the complete tick, wrongly sharing this line)
+        // leaves less room than that — capping the budget states the
+        // assumption; it does not remove the squeeze.
+        Flexible(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: LockoutTheme.spaceXl + LockoutTheme.spaceMd,
             ),
-            child: Text(glyph, style: JinatraTokens.monoData(fontSize: 14)),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                textAlign: TextAlign.center,
+                style: LockoutTheme.numeric(context, size: 14),
+              ),
+            ),
           ),
-        );
-
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        border: Border.all(color: JinatraTokens.ink, width: 2),
-        color: JinatraTokens.paper,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          btn('-', onMinus),
-          Text(label, style: JinatraTokens.monoData(fontSize: 12)),
-          btn('+', onPlus),
-        ],
-      ),
+        ),
+        IconButton(
+          tooltip: 'Increase $label',
+          icon: const Icon(Icons.add),
+          constraints: constraints,
+          onPressed: onPlus,
+        ),
+      ],
     );
   }
 
   Widget _buildRestBar() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: JinatraTokens.paper,
-        border: Border.all(color: JinatraTokens.signal, width: 3),
-        boxShadow: [JinatraTokens.hardShadow(offset: 4)],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
+    final theme = Theme.of(context);
+    final progress = _restTotalSeconds <= 0
+        ? 0.0
+        : (_restSeconds / _restTotalSeconds).clamp(0.0, 1.0);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHigh),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            LockoutTheme.spaceMd,
+            LockoutTheme.spaceSm,
+            LockoutTheme.spaceMd,
+            LockoutTheme.spaceSm,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.timer, color: JinatraTokens.signal, size: 18),
-              const SizedBox(width: 8),
-              Text('REST', style: JinatraTokens.monoData(fontSize: 12)),
-              const SizedBox(width: 8),
-              Text(
-                '${_restSeconds}s',
-                style: JinatraTokens.monoData(fontSize: 18, color: JinatraTokens.signal),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(LockoutTheme.radiusPill),
+                child: LinearProgressIndicator(value: progress),
+              ),
+              const SizedBox(height: LockoutTheme.spaceSm),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${_restSeconds}s',
+                    style: LockoutTheme.numeric(context, size: 28),
+                  ),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => setState(() {
+                          // `_restTotalSeconds` is the progress bar's
+                          // denominator, so it has to shrink by the same
+                          // amount `_restSeconds` does — otherwise the bar
+                          // reads a stale, too-large total. And when this
+                          // adjustment reaches zero, `_restRunning` clears
+                          // immediately rather than waiting up to a second
+                          // for the next ticker frame to notice.
+                          final next =
+                              _restSeconds > 15 ? _restSeconds - 15 : 0;
+                          final spent = _restSeconds - next;
+                          final remainingTotal = _restTotalSeconds - spent;
+                          _restTotalSeconds =
+                              remainingTotal < 0 ? 0 : remainingTotal;
+                          _restSeconds = next;
+                          if (_restSeconds == 0) _restRunning = false;
+                        }),
+                        child: const Text('-15s'),
+                      ),
+                      TextButton(
+                        onPressed: () => setState(() {
+                          // Symmetric with the total above: extending the
+                          // rest also extends what "full" means for the bar,
+                          // or +15s would pin it at 100% until the clock
+                          // fell back under the original total.
+                          _restSeconds += 15;
+                          _restTotalSeconds += 15;
+                        }),
+                        child: const Text('+15s'),
+                      ),
+                      TextButton(
+                        onPressed: () => setState(() => _restRunning = false),
+                        child: const Text('Skip'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: () => setState(() => _restSeconds += 15),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
-                    color: JinatraTokens.mistTeal,
-                  ),
-                  child: Text('+15s', style: JinatraTokens.monoData(fontSize: 11)),
-                ),
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: () => setState(() => _restRunning = false),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: JinatraTokens.ink, width: 2),
-                    color: JinatraTokens.signal,
-                  ),
-                  child: Text('SKIP', style: JinatraTokens.monoData(fontSize: 11)),
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+/// The Finish confirmation sheet: the same Duration/Volume/Sets triple the
+/// session header states, plus the two ways to end the session. Pops with
+/// `'save'` or `'discard'` for `_confirmFinishSession` to act on.
+class _FinishSummarySheet extends StatelessWidget {
+  final String duration;
+  final String volume;
+  final String sets;
+
+  const _FinishSummarySheet({
+    required this.duration,
+    required this.volume,
+    required this.sets,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _SessionStat(label: 'Duration', value: duration)),
+            Expanded(
+              child: _SessionStat(label: 'Volume (kg)', value: volume),
+            ),
+            Expanded(child: _SessionStat(label: 'Sets', value: sets)),
+          ],
+        ),
+        const SizedBox(height: LockoutTheme.spaceLg),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context, 'discard'),
+                child: const Text('Discard'),
+              ),
+            ),
+            const SizedBox(width: LockoutTheme.spaceMd),
+            Expanded(
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context, 'save'),
+                child: const Text('Save'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The Duration/Volume/Sets caption-over-value pairing shared by the session
+/// header (`_buildSessionHeader`) and the finish summary sheet
+/// (`_FinishSummarySheet`) — the whole point of the sheet is that it states
+/// the same triple the header does, so both render through the one widget.
+class _SessionStat extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _SessionStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: theme.textTheme.labelSmall),
+        const SizedBox(height: LockoutTheme.spaceXs),
+        // `maxLines: 1` + ellipsis rather than letting it soft-wrap: a
+        // four-digit volume (a routine mid-session figure, e.g. "1234.5 kg")
+        // otherwise wraps to a second line at ~390dp and still overflows its
+        // `Expanded` column, which clips silently with no exception and no
+        // ellipsis. Ellipsis makes that truncation visible instead of mute.
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: LockoutTheme.numeric(context, size: 20),
+        ),
+      ],
     );
   }
 }

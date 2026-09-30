@@ -2,11 +2,42 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/schedule_service.dart';
-import '../theme/jinatra_tokens.dart';
-import '../widgets/jinatra_card.dart';
+import '../theme/lockout_semantics.dart';
+import '../theme/lockout_theme.dart';
+import '../widgets/hero_card.dart';
+import '../widgets/lockout_card.dart';
+import '../widgets/stat_tile.dart';
+import '../widgets/undo_banner.dart';
+
+/// The archive card's detail line.
+///
+/// A top-level function rather than a private method so it can be tested
+/// without pumping the screen, and so the burn's presence rule lives in one
+/// place: no estimate means the segment is absent, never "0 kcal".
+String sessionArchiveLine(SessionLog log) => [
+      log.dateStr,
+      log.durationLabel,
+      '${log.totalSets} sets',
+      if (log.kcalLabel.isNotEmpty) log.kcalLabel,
+    ].join('  -  ');
+
+/// A whole-kilogram label, or `--` when the figure is not a real number.
+///
+/// Belt to the braces `NumericGuard` puts on every write site: `toInt()`
+/// throws `Unsupported operation: Infinity or NaN` rather than returning
+/// anything, and it is called from `build()`, so one poisoned
+/// `total_volume_kg` written by a build shipped before those guards turns
+/// LOG into a red error screen on every launch — including the archive row
+/// whose DELETE ENTRY is the only way to get rid of the bad session. No
+/// migration can find such a row after the fact, so the render side has to
+/// survive it.
+String kgWhole(double kg) => kg.isFinite ? '${kg.toInt()}' : '--';
 
 class LogTab extends StatefulWidget {
-  const LogTab({super.key});
+  // Non-const constructor: see "Why some constructors in this app are
+  // not const" at the top of lib/widgets/day_block.dart.
+  // ignore: prefer_const_constructors_in_immutables
+  LogTab({super.key});
 
   @override
   State<LogTab> createState() => LogTabState();
@@ -60,98 +91,119 @@ class LogTabState extends State<LogTab> {
     setState(() => _expanded.add(log.id));
   }
 
-  Future<void> _confirmDelete(SessionLog log) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: JinatraTokens.sweetCream,
-        shape: RoundedRectangleBorder(
-          side: BorderSide(color: JinatraTokens.ink, width: 3),
-          borderRadius: BorderRadius.zero,
-        ),
-        title: Text('DELETE ENTRY?', style: JinatraTokens.sectionHeader(fontSize: 16)),
-        content: Text(
-          'This workout and its logged sets will be permanently removed from history.',
-          style: JinatraTokens.bodyText(fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('CANCEL', style: JinatraTokens.monoData(fontSize: 12)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'DELETE',
-              style: JinatraTokens.monoData(fontSize: 12, color: JinatraTokens.signal),
-            ),
-          ),
-        ],
-      ),
-    );
+  /// Deletes [log] and its set detail immediately (`deleteSessionLog`
+  /// removes both, atomically), then offers a few seconds to reverse it
+  /// through the same `showUndoBanner` mechanism BODY and FOOD already use
+  /// (Ruling F) — not the pre-v2 confirm-dialog, which guarded the tap with
+  /// a modal but left no way back once DELETE was actually pressed. The
+  /// sets are fetched *before* the delete — a closed card never populates
+  /// `_expandedSets`, so that cache cannot be relied on to still hold them
+  /// for restore.
+  Future<void> _deleteLog(SessionLog log) async {
+    final db = DatabaseService.instance;
+    final setRows = (await db.getSetLogsForSession(log.id))
+        .map(SetLog.fromMap)
+        .toList();
 
-    if (ok == true) {
-      await DatabaseService.instance.deleteSessionLog(log.id);
-      await _loadLogs();
-    }
+    await db.deleteSessionLog(log.id);
+    if (!mounted) return;
+    await _loadLogs();
+    if (!mounted) return;
+
+    showUndoBanner(
+      context,
+      message: 'DELETED ${log.dayName.toUpperCase()} SESSION',
+      onUndo: () => _restoreLog(log, setRows),
+    );
+  }
+
+  /// Re-inserts [log] with its original id and every field intact, then its
+  /// [sets] the same way, atomically (`DatabaseService.restoreSessionLog`)
+  /// so an interruption mid-restore cannot leave a header with no sets.
+  /// `ConflictAlgorithm.replace` on both tables makes this a true restore,
+  /// not a near-copy with freshly minted ids. Reinserting the sets in their
+  /// original order preserves `getSetLogsForSession`'s `rowid ASC` reading
+  /// of them even though the delete cleared their prior rowids.
+  Future<void> _restoreLog(SessionLog log, List<SetLog> sets) async {
+    final db = DatabaseService.instance;
+    await db.restoreSessionLog(
+      log.toMap(),
+      sets.map((s) => s.toMap()).toList(),
+    );
+    if (!mounted) return;
+    await _loadLogs();
   }
 
   double get _totalVolumeAllTime =>
       _logs.fold(0.0, (sum, l) => sum + l.totalVolumeKg);
 
+  double get _totalBurnedKcal =>
+      _logs.fold<double>(0, (s, l) => s + l.kcalBurned);
+
+  /// Estimates stay marked as estimates even in an aggregate. Reuses
+  /// `SessionLog.formatKcal` rather than re-deriving its rounding and `~`
+  /// prefix rules — the exact duplication `sessionArchiveLine` exists to
+  /// eliminate — falling back to `--` since `formatKcal` returns `''` for
+  /// "no estimate", not "0 kcal".
+  String get _totalBurnedLabel {
+    final label = SessionLog.formatKcal(_totalBurnedKcal);
+    return label.isEmpty ? '--' : label;
+  }
+
   String get _streakLabel {
-    if (_streakDays == 0) return 'NO ACTIVE STREAK';
-    return _streakDays == 1 ? '1 DAY STREAK' : '$_streakDays DAY STREAK';
+    if (_streakDays == 0) return 'No active streak';
+    return _streakDays == 1 ? '1 day streak' : '$_streakDays day streak';
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator(color: JinatraTokens.deepTeal));
+      return const Center(child: CircularProgressIndicator());
     }
 
+    final theme = Theme.of(context);
+    final semantics = LockoutSemantics.of(context);
+
+    // No screen-title header here (unlike a top-level tab): this widget is
+    // the HISTORY half of `ProgressTab`'s segmented control, which already
+    // shows "Progress" above and "History" on the segment itself — the same
+    // reason `body_tab.dart`'s WEIGHT half leads straight into its content
+    // rather than repeating a title.
     return Scaffold(
-      backgroundColor: JinatraTokens.sweetCream,
+      backgroundColor: theme.colorScheme.surface,
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(LockoutTheme.screenPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('TRAINING LOG & HISTORY', style: JinatraTokens.sectionHeader()),
-            const SizedBox(height: 16),
-
-            JinatraCard(
-              background: JinatraTokens.deepTeal,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'CONSISTENCY',
-                    style: JinatraTokens.monoData(
-                      color: JinatraTokens.sweetCream,
-                      fontSize: 11,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _streakLabel,
-                    style: JinatraTokens.displayHeader(color: JinatraTokens.onPrimary, fontSize: 22),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _stat('WORKOUTS', '${_logs.length}'),
-                      _stat('TOTAL VOLUME', '${_totalVolumeAllTime.toInt()} kg'),
-                    ],
-                  ),
-                ],
-              ),
+            HeroCard(
+              eyebrow: 'CONSISTENCY',
+              title: _streakLabel,
+              subtitle: '${_logs.length} workouts - '
+                  '${kgWhole(_totalVolumeAllTime)} kg total',
+              accent: semantics.categoryAt(0),
             ),
-            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: StatTile(
+                    label: 'WORKOUTS',
+                    value: '${_logs.length}',
+                  ),
+                ),
+                const SizedBox(width: LockoutTheme.spaceSm),
+                Expanded(
+                  child: StatTile(
+                    label: 'TOTAL BURNED',
+                    value: _totalBurnedLabel,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: LockoutTheme.spaceLg),
 
-            Text('WORKOUT ARCHIVE', style: JinatraTokens.monoData(fontSize: 14)),
-            const SizedBox(height: 8),
+            Text('WORKOUT ARCHIVE', style: theme.textTheme.labelSmall),
+            const SizedBox(height: LockoutTheme.spaceSm),
 
             Expanded(
               child: _logs.isEmpty
@@ -160,8 +212,8 @@ class LogTabState extends State<LogTab> {
                         'NO COMPLETED WORKOUTS YET\nFinish a live session on the TODAY tab '
                         'and it lands here automatically.',
                         textAlign: TextAlign.center,
-                        style: JinatraTokens.monoData(
-                          color: JinatraTokens.ink.withValues(alpha: 0.6),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     )
@@ -176,134 +228,148 @@ class LogTabState extends State<LogTab> {
     );
   }
 
-  Widget _stat(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: JinatraTokens.monoData(color: JinatraTokens.sweetCream, fontSize: 9),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: JinatraTokens.monoData(
-            color: JinatraTokens.onPrimary,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildLogCard(SessionLog log) {
+    final theme = Theme.of(context);
+    final semantics = LockoutSemantics.of(context);
     final isOpen = _expanded.contains(log.id);
     final sets = _expandedSets[log.id] ?? const <SetLog>[];
 
-    return JinatraCard(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => _toggleExpand(log),
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        log.dayName,
-                        style: JinatraTokens.sectionHeader(fontSize: 15),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${log.dateStr}  -  ${log.durationLabel}  -  ${log.totalSets} sets',
-                        style: JinatraTokens.monoData(fontSize: 11),
-                      ),
-                    ],
-                  ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: LockoutTheme.spaceMd),
+      child: LockoutCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // An `InkWell` here rather than `LockoutCard(onTap:)`: the card's
+            // own `onTap` would cover the whole card, including the DELETE
+            // ENTRY zone below, so only the header row gets the ripple.
+            // `LockoutCard(onTap:)` would also have supplied the 48dp min
+            // height that comes with it; wrapping the row's child in this
+            // `ConstrainedBox` puts that back without giving up the header-
+            // only ripple.
+            InkWell(
+              onTap: () => _toggleExpand(log),
+              borderRadius: BorderRadius.circular(LockoutTheme.radiusButton),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: LockoutTheme.minTouchTarget,
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                child: Row(
                   children: [
-                    Text(
-                      '${log.totalVolumeKg.toInt()} kg',
-                      style: JinatraTokens.monoData(
-                        fontSize: 14,
-                        color: JinatraTokens.deepTeal,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(log.dayName, style: theme.textTheme.titleSmall),
+                          const SizedBox(height: LockoutTheme.spaceXs),
+                          Text(sessionArchiveLine(log),
+                              style: theme.textTheme.bodySmall),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Icon(
-                      isOpen ? Icons.expand_less : Icons.expand_more,
-                      size: 18,
-                      color: JinatraTokens.ink,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${kgWhole(log.totalVolumeKg)} kg',
+                          style: LockoutTheme.numeric(
+                            context,
+                            size: 14,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: LockoutTheme.spaceXs),
+                        Icon(
+                          isOpen ? Icons.expand_less : Icons.expand_more,
+                          size: 18,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-
-          if (isOpen) ...[
-            Divider(color: JinatraTokens.ink, height: 20, thickness: 2),
-            if (sets.isEmpty)
-              Text(
-                'No set detail stored for this entry.',
-                style: JinatraTokens.bodyText(
-                  fontSize: 12,
-                  color: JinatraTokens.ink.withValues(alpha: 0.6),
-                ),
-              )
-            else
-              ..._groupByExercise(sets).entries.map((entry) {
-                final reps = entry.value.map((s) => s.reps).join(', ');
-                final weight = entry.value.first.weightKg;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.key,
-                          style: JinatraTokens.bodyText(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: JinatraTokens.mistTeal,
-                          border: Border.all(color: JinatraTokens.ink, width: 1),
-                        ),
-                        child: Text(
-                          weight > 0
-                              ? '${weight.toStringAsFixed(weight % 1 == 0 ? 0 : 1)}kg x $reps'
-                              : '$reps reps',
-                          style: JinatraTokens.monoData(fontSize: 10),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            const SizedBox(height: 6),
-            GestureDetector(
-              onTap: () => _confirmDelete(log),
-              child: Text(
-                'DELETE ENTRY',
-                style: JinatraTokens.monoData(fontSize: 10, color: JinatraTokens.signal),
               ),
             ),
+
+            if (isOpen) ...[
+              const Divider(),
+              if (sets.isEmpty)
+                Text(
+                  'No set detail stored for this entry.',
+                  style: theme.textTheme.bodySmall,
+                )
+              else
+                ..._groupByExercise(sets).entries.map((entry) {
+                  final reps = entry.value.map((s) => s.reps).join(', ');
+                  final weight = entry.value.first.weightKg;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: LockoutTheme.spaceSm),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            entry.key,
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: LockoutTheme.spaceSm,
+                              vertical: LockoutTheme.spaceXs),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHigh,
+                            borderRadius:
+                                BorderRadius.circular(LockoutTheme.radiusPill),
+                            border: Border.all(
+                                color: theme.colorScheme.outlineVariant),
+                          ),
+                          child: Text(
+                            weight > 0
+                                ? '${weight.toStringAsFixed(weight % 1 == 0 ? 0 : 1)}kg x $reps'
+                                : '$reps reps',
+                            style: LockoutTheme.numeric(context, size: 10),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              const SizedBox(height: LockoutTheme.spaceSm),
+              // Padding lives *inside* the detector so the tappable area
+              // grows to LockoutTheme.minTouchTarget (48dp) without
+              // enlarging the visible text: `labelMedium` is a 14.4dp line
+              // box (`sans(12, w500, height: 1.2)`), so 17 on each side
+              // clears 48 with room to spare. The affordance itself is
+              // deliberately not BODY/FOOD's — those use an
+              // `Icons.delete_outline` `IconButton`, which gets its 48dp hit
+              // box from the theme's `minimumSize: Size(48, 48)`; the brief
+              // specifies a red text link for LOG instead, so this detector
+              // supplies its own 48dp-tall hit box by hand rather than
+              // inheriting the button's. What matches (Ruling F) is the tap
+              // target and the shared `showUndoBanner` mechanism, not the
+              // widget. `semantics.danger` — not `colorScheme.error` —
+              // because this is a destructive-action affordance, exactly
+              // what that role is reserved for (see `LockoutSemantics`'s
+              // doc on `danger` vs `error`).
+              GestureDetector(
+                onTap: () => _deleteLog(log),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 17),
+                  child: Text(
+                    'DELETE ENTRY',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: semantics.danger,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
