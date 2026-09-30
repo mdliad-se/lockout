@@ -36,6 +36,22 @@ class LockoutTheme {
   static const double minTouchTarget = 48;
   static const double controlHeight = 52;
 
+  /// The fixed height of a `StatTile` in a stat grid.
+  ///
+  /// Stated here rather than derived from tile width by a `childAspectRatio`,
+  /// because a tile's content height has nothing to do with how wide the
+  /// screen is: a ratio makes every narrower column a shorter tile, so the
+  /// same grid that fits on a 430dp phone clips on a 360dp one.
+  ///
+  /// The number is set by text scale, not by design taste. Measured against
+  /// this theme, the label line, the 4dp gap, the 16pt mono value and the
+  /// tile's own 12dp padding come to 66dp at scale 1.0, 68 at 1.05, 71 at
+  /// 1.10 and 72 at 1.15. 72 is therefore the smallest value on the 8dp grid
+  /// that survives Android's "Large" font setting, which is the largest step
+  /// a user reaches without opening accessibility settings.
+  /// `body_tab_test.dart` pins that.
+  static const double statTileHeight = 72;
+
   // The theme picker's swatch card — the only raw dimensions left outside
   // this file before this constraint was enforced.
   static const double swatchWidth = 104;

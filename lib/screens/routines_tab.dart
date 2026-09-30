@@ -660,6 +660,12 @@ class RoutinesTabState extends State<RoutinesTab> {
 
   Widget _buildRoutineCard(Routine routine) {
     final theme = Theme.of(context);
+    // Hoisted alongside `theme`, the same shape `_buildDayDetail` uses: a
+    // method that reads semantics more than once resolves it once at the top
+    // rather than again inside each callback. Both spellings were correct —
+    // the popup's `itemBuilder` runs against a mounted element — so this is
+    // consistency, not a fix.
+    final semantics = LockoutSemantics.of(context);
     final days = _routineDays[routine.id] ?? [];
     final isActive = routine.id == _activeRoutineId;
     final todayCode = ScheduleService.weekdayCode(DateTime.now());
@@ -698,9 +704,7 @@ class RoutinesTabState extends State<RoutinesTab> {
                       // trigger is `semantics.danger`. `colorScheme.error`
                       // is the invalid-input role and can resolve to a
                       // different red under a dynamic scheme.
-                      style: TextStyle(
-                        color: LockoutSemantics.of(context).danger,
-                      ),
+                      style: TextStyle(color: semantics.danger),
                     ),
                   ),
                 ],
@@ -729,8 +733,7 @@ class RoutinesTabState extends State<RoutinesTab> {
             // meaningful across the whole week, so it is computed once here
             // and shared by the featured card and the collapsed rows.
             ...(() {
-              final colours =
-                  DayColours.assign(days, LockoutSemantics.of(context));
+              final colours = DayColours.assign(days, semantics);
               final focus = RoutineFocus.resolve(
                 routine: routine,
                 days: days,

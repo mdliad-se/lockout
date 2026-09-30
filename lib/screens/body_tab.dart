@@ -236,9 +236,12 @@ class BodyTabState extends State<BodyTab> {
           // to `screenPadding` (20) took 4dp of width off the grid, which
           // took 1.7dp off the height, which overflowed `StatTile`'s two
           // text lines by 1.4dp. The tile's content height has nothing to do
-          // with how wide the screen is, so state it directly — 68 is the
-          // label line, the 4dp gap, the 16pt mono value and the tile's own
-          // 12dp padding, with a little headroom.
+          // with how wide the screen is, so state it directly — and state it
+          // in the theme, where dimensions live, rather than as a literal
+          // here. `LockoutTheme.statTileHeight` carries the measurement that
+          // chose the number; the short version is that it is the smallest
+          // value on the 8dp grid these two text lines still fit inside at
+          // text scale 1.15.
           GridView(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -246,7 +249,7 @@ class BodyTabState extends State<BodyTab> {
               crossAxisCount: 2,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              mainAxisExtent: 68,
+              mainAxisExtent: LockoutTheme.statTileHeight,
             ),
             children: [
               StatTile(

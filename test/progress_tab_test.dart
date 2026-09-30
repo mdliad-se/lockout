@@ -6,6 +6,7 @@ import 'package:lockout/screens/progress_tab.dart';
 import 'package:lockout/services/database_service.dart';
 import 'package:lockout/theme/lockout_theme.dart';
 import 'package:lockout/theme/schemes.dart';
+import 'package:lockout/widgets/weight_card.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'test_helpers.dart';
@@ -138,5 +139,33 @@ void main() {
 
     final size = tester.getSize(find.byType(SegmentedButton<ProgressSegment>));
     expect(size.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+  });
+
+  // Progress is the seam: this screen pads its own heading with
+  // `screenPadding`, and then hosts BodyTab, which pads itself again. The two
+  // disagreed by 4dp for the whole branch — the heading sat at 20 and the card
+  // beneath it at a literal 16 — and no test could see it, because every
+  // geometry assertion in this suite is a ratio, a lower bound, a non-overlap
+  // or an ordering. Not one pinned an absolute horizontal position, which is
+  // exactly the class of defect absolute positions catch.
+  //
+  // The source scan in no_legacy_theme_test.dart catches the literal
+  // `EdgeInsets.all(16)` spelling; only this catches the misalignment itself,
+  // whatever spelling reintroduces it.
+  testWidgets('the heading and the card below it share a left edge',
+      (tester) async {
+    await tester.pumpWidget(_host());
+    await settle(tester);
+
+    final headingLeft = tester.getTopLeft(find.text('Progress')).dx;
+    final cardLeft = tester.getTopLeft(find.byType(WeightCard).first).dx;
+
+    expect(
+      cardLeft,
+      headingLeft,
+      reason: 'ProgressTab pads its heading with screenPadding (20) and '
+          'BodyTab pads its list; both must use the same token or the card '
+          'steps out from under the title',
+    );
   });
 }

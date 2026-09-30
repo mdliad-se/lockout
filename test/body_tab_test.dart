@@ -1080,6 +1080,61 @@ void main() {
       expect(find.byType(WeightCard), findsOneWidget);
       expect(find.byType(Sparkline), findsOneWidget);
     });
+
+    // The stat grid's tiles are a FIXED height (`LockoutTheme.statTileHeight`)
+    // rather than a `childAspectRatio`, so their headroom no longer grows with
+    // the screen. That makes text scale, not device width, the thing that can
+    // overflow them — and nothing in this suite looked at text scale at all
+    // until this test, which is how a height that fitted at 1.0 and burst at
+    // 1.10 got shipped as an improvement.
+    //
+    // 1.15 is Android's "Large" font setting, the largest step a user reaches
+    // without opening accessibility settings, so it is the floor we hold.
+    // Measured against the shipped theme, a `StatTile` needs 66dp at scale
+    // 1.0, 68 at 1.05, 71 at 1.10 and 72 at 1.15 — which is why the token is
+    // 72 and why 68 does not survive this test.
+    testWidgets('the stat tiles do not overflow at text scale 1.15',
+        (tester) async {
+      final db = DatabaseService.instance;
+      await db.saveSetting('age', '30');
+      await db.saveSetting('height_cm', '180');
+      await db.saveSetting('target_weight_kg', '75.0');
+      await _insertLog(db, id: 'a', dateStr: '2026-09-01', weightKg: 80.0);
+
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(
+        theme: lockoutTestTheme(),
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(1.15)),
+            child: BodyTab(),
+          ),
+        ),
+      ));
+      await settle(tester);
+
+      final tiles = find.byType(StatTile);
+      expect(tiles, findsNWidgets(4));
+
+      for (var i = 0; i < tiles.evaluate().length; i++) {
+        final box = tester.renderObject<RenderBox>(tiles.at(i));
+        final needed = box.getMaxIntrinsicHeight(box.size.width);
+        expect(
+          box.size.height,
+          greaterThanOrEqualTo(needed),
+          reason: 'tile $i is ${box.size.height}dp tall but its label and '
+              'value need ${needed}dp at text scale 1.15; raise '
+              'LockoutTheme.statTileHeight rather than letting the column '
+              'clip',
+        );
+      }
+
+      // The height assertion above is the discriminating one; this catches
+      // any other part of the screen that the larger text bursts.
+      expect(tester.takeException(), isNull);
+    });
   });
 
   /// A poisoned `user_settings` row is reachable without Settings ever being
