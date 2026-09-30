@@ -15,11 +15,11 @@ import 'test_helpers.dart';
 /// ones nobody remembered to write a test for.
 ///
 /// Every test here asserts that something is *absent*, which is exactly the
-/// shape of assertion that an empty scan satisfies. `root` is resolved
-/// relative to the package directory, so a runner invoked from anywhere else
-/// would enumerate nothing and turn the whole file green without reading a
-/// line of source. The non-empty assertion below is what stops that, and it
-/// lives in the helper so every present and future caller inherits it.
+/// shape of assertion that an empty scan satisfies. If the extension filter
+/// or the enumeration itself stopped matching any file, the scan would find
+/// nothing and turn the whole file green without reading a line of source.
+/// The non-empty assertion below is what stops that, and it lives in the
+/// helper so every present and future caller inherits it.
 List<File> _dartFiles(String root) {
   final files = Directory(root)
       .listSync(recursive: true)
@@ -150,7 +150,7 @@ void main() {
     // `jinatra_tokens.dart` whose symbols had been renamed would sail past
     // it, and the disk check below pins two exact paths and nothing else.
     // This scans the names of every file the enumeration found.
-    final pattern = RegExp('Jinatra|jinatra|app_palette');
+    final pattern = RegExp('jinatra|app_?palette', caseSensitive: false);
     final offenders = <String>[];
 
     for (final file in _dartFiles('lib')) {
