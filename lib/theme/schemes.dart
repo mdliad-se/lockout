@@ -71,6 +71,20 @@ class LockoutScheme {
       surfaceContainerHighest: Color(0xFF222931),
       inverseSurface: Color(0xFFF5F7FA),
       onInverseSurface: Color(0xFF101419),
+      // The action tone for an inverse-surface background — in this app
+      // that is the undo banner's only control, and the tone
+      // `snackBarTheme.actionTextColor` names. Every scheme states it, for
+      // two reasons. `primary` is built to read on `surface` and measures
+      // 1.37:1 here; and the fallback for an unstated `inversePrimary` is
+      // `onPrimary`, which on this scheme is `onInverseSurface` to the
+      // byte, so the action painted the banner message's own tone and was
+      // left to weight alone to read as an action. Each scheme takes its
+      // own `primary` hue to the tone that reads on its inverse surface —
+      // darker in the dark schemes, whose inverse surface is near-white,
+      // lighter in the light ones. `schemes_test.dart` holds both bars
+      // (>= 4.5:1 on `inverseSurface`, >= 1.5:1 against
+      // `onInverseSurface`) across all six.
+      inversePrimary: Color(0xFF3D6B1F),
       outline: Color(0xFF272E36),
       outlineVariant: Color(0xFF222931),
       shadow: Color(0xFF000000),
@@ -132,6 +146,7 @@ class LockoutScheme {
       surfaceContainerHighest: Color(0xFF2B2721),
       inverseSurface: Color(0xFFF7F3EE),
       onInverseSurface: Color(0xFF1C1916),
+      inversePrimary: Color(0xFF804C14),
       outline: Color(0xFF38322C),
       outlineVariant: Color(0xFF2B2721),
       shadow: Color(0xFF000000),
@@ -191,6 +206,7 @@ class LockoutScheme {
       surfaceContainerHighest: Color(0xFF232B3A),
       inverseSurface: Color(0xFFEEF1F8),
       onInverseSurface: Color(0xFF151A24),
+      inversePrimary: Color(0xFF345596),
       outline: Color(0xFF2A3242),
       outlineVariant: Color(0xFF232B3A),
       shadow: Color(0xFF000000),
@@ -256,6 +272,7 @@ class LockoutScheme {
       surfaceContainerHighest: Color(0xFFE3E3DC),
       inverseSurface: Color(0xFF2F3033),
       onInverseSurface: Color(0xFFF2F2ED),
+      inversePrimary: Color(0xFF8AC257),
       outline: Color(0xFFB4B6AF),
       outlineVariant: Color(0xFFD9DAD4),
       shadow: Color(0xFF000000),
@@ -315,6 +332,7 @@ class LockoutScheme {
       surfaceContainerHighest: Color(0xFFE4DCD0),
       inverseSurface: Color(0xFF34302A),
       onInverseSurface: Color(0xFFF7F2EA),
+      inversePrimary: Color(0xFFE5A05C),
       outline: Color(0xFFB8B0A3),
       outlineVariant: Color(0xFFDCD5C9),
       shadow: Color(0xFF000000),
@@ -374,6 +392,7 @@ class LockoutScheme {
       surfaceContainerHighest: Color(0xFFDCE3EC),
       inverseSurface: Color(0xFF2A3035),
       onInverseSurface: Color(0xFFEEF1F5),
+      inversePrimary: Color(0xFF5ABDD1),
       outline: Color(0xFFAAB3BD),
       outlineVariant: Color(0xFFD5DCE4),
       shadow: Color(0xFF000000),

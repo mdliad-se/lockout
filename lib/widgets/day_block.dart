@@ -8,7 +8,7 @@ import '../theme/lockout_theme.dart';
 //
 // A number of widgets across `lib/` declare a non-const constructor with
 // `// ignore: prefer_const_constructors_in_immutables` and point at this
-// note. It is one note rather than sixteen copies because the copies stated
+// note. It is one note rather than twenty copies because the copies stated
 // a rule that is wrong.
 //
 // The claim was that a const instance is canonicalised, skipped on rebuild,
@@ -20,13 +20,17 @@ import '../theme/lockout_theme.dart';
 // directly rather than through its parent. A const constructor cannot strand
 // a widget in the old theme, and nothing here depends on avoiding one.
 //
-// What is left is narrower and has nothing to do with colour: in practice
-// these constructors are invoked with runtime values — a `GlobalKey` held by
-// a `State`, a callback, a model loaded from the database — so the call site
+// What is left is narrower and has nothing to do with colour: most of these
+// constructors are invoked with runtime values — a `GlobalKey` held by a
+// `State`, a callback, a model loaded from the database — so the call site
 // could not be a const expression anyway and a const declaration would buy
-// nothing. Where one could (`main.dart`'s `MainScreen()`), the saving is a
-// single canonicalised widget at the app root, which is not worth churning
-// every file on a UI-only branch for. Anything new should prefer const.
+// nothing. Five of the twenty could be const today, all of them
+// zero-argument: `main.dart`'s `MainScreen()`, `exercise_picker.dart`'s
+// `_ExercisePickerSheet()`, `food_picker.dart`'s `_FoodPickerSheet()`,
+// `body_tab.dart`'s `_MeasurementForm()` and `routines_tab.dart`'s
+// `_CreateRoutineForm()`. The saving there is a handful of canonicalised
+// widgets, which is not worth churning files on a UI-only branch for.
+// Anything new should prefer const.
 // --------------------------------------------------------------------------
 
 /// Colour coding per training day, so a week reads at a glance.
@@ -176,7 +180,18 @@ class SectionHeading extends StatelessWidget {
       padding: const EdgeInsets.only(top: 4, bottom: 6),
       child: Row(
         children: [
-          Text(title.toUpperCase(), style: theme.textTheme.labelSmall),
+          Text(
+            title.toUpperCase(),
+            // The title names the section, so it takes the full-strength
+            // `onSurface`. The amount below only qualifies it and keeps
+            // `labelSmall`'s own `onSurfaceVariant`. Both sides are the
+            // same 11px type — v1 separated them with a smaller, more
+            // transparent style and this carries it on colour roles alone,
+            // so the pair has to be pinned in a test (it is, in
+            // `widgets_v2_test.dart`) or it re-flattens unnoticed.
+            style: theme.textTheme.labelSmall
+                ?.copyWith(color: colors.onSurface),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Container(
@@ -186,15 +201,9 @@ class SectionHeading extends StatelessWidget {
           ),
           if (amount.isNotEmpty) ...[
             const SizedBox(width: 8),
-            Text(
-              amount,
-              // Same size as the title, one step back in the role hierarchy:
-              // the title names the section and the amount only qualifies
-              // it, which the previous design carried with a smaller, more
-              // transparent type and this carries through colour roles.
-              style: theme.textTheme.labelSmall
-                  ?.copyWith(color: colors.onSurfaceVariant),
-            ),
+            // Bare `labelSmall`, which already carries `onSurfaceVariant`
+            // — the receding half of the pair the title steps out of.
+            Text(amount, style: theme.textTheme.labelSmall),
           ],
         ],
       ),

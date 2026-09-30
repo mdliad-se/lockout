@@ -235,16 +235,31 @@ void main() {
   /// `undo_banner.dart` paints its action label on `inverseSurface`. It used
   /// to paint `colors.primary` there, which measures 1.37:1 on graphite and
   /// never cleared ~2.1:1 on any scheme — unreadable for the banner's only
-  /// control. It now uses `inversePrimary`; this is the number that stops
-  /// that regressing, either from the widget or from a scheme that decides
-  /// to author `inversePrimary` itself (none does today, so it resolves to
-  /// `onPrimary`).
+  /// control. It now uses `inversePrimary`, which every scheme authors
+  /// explicitly.
+  ///
+  /// Two numbers, because legibility alone was not enough. While no scheme
+  /// authored `inversePrimary` it fell back to `onPrimary`, which lands
+  /// within 1.13:1 of `onInverseSurface` everywhere and is the identical
+  /// value on graphite — so the banner's only action painted the same tone
+  /// as its message and was distinguished by weight alone. The second bar
+  /// stops "action" and "message" collapsing into one tone again.
   test('the inverse-surface action label is readable in every scheme', () {
     for (final s in LockoutScheme.all) {
       expect(
         _contrast(s.colors.inversePrimary, s.colors.inverseSurface),
         greaterThanOrEqualTo(4.5),
         reason: '${s.key}: UNDO on the inverse banner',
+      );
+    }
+  });
+
+  test('the inverse-surface action is distinct from the message tone', () {
+    for (final s in LockoutScheme.all) {
+      expect(
+        _contrast(s.colors.inversePrimary, s.colors.onInverseSurface),
+        greaterThanOrEqualTo(1.5),
+        reason: '${s.key}: UNDO against the banner message',
       );
     }
   });

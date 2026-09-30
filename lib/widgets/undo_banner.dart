@@ -240,8 +240,13 @@ class _UndoBannerState extends State<_UndoBanner> {
                               // measures 1.37:1 on graphite and no better
                               // than ~2.1:1 on any scheme, under even the
                               // 3:1 non-text floor, for the banner's only
-                              // control. `schemes_test.dart` holds the
-                              // replacement at >= 4.5:1 across all six.
+                              // control. Every scheme now authors
+                              // `inversePrimary` outright rather than
+                              // taking the `onPrimary` fallback, which was
+                              // the message's own tone here;
+                              // `schemes_test.dart` holds it at >= 4.5:1
+                              // on `inverseSurface` and >= 1.5:1 away from
+                              // `onInverseSurface` across all six.
                               style: theme.textTheme.labelLarge?.copyWith(
                                 color: colors.inversePrimary,
                                 fontWeight: FontWeight.w700,

@@ -24,8 +24,8 @@ Color _ramp(int i) => LockoutScheme.graphite.semantics.categoryAt(i);
 
 /// Hosts a button that raises an undo banner into the root overlay, the way
 /// BODY and FOOD raise it after a delete.
-Widget _undoHost() => MaterialApp(
-      theme: lockoutTestTheme(),
+Widget _undoHost({ThemeData? theme}) => MaterialApp(
+      theme: theme ?? lockoutTestTheme(),
       home: Scaffold(
         body: Builder(
           builder: (ctx) => TextButton(
@@ -162,7 +162,7 @@ void main() {
 
     // The label is centred in that box, not parked at its top. Height alone
     // cannot see the difference: drop the centring and a 10px line paints at
-    // the top of a 40dp box, still 40dp tall and now visibly misaligned.
+    // the top of the 48dp box, still 48dp tall and now visibly misaligned.
     expect(tester.getCenter(detector).dy,
         moreOrLessEquals(tester.getCenter(find.text('+ ADD WARM-UP')).dy,
             epsilon: 0.5));
@@ -200,6 +200,47 @@ void main() {
     final size = tester.getSize(detector);
     expect(size.width, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
     expect(size.height, greaterThanOrEqualTo(LockoutTheme.minTouchTarget));
+  });
+
+  // `SectionHeading`'s title and its amount are the same 11px `labelSmall`,
+  // so the only thing separating them is colour. v1 separated them with a
+  // smaller, more transparent type; the restyle has to carry that with two
+  // roles, and both sides of the pair have to be pinned or the heading
+  // silently re-flattens — which is exactly what happened when the amount
+  // was given `copyWith(color: onSurfaceVariant)`, the colour `labelSmall`
+  // already carried, leaving two byte-identical styles.
+  //
+  // Both roles are overridden to sentinels rather than compared against the
+  // shipped graphite values, so this fails if either side drops its role or
+  // if the two ever resolve to one.
+  testWidgets('SectionHeading separates its title and amount by role',
+      (tester) async {
+    const titleTone = Color(0xFF00FF00);
+    const amountTone = Color(0xFFFF00FF);
+    final theme = LockoutTheme.build(
+      colors: LockoutScheme.graphite.colors.copyWith(
+        onSurface: titleTone,
+        onSurfaceVariant: amountTone,
+      ),
+      semantics: LockoutScheme.graphite.semantics,
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      theme: theme,
+      home: const Scaffold(
+        body: SectionHeading(title: 'Warm-up', amount: '3 items'),
+      ),
+    ));
+
+    final title = tester.widget<Text>(find.text('WARM-UP'));
+    final amount = tester.widget<Text>(find.text('3 items'));
+
+    expect(title.style?.color, titleTone);
+    expect(amount.style?.color, amountTone);
+    expect(title.style?.color, isNot(amount.style?.color));
+    // Same size on both sides: the hierarchy is carried by colour alone, so
+    // a size difference would be a different design, not this one.
+    expect(title.style?.fontSize, amount.style?.fontSize);
   });
 
   // Reported on an Android 16 device: a tall sheet drew its title UNDER the
@@ -277,16 +318,31 @@ void main() {
   // that background in every scheme (`schemes_test.dart` measures it);
   // this pins the widget to the role rather than to a value, so a scheme
   // that authors its own `inversePrimary` still gets a legible label.
+  //
+  // The role is overridden to a sentinel rather than read off the shipped
+  // scheme, the way `settings_restyle_test.dart` does for `danger`. Asserting
+  // `colors.inversePrimary` against the shipped graphite palette would pass
+  // just as well if the widget had painted `onInverseSurface` or a literal —
+  // the banner's message is asserted against a neighbouring role three lines
+  // down, and the two roles only differ by palette choice. A sentinel no
+  // other role holds makes the assertion discriminating by construction.
   testWidgets('the undo banner draws its action in inversePrimary',
       (tester) async {
-    await tester.pumpWidget(_undoHost());
+    const sentinel = Color(0xFF00FF00);
+    final theme = LockoutTheme.build(
+      colors:
+          LockoutScheme.graphite.colors.copyWith(inversePrimary: sentinel),
+      semantics: LockoutScheme.graphite.semantics,
+    );
+    await tester.pumpWidget(_undoHost(theme: theme));
     await tester.tap(find.text('delete'));
     await tester.pump();
 
-    final colors = lockoutTestTheme().colorScheme;
+    final colors = theme.colorScheme;
     final action = tester.widget<Text>(find.text('UNDO'));
-    expect(action.style?.color, colors.inversePrimary);
-    expect(action.style?.color, isNot(colors.primary));
+    expect(action.style?.color, sentinel);
+    expect(sentinel, isNot(colors.primary));
+    expect(sentinel, isNot(colors.onInverseSurface));
 
     // The message keeps the background's own on-colour.
     final message = tester.widget<Text>(find.text('Entry deleted'));
