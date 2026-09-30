@@ -37,13 +37,15 @@ class LockoutApp extends StatelessWidget {
 
         return ListenableBuilder(
           listenable: ThemeController.instance,
-          // MainScreen must NOT be const here: a const widget is canonicalised
-          // to a single instance, so Flutter sees an identical child and skips
-          // rebuilding the subtree — leaving the nav bar painted in the old
-          // theme while the body repaints. Its constructor is non-const so
-          // this cannot be written, rather than relying on a comment. No key
-          // either: a changing key would remount the tabs and discard an
-          // in-progress live session.
+          // MainScreen is written without `const` only because its
+          // constructor is not const. It is not a theme requirement: see the
+          // note at the top of `widgets/day_block.dart`, which works through
+          // why a const child cannot be stranded in the old theme (anything
+          // reading `Theme.of(context)` is rebuilt through its
+          // `InheritedWidget` dependency, not through its parent) and names
+          // this call site as one that could be const today. No key either:
+          // a changing key would remount the tabs and discard an in-progress
+          // live session.
           builder: (_, _) => MaterialApp(
             title: 'LOCKOUT',
             debugShowCheckedModeBanner: false,

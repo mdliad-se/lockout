@@ -205,7 +205,7 @@ class BodyTabState extends State<BodyTab> {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(LockoutTheme.screenPadding),
         children: [
           // The same card Home leads with, rather than a second presentation
           // of the same three facts. Two screens disagreeing about how to
@@ -230,13 +230,24 @@ class BodyTabState extends State<BodyTab> {
             ),
           ),
           const SizedBox(height: LockoutTheme.spaceLg),
-          GridView.count(
-            crossAxisCount: 2,
+          // `mainAxisExtent`, not `childAspectRatio`. A ratio derives each
+          // tile's height from its width, so anything that narrows this
+          // column also shortens the tiles: moving the root padding from 16
+          // to `screenPadding` (20) took 4dp of width off the grid, which
+          // took 1.7dp off the height, which overflowed `StatTile`'s two
+          // text lines by 1.4dp. The tile's content height has nothing to do
+          // with how wide the screen is, so state it directly — 68 is the
+          // label line, the 4dp gap, the 16pt mono value and the tile's own
+          // 12dp padding, with a little headroom.
+          GridView(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 2.4,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              mainAxisExtent: 68,
+            ),
             children: [
               StatTile(
                 label: 'BMI',

@@ -508,7 +508,7 @@ class TodayTabState extends State<TodayTab> {
       body: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(LockoutTheme.screenPadding),
           child:
               _sessionActive ? _buildActiveSession() : _buildPreSession(context),
         ),

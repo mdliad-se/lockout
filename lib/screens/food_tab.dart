@@ -136,7 +136,7 @@ class FoodTabState extends State<FoodTab> {
       body: SafeArea(
         bottom: false,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(LockoutTheme.screenPadding),
           children: [
           ProgressHero(
             eyebrow: 'TODAY',

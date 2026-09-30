@@ -520,8 +520,8 @@ void main() {
     });
 
     testWidgets(
-        'the import action is an error-coloured button behind a '
-        'danger-coloured confirmation', (tester) async {
+        'the import trigger and its confirmation are both danger-coloured',
+        (tester) async {
       // Every shipped scheme happens to set `danger` to the same value as
       // `ColorScheme.error`, so a test against the shipped theme could not
       // tell the two roles apart. This one overrides `danger` to a sentinel
@@ -535,12 +535,23 @@ void main() {
       await pumpSettings(tester, theme: theme);
       final colors = theme.colorScheme;
 
+      // The trigger, not only the confirmation. Under a dynamic (Material
+      // You) scheme `ThemeController._harmonised` keeps `error` on the
+      // wallpaper's red while `danger` comes from the authored fallback, so
+      // a button painted `error` and the dialog it opens painted `danger`
+      // put one destructive action in two colours on one screen. The
+      // sentinel above is what makes that difference visible here.
       final importButton = tester.widget<OutlinedButton>(
         find.byKey(const Key('importBackupButton')),
       );
       expect(
         importButton.style?.foregroundColor?.resolve(<WidgetState>{}),
-        colors.error,
+        sentinel,
+      );
+      expect(
+        importButton.style?.side?.resolve(<WidgetState>{})?.color,
+        sentinel,
+        reason: 'the outline carries the same role as the label',
       );
 
       await tester.tap(find.byKey(const Key('importBackupButton')));

@@ -142,8 +142,8 @@ void main() {
     });
 
     testWidgets(
-        'choosing a category chip filters the results and drops an '
-        'off-category item', (tester) async {
+        'choosing a category chip narrows the result count and keeps an '
+        'in-category item', (tester) async {
       await pumpFoodPicker(tester);
 
       final totalCount = FoodLibrary.all.length;
@@ -157,8 +157,10 @@ void main() {
       expect(find.text('$breakfastCount found'), findsOneWidget);
       expect(find.text('Full English Breakfast'), findsOneWidget,
           reason: 'a Breakfast item stays after filtering to Breakfast');
-      expect(find.text('Roast Chicken Dinner'), findsNothing,
-          reason: 'a Western item must be gone once filtered to Breakfast');
+      // No "an off-category row is absent" assertion here. The list is a
+      // lazy ListView on an 800x600 surface, so an off-category row far down
+      // the catalog is never built either way and `findsNothing` would hold
+      // with the filter removed. The count assertion above is the real guard.
     });
 
     testWidgets(

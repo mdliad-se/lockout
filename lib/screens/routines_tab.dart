@@ -329,6 +329,7 @@ class RoutinesTabState extends State<RoutinesTab> {
 
     final theme = Theme.of(sheetCtx);
     final colors = theme.colorScheme;
+    final semantics = LockoutSemantics.of(sheetCtx);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -471,7 +472,15 @@ class RoutinesTabState extends State<RoutinesTab> {
                   await _loadAllRoutinesData();
                   if (sheetCtx.mounted) Navigator.of(sheetCtx).maybePop();
                 },
-                style: TextButton.styleFrom(foregroundColor: colors.error),
+                // `semantics.danger`, not `colors.error` — this deletes a
+                // day outright, and the trigger has to match the role the
+                // confirmation it belongs to already uses. `error` is the
+                // invalid-form-field role; `ThemeController._harmonised`
+                // pins it to the wallpaper's red under a dynamic scheme
+                // while `danger` comes from the authored fallback, so the
+                // two drift apart and one screen ends up painting the same
+                // class of action in two colours.
+                style: TextButton.styleFrom(foregroundColor: semantics.danger),
                 icon: const Icon(Icons.close, size: 18),
                 label: const Text('Delete day'),
               ),
@@ -587,7 +596,7 @@ class RoutinesTabState extends State<RoutinesTab> {
       body: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(LockoutTheme.screenPadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -684,7 +693,14 @@ class RoutinesTabState extends State<RoutinesTab> {
                     value: 'delete',
                     child: Text(
                       'Delete',
-                      style: TextStyle(color: theme.colorScheme.error),
+                      // Same rule as the delete confirmation this opens and
+                      // as "Delete day" in the day sheet: a destructive
+                      // trigger is `semantics.danger`. `colorScheme.error`
+                      // is the invalid-input role and can resolve to a
+                      // different red under a dynamic scheme.
+                      style: TextStyle(
+                        color: LockoutSemantics.of(context).danger,
+                      ),
                     ),
                   ),
                 ],

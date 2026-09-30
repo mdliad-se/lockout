@@ -421,8 +421,9 @@ class SettingsBodyState extends State<SettingsBody> {
             // row in the database is a destructive confirmation, the role
             // `LockoutSemantics` reserves `danger` for (see that class's
             // doc, and today_tab's discard dialog for the same rule). The
-            // Import button that opens this dialog stays `error`: it is the
-            // affordance, not the confirmation.
+            // Import button that opens this dialog carries the same role:
+            // the trigger and its confirmation are one action, so they
+            // cannot resolve to two different reds.
             style: TextButton.styleFrom(foregroundColor: semantics.danger),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Choose file'),
@@ -941,6 +942,7 @@ class SettingsBodyState extends State<SettingsBody> {
 
   Widget _buildDataCard(BuildContext context) {
     final theme = Theme.of(context);
+    final semantics = LockoutSemantics.of(context);
 
     return LockoutCard(
       child: Column(
@@ -959,14 +961,18 @@ class SettingsBodyState extends State<SettingsBody> {
           ),
           const SizedBox(height: LockoutTheme.spaceSm),
           // Destructive: this replaces every row on the device. It sits at
-          // the bottom of the card, coloured in `colorScheme.error`, behind
-          // the confirmation dialog in `_import`.
+          // the bottom of the card, behind the confirmation dialog in
+          // `_import`, and carries `semantics.danger` — the same role as
+          // that dialog's confirm button. Colouring the trigger `error` and
+          // the confirmation `danger` split one action across two roles,
+          // which `ThemeController._harmonised` can resolve to two visibly
+          // different reds under a dynamic (Material You) scheme.
           OutlinedButton(
             key: const Key('importBackupButton'),
             onPressed: _busy ? null : _import,
             style: OutlinedButton.styleFrom(
-              foregroundColor: theme.colorScheme.error,
-              side: BorderSide(color: theme.colorScheme.error),
+              foregroundColor: semantics.danger,
+              side: BorderSide(color: semantics.danger),
             ),
             child: Text(_busy ? 'Working…' : 'Import backup JSON'),
           ),

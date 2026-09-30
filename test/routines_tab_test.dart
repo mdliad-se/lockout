@@ -162,6 +162,50 @@ void main() {
     expect(find.text('Push Pull Legs'), findsOneWidget);
   });
 
+  // The two triggers, not the confirmations. Converging only the dialogs
+  // left the buttons that open them on `colorScheme.error`, and those two
+  // roles are not the same colour under a dynamic (Material You) scheme:
+  // `ThemeController._harmonised` pins `error` to the wallpaper's red while
+  // `danger` stays on the authored fallback, so one destructive action would
+  // render in two colours on one screen.
+  testWidgets(
+      'the delete triggers take semantics.danger too, not colorScheme.error',
+      (tester) async {
+    await seedRoutineWithDay();
+    const sentinel = Color(0xFF00FF00);
+    expect(sentinel, isNot(LockoutScheme.graphite.colors.error));
+
+    await tester.pumpWidget(MaterialApp(
+      theme: themeWithSentinelDanger(sentinel),
+      home: RoutinesTab(),
+    ));
+    await settle(tester);
+
+    // 1. The routine popup-menu item that opens the delete confirmation.
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    final menuLabel = tester.widget<Text>(find.text('Delete').last);
+    expect(menuLabel.style?.color, sentinel);
+
+    // Dismiss the menu without choosing anything.
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    // 2. "Delete day" in the day-detail sheet, which deletes outright.
+    await tester.tap(find.text('Push Day'));
+    await tester.pumpAndSettle();
+    final deleteDay = tester.widget<TextButton>(
+      find.ancestor(
+        of: find.text('Delete day'),
+        matching: find.byType(TextButton),
+      ),
+    );
+    expect(
+      deleteDay.style?.foregroundColor?.resolve(<WidgetState>{}),
+      sentinel,
+    );
+  });
+
   testWidgets('Edit day saves and pops the day-detail sheet', (tester) async {
     final day = await seedRoutineWithDay();
 

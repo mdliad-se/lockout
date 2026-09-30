@@ -84,6 +84,53 @@ void main() {
     );
   });
 
+  /// The dimension counterpart to the colour scan above.
+  ///
+  /// The colour rule was guarded from the first commit of the redesign; the
+  /// spacing rule was not, and four screens kept a literal
+  /// `EdgeInsets.all(16)` root padding for the whole branch because no test
+  /// could see it. That is user-visible on the Progress tab, which draws its
+  /// own heading at `screenPadding` (20) and then hosted a child screen at
+  /// 16, so the content sat 4dp inboard of the header above it and every row
+  /// shifted sideways when the segmented control was tapped.
+  ///
+  /// Deliberately scoped to `EdgeInsets.all`, the shape a root or container
+  /// padding takes, rather than to every numeric literal in a `SizedBox`.
+  /// The wider sweep is real — `body_tab.dart` and `food_tab.dart` still
+  /// carry off-grid `SizedBox` heights — but it needs a long exemption list
+  /// today, and a test with a dozen exemptions stops being read. This one
+  /// has none: outside `lib/theme/` there is not a single numeric
+  /// `EdgeInsets.all` left, so any new match is a genuine new violation.
+  test('no widget outside lib/theme builds padding from a raw number', () {
+    // Matches EdgeInsets.all(16), .all(16.0) and EdgeInsetsDirectional
+    // .all(8). A token argument does not start with a digit, so
+    // EdgeInsets.all(LockoutTheme.cardPadding) passes — which is the call
+    // this pushes people toward.
+    final pattern = RegExp(r'EdgeInsets(?:Directional)?\.all\(\s*\d');
+    final offenders = <String>[];
+
+    for (final file in _dartFiles('lib')) {
+      final path = _rel(file);
+      // The same carve-out the colour scan makes: the theme layer is where a
+      // dimension is allowed to be a literal, because that is where the
+      // tokens are defined.
+      if (path.contains('lib/theme/')) continue;
+      // Comments are blanked so a doc comment quoting the old literal does
+      // not read as a painted padding.
+      if (pattern.hasMatch(blankComments(file.readAsStringSync()))) {
+        offenders.add(path);
+      }
+    }
+
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'padding comes from a LockoutTheme token — screenPadding (20), '
+          'cardPadding (16) or the 8dp spaceXs..spaceXl scale — never from a '
+          'number typed at the call site',
+    );
+  });
+
   test('the shipped app is called LOCKOUT, never LIAD', () {
     final offenders = <String>[];
     for (final file in _dartFiles('lib')) {
@@ -98,7 +145,11 @@ void main() {
   });
 
   test('no file under lib references the deleted Jinatra theme layer', () {
-    final pattern = RegExp('Jinatra|jinatra|AppPalette');
+    // Case-insensitive, and `app_?palette` rather than `AppPalette`, so this
+    // matches the same spellings as the filename scan below: `appPalette` as
+    // a variable, a shouted `JINATRA`, an `app_palette` import path. Spelling
+    // the class name exactly is what let those through.
+    final pattern = RegExp('jinatra|app_?palette', caseSensitive: false);
     final offenders = <String>[];
     // An allowlist entry only does anything on a path the scan actually
     // visits. If a survivor file is renamed or moved, its entry stops
