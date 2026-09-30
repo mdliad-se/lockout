@@ -13,11 +13,29 @@ import 'test_helpers.dart';
 /// They are deliberately source scans rather than widget tests. A widget test
 /// can only prove the screens it pumps; this covers every file, including the
 /// ones nobody remembered to write a test for.
-List<File> _dartFiles(String root) => Directory(root)
-    .listSync(recursive: true)
-    .whereType<File>()
-    .where((f) => f.path.endsWith('.dart'))
-    .toList();
+///
+/// Every test here asserts that something is *absent*, which is exactly the
+/// shape of assertion that an empty scan satisfies. `root` is resolved
+/// relative to the package directory, so a runner invoked from anywhere else
+/// would enumerate nothing and turn the whole file green without reading a
+/// line of source. The non-empty assertion below is what stops that, and it
+/// lives in the helper so every present and future caller inherits it.
+List<File> _dartFiles(String root) {
+  final files = Directory(root)
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where((f) => f.path.endsWith('.dart'))
+      .toList();
+
+  expect(
+    files,
+    isNotEmpty,
+    reason: 'no .dart file was found under $root/, so this scan saw nothing '
+        'and would pass having proved nothing',
+  );
+
+  return files;
+}
 
 String _rel(File f) => f.path.replaceAll(r'\', '/');
 
@@ -82,9 +100,15 @@ void main() {
   test('no file under lib references the deleted Jinatra theme layer', () {
     final pattern = RegExp('Jinatra|jinatra|AppPalette');
     final offenders = <String>[];
+    // An allowlist entry only does anything on a path the scan actually
+    // visits. If a survivor file is renamed or moved, its entry stops
+    // applying *and* stops being checked, both silently. Tracking what the
+    // scan consumed turns that into a failure.
+    final unvisited = _allowedJinatraText.keys.toSet();
 
     for (final file in _dartFiles('lib')) {
       final path = _rel(file);
+      unvisited.remove(path);
       // Comments are blanked so a doc comment explaining the migration does
       // not read as a live reference.
       var source = blankComments(file.readAsStringSync());
@@ -105,6 +129,14 @@ void main() {
     }
 
     expect(
+      unvisited,
+      isEmpty,
+      reason: 'the scan never reached these allowlisted paths, so their '
+          'entries no longer guard anything; move or drop them in '
+          '_allowedJinatraText',
+    );
+
+    expect(
       offenders,
       isEmpty,
       reason: 'the Jinatra theme layer is deleted; colour, type and shape '
@@ -113,7 +145,38 @@ void main() {
     );
   });
 
+  test('no file under lib is named after the Jinatra theme layer', () {
+    // The content grep reads source, never file names. A resurrected
+    // `jinatra_tokens.dart` whose symbols had been renamed would sail past
+    // it, and the disk check below pins two exact paths and nothing else.
+    // This scans the names of every file the enumeration found.
+    final pattern = RegExp('Jinatra|jinatra|app_palette');
+    final offenders = <String>[];
+
+    for (final file in _dartFiles('lib')) {
+      final path = _rel(file);
+      if (pattern.hasMatch(path)) offenders.add(path);
+    }
+
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'a file named for the deleted theme layer is back under lib/; '
+          'renaming its symbols does not make it a new layer',
+    );
+  });
+
   test('the Jinatra theme files are gone from disk', () {
+    // These paths are relative, so a runner with the wrong working directory
+    // would find none of them and pass. Pin a file that must exist first, so
+    // "absent" means absent rather than "looked in the wrong place".
+    expect(
+      File('lib/theme/lockout_theme.dart').existsSync(),
+      isTrue,
+      reason: 'lib/theme/lockout_theme.dart was not found, so the absence '
+          'checks below prove nothing about where the theme layer lives',
+    );
+
     for (final path in const [
       'lib/theme/jinatra_tokens.dart',
       'lib/theme/app_palette.dart',
